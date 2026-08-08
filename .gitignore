@@ -413,3 +413,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# SSS custom: keep local materials out of the repo
+.local/
+解压专家逆向/
+NanaZip 定制开发计划.md

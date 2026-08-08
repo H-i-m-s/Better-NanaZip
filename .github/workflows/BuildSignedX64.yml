@@ -1,0 +1,126 @@
+# Build SSS NanaZip (x64 only, fast)
+# Independent workflow: Release x64 only. The full BuildSigned.yml (x64+arm64)
+# stays untouched for when an ARM build is needed.
+# Trigger: manual only (workflow_dispatch).
+# Secrets required:
+#   SSS_NANAZIP_PFX_BASE64 = base64 of the pfx file
+#   SSS_NANAZIP_PFX_PASSWORD = pfx password
+# Artifact: SSS-NanaZip-Signed-x64 (.msixbundle)
+
+name: Build SSS NanaZip (x64)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      POWERSHELL_TELEMETRY_OPTOUT: 1
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: 'recursive'
+
+    - uses: microsoft/setup-msbuild@v3
+
+    - name: Clear local NuGet cache
+      run: dotnet nuget locals all --clear
+
+    # Mile.Project.Configurations is a NuGet-delivered MSBuild SDK (global.json).
+    # Pre-install it into the global packages folder so SDK resolution is local.
+    - name: Pre-install Mile.Project.Configurations SDK
+      shell: pwsh
+      run: |
+        $pkgId = 'mile.project.configurations'
+        $version = '1.0.2075'
+        $root = Join-Path $env:USERPROFILE '.nuget\packages'
+        $dest = Join-Path $root (Join-Path $pkgId $version)
+        if (Test-Path (Join-Path $dest "$pkgId.nuspec")) {
+          Write-Host "SDK already cached: $dest"
+        } else {
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $tmp = Join-Path $env:RUNNER_TEMP 'sdk.nupkg'
+          Invoke-WebRequest -Uri "https://api.nuget.org/v3-flatcontainer/$pkgId/$version/$pkgId.$version.nupkg" `
+            -OutFile $tmp -UseBasicParsing
+          Expand-Archive -Path $tmp -DestinationPath $dest -Force
+          Remove-Item $tmp -Force
+          Write-Host "SDK pre-installed: $dest"
+        }
+
+    # RefreshVersion writes the version number into Package.appxmanifest.
+    - name: Refresh version
+      run: MSBuild BuildAllTargets.proj -t:RefreshVersion
+
+    - name: Restore
+      run: MSBuild BuildAllTargets.proj -t:Restore
+
+    # Release x64 only. AppxBundlePlatforms=x64 overrides the x64|arm64 default
+    # hard-coded in NanaZipPackage.wapproj, so the ARM code is never built.
+    - name: Build (Release x64)
+      run: MSBuild -binaryLogger:Output\BuildSignedX64.binlog -m NanaZipPackage\NanaZipPackage.wapproj -t:Build -p:Configuration=Release -p:Platform=x64 -p:AppxBundlePlatforms=x64 -p:PreferredToolArchitecture=x64
+
+    - name: Locate MSIX package
+      id: locate
+      shell: pwsh
+      run: |
+        $bundle = Get-ChildItem -Path 'Output\Binaries\AppPackages' -Recurse -Filter '*.msixbundle' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $target = $bundle
+        if (-not $target) {
+          $target = Get-ChildItem -Path 'Output\Binaries\AppPackages' -Recurse -Filter '*.msix' -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $target) { throw 'MSIX package not found' }
+        # AppendAllText writes UTF-8 without a BOM, but the GITHUB_OUTPUT file
+        # itself may carry a BOM; the runner parses this file itself and exposes
+        # the value as steps.locate.outputs.package, so the Sign step reads the
+        # parsed output instead of re-reading this file.
+        [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "package=$($target.FullName)`r`n")
+        Write-Host "Found package: $($target.FullName)"
+
+    - name: Sign MSIX with own certificate
+      shell: pwsh
+      env:
+        PFX_BASE64: ${{ secrets.SSS_NANAZIP_PFX_BASE64 }}
+        PFX_PASSWORD: ${{ secrets.SSS_NANAZIP_PFX_PASSWORD }}
+      run: |
+        if (-not $env:PFX_BASE64 -or -not $env:PFX_PASSWORD) {
+          throw 'Missing secrets: SSS_NANAZIP_PFX_BASE64 / SSS_NANAZIP_PFX_PASSWORD'
+        }
+        $pfxPath = Join-Path $env:RUNNER_TEMP 'SSS-NanaZip-Development.pfx'
+        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_BASE64))
+
+        # Prefer the x64 sign tool; the plain sort picks x86 first ("86" > "64").
+        $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -match '\\x64\\' -or $_.FullName -match '\\arm64\\' } |
+          Sort-Object FullName -Descending | Select-Object -First 1
+        if (-not $signtool) {
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+        }
+        if (-not $signtool) { throw 'signtool.exe not found' }
+        Write-Host "signtool: $($signtool.FullName)"
+
+        # Use the runner-parsed step output instead of reading the GITHUB_OUTPUT
+        # file directly: the file may carry a BOM that breaks 'package=*' matches.
+        $package = '${{ steps.locate.outputs.package }}'
+        if (-not $package) { throw 'No package path from locate step output' }
+        Write-Host "package: $package"
+
+        & $signtool.FullName sign /fd SHA256 /f $pfxPath /p $env:PFX_PASSWORD `
+          /tr http://timestamp.digicert.com /td SHA256 $package
+        if ($LASTEXITCODE -ne 0) { throw 'Signing failed' }
+        Write-Host 'Signing done'
+
+    - name: Upload signed MSIX
+      uses: actions/upload-artifact@v7
+      with:
+        name: SSS-NanaZip-Signed-x64
+        path: Output/Binaries/AppPackages
+        if-no-files-found: error
+
+    - name: Upload MSBuild Build Process Binary Log
+      uses: actions/upload-artifact@v7
+      if: '!cancelled()'
+      with:
+        name: SSS_NanaZip_BuildSignedX64_BinaryLog
+        path: Output/BuildSignedX64.binlog

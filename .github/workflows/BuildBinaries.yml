@@ -1,18 +1,14 @@
-﻿name: Build Binaries
+# Build Binaries
+# Modified by SSS: manual trigger only (workflow_dispatch), windows-2022 runner.
+
+name: Build Binaries
 
 on:
-  push:
-    paths-ignore:
-      - 'Documents/**'
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - 'Documents/**'
-      - '**/*.md'
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       POWERSHELL_TELEMETRY_OPTOUT: 1
     steps:
