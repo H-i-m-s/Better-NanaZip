@@ -16,6 +16,8 @@
 #define IDX_SETTINGS_LOWERCASE_HASHES       2513
 
 // **************** SSS Modification Start ****************
+#define IDX_SETTINGS_SIZE_FORMAT            2526
+// **************** SSS Modification End ****************
 #define IDT_SETTINGS_FONT_GROUP           2514
 #define IDT_SETTINGS_FONT_ADDRESSBAR      2517
 #define IDC_SETTINGS_FONT_ADDRESSBAR      2518

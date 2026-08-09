@@ -666,7 +666,10 @@
   <data name="Resource2513" xml:space="preserve">
     <value>使用小寫字母驗證值</value>
   </data>
-  <data name="Resource2514" xml:space="preserve">
+    <data name="Resource2526" xml:space="preserve">
+    <value>使用簡寫大小(K/M/G)</value>
+  </data>
+<data name="Resource2514" xml:space="preserve">
     <value>介面字號</value>
   </data>
   <data name="Resource2517" xml:space="preserve">

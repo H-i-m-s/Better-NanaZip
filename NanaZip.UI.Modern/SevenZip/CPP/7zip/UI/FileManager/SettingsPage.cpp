@@ -40,6 +40,7 @@ static const UInt32 kLangIDs[] =
   IDX_SETTINGS_WANT_FOLDER_HISTORY,
   IDX_SETTINGS_LOWERCASE_HASHES,
   // **************** SSS Modification Start ****************
+  IDX_SETTINGS_SIZE_FORMAT,
   IDT_SETTINGS_FONT_GROUP,
   IDT_SETTINGS_FONT_ADDRESSBAR,
   IDT_SETTINGS_FONT_LIST,
@@ -155,6 +156,7 @@ bool CSettingsPage::OnInit()
   CheckButton(IDX_SETTINGS_WANT_COPY_HISTORY, st.CopyHistory);
   CheckButton(IDX_SETTINGS_WANT_FOLDER_HISTORY, st.FolderHistory);
   CheckButton(IDX_SETTINGS_LOWERCASE_HASHES, st.LowercaseHashes);
+  CheckButton(IDX_SETTINGS_SIZE_FORMAT, st.SizeFormat);
 
   // **************** SSS Modification Start ****************
   {
@@ -281,6 +283,7 @@ LONG CSettingsPage::OnApply()
     st.CopyHistory = IsButtonCheckedBool(IDX_SETTINGS_WANT_COPY_HISTORY);
     st.FolderHistory = IsButtonCheckedBool(IDX_SETTINGS_WANT_FOLDER_HISTORY);
     st.LowercaseHashes = IsButtonCheckedBool(IDX_SETTINGS_LOWERCASE_HASHES);
+    st.SizeFormat = IsButtonCheckedBool(IDX_SETTINGS_SIZE_FORMAT);
     // st.Underline = IsButtonCheckedBool(IDX_SETTINGS_UNDERLINE);
 
     st.ShowSystemMenu = IsButtonCheckedBool(IDX_SETTINGS_SHOW_SYSTEM_MENU);
@@ -304,6 +307,16 @@ LONG CSettingsPage::OnApply()
     // (the parent property sheet is adjusted automatically).
     HWND propertySheet = CPropertyPage::GetParent();
     ApplyFontToDialogCompact(*this, fs.Dialog, true);
+
+    // Applying a new font makes combo boxes re-select their whole edit text
+    // (blue highlight); clear the selection on all font combos afterwards.
+    for (unsigned i = 0; i < 4; i++)
+    {
+      _fontCombo[i].SendMsg(CB_SETEDITSEL, 0, MAKELPARAM(0, 0));
+      COMBOBOXINFO info = { sizeof(info) };
+      if (::GetComboBoxInfo(_fontCombo[i], &info) && info.hwndItem)
+        ::SendMessageW(info.hwndItem, EM_SETSEL, 0, 0);
+    }
 
     // The main window owns the panels. Ask it to re-read the saved settings
     // and apply them to the live controls.
@@ -517,6 +530,7 @@ bool CSettingsPage::OnButtonClicked(int buttonID, HWND buttonHWND)
     case IDX_SETTINGS_WANT_COPY_HISTORY:
     case IDX_SETTINGS_WANT_FOLDER_HISTORY:
     case IDX_SETTINGS_LOWERCASE_HASHES:
+    case IDX_SETTINGS_SIZE_FORMAT:
       _wasChanged = true;
       break;
 

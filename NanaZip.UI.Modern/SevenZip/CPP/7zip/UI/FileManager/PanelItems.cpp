@@ -334,6 +334,29 @@ void CPanel::AddColumn(const CPropColumn &prop)
 }
 
 
+// **************** SSS Modification Start ****************
+// Auto-size every visible column to its widest content (or the header,
+// whichever is wider) so long names no longer hide the trailing columns.
+void CPanel::AutoSizeColumns()
+{
+  if (!_listView)
+    return;
+  const unsigned numCols = _visibleColumns.Size();
+  HDC dc = ::GetDC(_listView);
+  const int dpi = dc ? ::GetDeviceCaps(dc, LOGPIXELSY) : 96;
+  if (dc)
+    ::ReleaseDC(_listView, dc);
+  // a little breathing room on the right side of the text
+  const int pad = ::MulDiv(6, dpi, 96);
+  for (unsigned i = 0; i < numCols; i++)
+  {
+    _listView.SetColumnWidth((int)i, LVSCW_AUTOSIZE_USEHEADER);
+    const int w = (int)::SendMessageW(_listView, LVM_GETCOLUMNWIDTH, i, 0);
+    _listView.SetColumnWidth((int)i, w + pad);
+  }
+}
+// **************** SSS Modification End ****************
+
 HRESULT CPanel::RefreshListCtrl()
 {
   CSelectedState state;
@@ -805,6 +828,10 @@ HRESULT CPanel::RefreshListCtrl(const CSelectedState &state)
   // disableNotify.Restore();
 
   Print_OnNotify("after  EnsureVisible");
+
+  // **************** SSS Modification Start ****************
+  AutoSizeColumns();
+  // **************** SSS Modification End ****************
 
   _listView.SetRedraw(true);
 

@@ -666,7 +666,10 @@
   <data name="Resource2513" xml:space="preserve">
     <value>Use Lowercase Hashes</value>
   </data>
-  <data name="Resource2514" xml:space="preserve">
+    <data name="Resource2526" xml:space="preserve">
+    <value>Use short sizes (K/M/G)</value>
+  </data>
+<data name="Resource2514" xml:space="preserve">
     <value>Interface font size</value>
   </data>
   <data name="Resource2517" xml:space="preserve">

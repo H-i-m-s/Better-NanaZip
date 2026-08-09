@@ -16,6 +16,7 @@
 #include "App.h"
 #include "Panel.h"
 #include "FormatUtils.h"
+#include "RegistryUtils.h"
 
 using namespace NWindows;
 
@@ -34,6 +35,59 @@ using namespace NWindows;
 #define INT_TO_STR_SPEC(v) \
   while (v >= 10) { temp[i++] = (unsigned char)('0' + (unsigned)(v % 10)); v /= 10; } \
   *s++ = (unsigned char)('0' + (unsigned)v);
+
+// **************** SSS Modification Start ****************
+// Human-readable size, decimal (1000-based, matching Explorer):
+//   < 1000 bytes  -> plain byte count
+//   >= 1000       -> one decimal, integral values omit the decimal
+// Units: k/M/G/T/E/P (lowercase k per the design doc).
+static void ConvertSizeToStringShort(UInt64 val, wchar_t *s) throw()
+{
+  if (val < (UInt64)1000)
+  {
+    ConvertUInt64ToString(val, s);
+    return;
+  }
+  static const UInt64 kDiv[6] =
+  {
+    (UInt64)1000,
+    (UInt64)1000000,
+    (UInt64)1000000000,
+    (UInt64)1000000000000,
+    (UInt64)1000000000000000,
+    (UInt64)1000000000000000000
+  };
+  unsigned unit = 0;
+  while (unit < 5 && val >= kDiv[unit + 1])
+    unit++;
+  const UInt64 div = kDiv[unit];
+  UInt64 whole = val / div;
+  unsigned tenth = (unsigned)(((val % div) * 10 + div / 2) / div);
+  if (tenth >= 10)
+  {
+    tenth = 0;
+    whole++;
+  }
+  if (whole >= 1000 && unit < 5)
+  {
+    unit++;
+    whole = 1;
+  }
+  wchar_t num[32];
+  ConvertUInt64ToString(whole, num);
+  unsigned pos = 0;
+  for (; num[pos]; pos++)
+    s[pos] = num[pos];
+  if (tenth != 0)
+  {
+    s[pos++] = '.';
+    s[pos++] = (wchar_t)('0' + tenth);
+  }
+  static const wchar_t kUnits[] = L"kMGTEP";
+  s[pos++] = kUnits[unit];
+  s[pos] = 0;
+}
+// **************** SSS Modification End ****************
 
 static void ConvertSizeToString(UInt64 val, wchar_t *s) throw()
 {
@@ -513,7 +567,12 @@ LRESULT CPanel::SetItemText(LVITEMW &item)
   {
     UInt64 v = 0;
     ConvertPropVariantToUInt64(prop, v);
-    ConvertSizeToString(v, text);
+    // **************** SSS Modification Start ****************
+    if (WantSizeFormat())
+      ConvertSizeToStringShort(v, text);
+    else
+      ConvertSizeToString(v, text);
+    // **************** SSS Modification End ****************
   }
   else if (prop.vt == VT_BSTR)
   {

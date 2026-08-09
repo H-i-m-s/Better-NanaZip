@@ -190,10 +190,15 @@ static int SssRelayoutCompact(HWND dialog, unsigned pt)
       newH = minH;
     const int newY = pad + rowIndex * rowH;
     ::MoveWindow(item.Hwnd, item.X, newY, item.Width, newH, TRUE);
-    // The window must contain the actual bottom of every control, not just
-    // the row height: combo boxes carry their drop-down list inside their
-    // height, so sizing the window by rows alone would clip the list.
-    const int itemBottom = newY + newH + pad;
+    // The window only needs to contain the visible part of each control: a
+    // combo box shows just its edit field while folded (its drop-down list
+    // is a popup window), so do not count the full template height here.
+    int visH = newH;
+    wchar_t cls[32] = {};
+    ::GetClassNameW(item.Hwnd, cls, 32);
+    if (::lstrcmpiW(cls, L"ComboBox") == 0)
+      visH = minH;
+    const int itemBottom = newY + visH + pad;
     if (itemBottom > bottom)
       bottom = itemBottom;
   }
@@ -246,6 +251,10 @@ static BOOL CALLBACK SssClearComboSelectionProc(HWND hwnd, LPARAM /* lParam */)
   return TRUE;
 }
 
+// Re-layout the page contents (row heights, control heights) only. The page
+// window position and the property-sheet layout are left to the sheet; the
+// sheet is sized later, when the page becomes active (PSN_SETACTIVE), so it
+// is fully laid out by then.
 static void SssApplyRegisteredPageSettings(HWND page)
 {
   DWORD pt = 0;
@@ -261,36 +270,57 @@ static void SssApplyRegisteredPageSettings(HWND page)
   if (pt == 0)
     return;
 
-  const int contentBottom = SssRelayoutCompact(page, pt);
-  if (contentBottom > 0)
-  {
-    HWND sheet = ::GetParent(page);
-    RECT pr = {};
-    if (::GetWindowRect(page, &pr))
-    {
-      const int oldH = pr.bottom - pr.top;
-      const int newH = contentBottom;
-      POINT pos = { pr.left, pr.top };
-      if (sheet)
-        ::ScreenToClient(sheet, &pos);
-      ::MoveWindow(page, pos.x, pos.y, pr.right - pr.left, newH, TRUE);
-
-      const int dh = newH - oldH;
-      if (sheet && dh != 0)
-      {
-        RECT sr = {};
-        if (::GetWindowRect(sheet, &sr))
-          ::SetWindowPos(sheet, nullptr, sr.left, sr.top,
-              sr.right - sr.left, sr.bottom - sr.top + dh,
-              SWP_NOZORDER | SWP_NOACTIVATE);
-        SssSheetAdjustContext ctx = { dh, page };
-        ::EnumChildWindows(sheet, SssAdjustSheetChildProc, (LPARAM)&ctx);
-      }
-    }
-  }
-
+  SssRelayoutCompact(page, pt);
   SssApplyFontToTree(page, pt);
   ::EnumChildWindows(page, SssClearComboSelectionProc, 0);
+}
+
+// Called when the page becomes active: grow the page window and the parent
+// sheet so the re-laid-out content is fully visible. Idempotent: the needed
+// height is recomputed from the template layout each time and the page is
+// only grown when it is shorter than the content.
+static void SssFitPageToContent(HWND page)
+{
+  DWORD pt = 0;
+  HKEY key = nullptr;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+      KEY_READ, &key) == ERROR_SUCCESS)
+  {
+    DWORD size = sizeof(pt);
+    ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+        reinterpret_cast<LPBYTE>(&pt), &size);
+    ::RegCloseKey(key);
+  }
+  if (pt == 0)
+    return;
+
+  const int contentBottom = SssRelayoutCompact(page, pt);
+  if (contentBottom <= 0)
+    return;
+
+  RECT pr = {};
+  RECT pcr = {};
+  if (!::GetWindowRect(page, &pr) || !::GetClientRect(page, &pcr))
+    return;
+  const int border = (pr.bottom - pr.top) - pcr.bottom;
+  const int needH = contentBottom + border;
+  if (needH <= (int)(pr.bottom - pr.top))
+    return;
+
+  ::SetWindowPos(page, nullptr, 0, 0, pr.right - pr.left, needH,
+      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+  HWND sheet = ::GetParent(page);
+  if (!sheet)
+    return;
+  const int dh = needH - (int)(pr.bottom - pr.top);
+  RECT sr = {};
+  if (::GetWindowRect(sheet, &sr))
+    ::SetWindowPos(sheet, nullptr, sr.left, sr.top,
+        sr.right - sr.left, sr.bottom - sr.top + dh,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+  SssSheetAdjustContext ctx = { dh, page };
+  ::EnumChildWindows(sheet, SssAdjustSheetChildProc, (LPARAM)&ctx);
 }
 // **************** SSS Modification End ****************
 
@@ -310,7 +340,13 @@ static INT_PTR APIENTRY MyProperyPageProcedure(HWND dialogHWND, UINT message, WP
     // **************** SSS Modification End ****************
   }
   // **************** SSS Modification Start ****************
-  if (message == WM_DESTROY)
+  if (message == WM_NOTIFY)
+  {
+    const NMHDR *nmhdr = (const NMHDR *)lParam;
+    if (nmhdr && nmhdr->code == PSN_SETACTIVE)
+      SssFitPageToContent(dialogHWND);
+  }
+  else if (message == WM_DESTROY)
     SssFreeLayout(dialogHWND);
   // **************** SSS Modification End ****************
   try { return BoolToBOOL(dialog->OnMessage(message, wParam, lParam)); }

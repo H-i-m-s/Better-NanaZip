@@ -43,6 +43,7 @@ static LPCTSTR const kPathHistory = TEXT("WantPathHistory");
 static LPCTSTR const kCopyHistory = TEXT("WantCopyHistory");
 static LPCTSTR const kFolderHistory = TEXT("WantFolderHistory");
 static LPCTSTR const kLowercaseHashes = TEXT("LowercaseHashes");
+static LPCTSTR const kSizeFormat = TEXT("SizeFormat");
 
 static LPCTSTR const kFlatViewName = TEXT("FlatViewArc");
 // static LPCTSTR const kShowDeletedFiles = TEXT("ShowDeleted");
@@ -152,6 +153,7 @@ void CFmSettings::Save() const
   SaveOption(kCopyHistory, CopyHistory);
   SaveOption(kFolderHistory, FolderHistory);
   SaveOption(kLowercaseHashes, LowercaseHashes);
+  SaveOption(kSizeFormat, SizeFormat);
   // SaveOption(kUnderline, Underline);
 
   SaveOption(kShowSystemMenu, ShowSystemMenu);
@@ -170,6 +172,7 @@ void CFmSettings::Load()
   CopyHistory = false;
   FolderHistory = false;
   LowercaseHashes = false;
+  SizeFormat = false;
   // Underline = false;
 
   ShowSystemMenu = false;
@@ -188,6 +191,7 @@ void CFmSettings::Load()
     ReadOption(key, kCopyHistory, CopyHistory);
     ReadOption(key, kFolderHistory, FolderHistory);
     ReadOption(key, kLowercaseHashes, LowercaseHashes);
+    ReadOption(key, kSizeFormat, SizeFormat);
     // ReadOption(key, kUnderline, Underline);
 
     ReadOption(key, kShowSystemMenu, ShowSystemMenu );
@@ -206,6 +210,7 @@ bool WantPathHistory() { return ReadFMOption(kPathHistory); }
 bool WantCopyHistory() { return ReadFMOption(kCopyHistory); }
 bool WantFolderHistory() { return ReadFMOption(kFolderHistory); }
 bool WantLowercaseHashes() { return ReadFMOption(kLowercaseHashes); }
+bool WantSizeFormat() { return ReadFMOption(kSizeFormat); }
 
 static CSysString GetFlatViewName(UInt32 panelIndex)
 {

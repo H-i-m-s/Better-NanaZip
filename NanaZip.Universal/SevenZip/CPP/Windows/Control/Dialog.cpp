@@ -195,10 +195,15 @@ static int SssRelayoutCompact(HWND dialog, unsigned pt)
       newH = minH;
     const int newY = pad + rowIndex * rowH;
     ::MoveWindow(item.Hwnd, item.X, newY, item.Width, newH, TRUE);
-    // The window must contain the actual bottom of every control, not just
-    // the row height: combo boxes carry their drop-down list inside their
-    // height, so sizing the window by rows alone would clip the list.
-    const int itemBottom = newY + newH + pad;
+    // The window only needs to contain the visible part of each control: a
+    // combo box shows just its edit field while folded (its drop-down list
+    // is a popup window), so do not count the full template height here.
+    int visH = newH;
+    wchar_t cls[32] = {};
+    ::GetClassNameW(item.Hwnd, cls, 32);
+    if (::lstrcmpiW(cls, L"ComboBox") == 0)
+      visH = minH;
+    const int itemBottom = newY + visH + pad;
     if (itemBottom > bottom)
       bottom = itemBottom;
   }

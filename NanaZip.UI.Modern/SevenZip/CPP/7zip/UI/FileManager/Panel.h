@@ -397,6 +397,9 @@ private:
 
   // UString GetFileType(UInt32 index);
   LRESULT SetItemText(LVITEMW &item);
+  // **************** SSS Modification Start ****************
+  void AutoSizeColumns();
+  // **************** SSS Modification End ****************
 
   // CRecordVector<PROPID> m_ColumnsPropIDs;
 

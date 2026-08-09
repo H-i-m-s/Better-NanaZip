@@ -30,6 +30,7 @@ struct CFmSettings
   bool CopyHistory;
   bool FolderHistory;
   bool LowercaseHashes;
+  bool SizeFormat;   // show human-readable sizes (K/M/G) in the file list
   // bool Underline;
 
   bool ShowSystemMenu;
@@ -49,6 +50,7 @@ bool WantPathHistory();
 bool WantCopyHistory();
 bool WantFolderHistory();
 bool WantLowercaseHashes();
+bool WantSizeFormat();
 
 void SaveFlatView(UInt32 panelIndex, bool enable);
 bool ReadFlatView(UInt32 panelIndex);

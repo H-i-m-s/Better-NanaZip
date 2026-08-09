@@ -20,15 +20,17 @@ BEGIN
   CONTROL  "Use Lowercase Hashes", IDX_SETTINGS_LOWERCASE_HASHES,     MY_CHECKBOX, m, 196, xc, 10
 
   // **************** SSS Modification Start ****************
-  LTEXT     "Font size",                     IDT_SETTINGS_FONT_GROUP,        m, 212, xc, 8
-  LTEXT     "Address bar:",                  IDT_SETTINGS_FONT_ADDRESSBAR,   m, 226, 56, 8
-  CONTROL   "", IDC_SETTINGS_FONT_ADDRESSBAR,   "ComboBox", MY_COMBO_WITH_EDIT, 68, 228, 60, 120
-  LTEXT     "File list:",                    IDT_SETTINGS_FONT_LIST,         m, 242, 56, 8
-  CONTROL   "", IDC_SETTINGS_FONT_LIST,         "ComboBox", MY_COMBO_WITH_EDIT, 68, 244, 60, 120
-  LTEXT     "Status bar:",                   IDT_SETTINGS_FONT_STATUSBAR,    m, 258, 56, 8
-  CONTROL   "", IDC_SETTINGS_FONT_STATUSBAR,    "ComboBox", MY_COMBO_WITH_EDIT, 68, 260, 60, 120
-  LTEXT     "Dialogs:",                      IDT_SETTINGS_FONT_DIALOG,       m, 274, 56, 8
-  CONTROL   "", IDC_SETTINGS_FONT_DIALOG,       "ComboBox", MY_COMBO_WITH_EDIT, 68, 276, 60, 120
+  CONTROL  "Use short sizes (K/M/G)", IDX_SETTINGS_SIZE_FORMAT,        MY_CHECKBOX, m, 210, xc, 10
+
+  LTEXT     "Font size",                     IDT_SETTINGS_FONT_GROUP,        m, 226, xc, 8
+  LTEXT     "Address bar:",                  IDT_SETTINGS_FONT_ADDRESSBAR,   m, 240, 56, 8
+  CONTROL   "", IDC_SETTINGS_FONT_ADDRESSBAR,   "ComboBox", MY_COMBO_WITH_EDIT, 68, 242, 60, 120
+  LTEXT     "File list:",                    IDT_SETTINGS_FONT_LIST,         m, 256, 56, 8
+  CONTROL   "", IDC_SETTINGS_FONT_LIST,         "ComboBox", MY_COMBO_WITH_EDIT, 68, 258, 60, 120
+  LTEXT     "Status bar:",                   IDT_SETTINGS_FONT_STATUSBAR,    m, 272, 56, 8
+  CONTROL   "", IDC_SETTINGS_FONT_STATUSBAR,    "ComboBox", MY_COMBO_WITH_EDIT, 68, 274, 60, 120
+  LTEXT     "Dialogs:",                      IDT_SETTINGS_FONT_DIALOG,       m, 288, 56, 8
+  CONTROL   "", IDC_SETTINGS_FONT_DIALOG,       "ComboBox", MY_COMBO_WITH_EDIT, 68, 290, 60, 120
   // **************** SSS Modification End ****************
   // **************** NanaZip Modification End ****************
 
