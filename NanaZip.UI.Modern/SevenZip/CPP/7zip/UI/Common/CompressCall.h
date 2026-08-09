@@ -17,7 +17,7 @@ HRESULT CompressFiles(
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract = false, bool openFolder = false);
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract = false, bool openFolder = false, UInt32 overwriteMode = (UInt32)(Int32)-1, bool waitFinish = false, bool suppressDelete = false);
 // **************** NanaZip Modification End ****************
 void TestArchives(const UStringVector &arcPaths, bool hashMode = false);
 

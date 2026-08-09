@@ -44,6 +44,12 @@
 extern bool g_CaseSensitive;
 extern bool g_PathTrailReplaceMode;
 
+// **************** SSS Modification Start ****************
+// -snd: suppress delete-after-extract (the file manager deletes all
+// archives of a batch together after every archive has been extracted).
+bool g_SssNoDelete = false;
+// **************** SSS Modification End ****************
+
 #ifdef Z7_LARGE_PAGES
 extern
 bool g_LargePagesMode;
@@ -213,6 +219,10 @@ enum Enum
   kOpenFolder,
   // **************** NanaZip Modification End ****************
 
+  // **************** SSS Modification Start ****************
+  kNoDelete,
+  // **************** SSS Modification End ****************
+
   kDeleteAfterCompressing,
   kSetArcMTime
 
@@ -371,6 +381,10 @@ static const CSwitchForm kSwitchForms[] =
   // **************** NanaZip Modification Start ****************
   { "sre", SWFRM_MINUS },
   // **************** NanaZip Modification End ****************
+  
+  // **************** SSS Modification Start ****************
+  { "snd", SWFRM_MINUS },
+  // **************** SSS Modification End ****************
   
   { "sdel", SWFRM_SIMPLE },
   { "stl", SWFRM_SIMPLE }
@@ -1494,6 +1508,11 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
     options.OpenFolder.Val = !parser[NKey::kOpenFolder].WithMinus;
   }
   // **************** NanaZip Modification End ****************
+  
+  // **************** SSS Modification Start ****************
+  if (parser[NKey::kNoDelete].ThereIs)
+    g_SssNoDelete = !parser[NKey::kNoDelete].WithMinus;
+  // **************** SSS Modification End ****************
   
   NWildcard::ECensorPathMode censorPathMode = NWildcard::k_RelatPath;
   bool fullPathMode = parser[NKey::kFullPathMode].ThereIs;

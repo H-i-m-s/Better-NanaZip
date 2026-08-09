@@ -9,6 +9,9 @@
 #include "../../../Windows/COM.h"
 #include "../../../Windows/FileName.h"
 #include "../../../Windows/PropVariant.h"
+// **************** SSS Modification Start ****************
+#include "../../../Windows/Registry.h"
+// **************** SSS Modification End ****************
 
 #include "ComboDialog.h"
 
@@ -17,6 +20,14 @@
 #include "LangUtils.h"
 #include "Panel.h"
 #include "UpdateCallback100.h"
+// **************** SSS Modification Start ****************
+#include <ShlObj.h> // SHFileOperationW for batch recycle-bin delete
+#include "RegistryUtils.h"
+#include "SssBatchFolder.h"
+#include "../Common/ZipRegistry.h"
+#include "../Common/CompressCall.h"
+#include "../../../Windows/FileDir.h"
+// **************** SSS Modification End ****************
 
 #include "resource.h"
 
@@ -528,3 +539,225 @@ void CPanel::ChangeComment()
   }
   RefreshListCtrl(state);
 }
+
+// **************** SSS Modification Start ****************
+// **************** SSS Modification Start ****************
+// Temp file shared between the file manager and 7zG to forward a
+// "Yes to All / No to All / Auto rename" overwrite answer to the next
+// archive of the same batch. See SssExtractAll below.
+static UString SssOwTempFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_ow.txt";
+  }
+  return p;
+}
+
+static UInt32 SssReadOwTempFile(const UString &path)
+{
+  if (path.IsEmpty())
+    return (UInt32)(Int32)-1;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return (UInt32)(Int32)-1;
+  char buf[4] = { 0 };
+  DWORD read = 0;
+  ::ReadFile(h, buf, 2, &read, NULL);
+  ::CloseHandle(h);
+  if (read >= 1)
+  {
+    if (buf[0] == 'a')
+      return 1; // NOverwriteMode::kOverwrite  -> -aoa
+    if (buf[0] == 's')
+      return 2; // NOverwriteMode::kSkip      -> -aos
+    if (buf[0] == 'u')
+      return 3; // NOverwriteMode::kRename    -> -aou
+  }
+  return (UInt32)(Int32)-1;
+}
+
+// 7zG writes %TEMP%\sss_batch_ok.txt when an archive really finished OK
+// (see SssWriteBatchOk in NanaZip.Universal ExtractGUI.cpp). The file
+// manager deletes the marker before each archive and only marks the archive
+// as successfully extracted (and thus deletable) when the marker appears.
+static UString SssBatchOkFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_ok.txt";
+  }
+  return p;
+}
+
+static bool SssReadOkFile(const UString &path)
+{
+  if (path.IsEmpty())
+    return false;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return false;
+  char buf[4] = { 0 };
+  DWORD read = 0;
+  ::ReadFile(h, buf, 2, &read, NULL);
+  ::CloseHandle(h);
+  return read >= 1 && buf[0] == '1';
+}
+
+// Delete the successfully extracted archives in one shot after the whole
+// batch finished. Recycle Bin via SHFileOperationW (single operation), or
+// permanently via NDir::DeleteFileAlways.
+static void SssDeleteBatchArchives(const UStringVector &paths, bool permanently)
+{
+  if (paths.IsEmpty())
+    return;
+  if (permanently)
+  {
+    FOR_VECTOR (i, paths)
+      NDir::DeleteFileAlways(us2fs(paths[i]));
+    return;
+  }
+  size_t total = 1; // final NUL
+  FOR_VECTOR (i, paths)
+    total += paths[i].Len() + 1;
+  wchar_t *buf = new wchar_t[total];
+  wchar_t *p = buf;
+  FOR_VECTOR (i, paths)
+  {
+    MyStringCopy(p, paths[i]);
+    p += paths[i].Len() + 1;
+  }
+  *p = 0;
+  SHFILEOPSTRUCTW fo;
+  memset(&fo, 0, sizeof(fo));
+  fo.wFunc = FO_DELETE;
+  fo.pFrom = buf;
+  fo.fFlags = FOF_ALLOWUNDO;
+  ::SHFileOperationW(&fo);
+  delete[] buf;
+}
+
+void CPanel::SssExtractAll(bool showDialog)
+{
+  if (!IsSssBatchFolder())
+    return;
+  CSssBatchFolder *folder = static_cast<CSssBatchFolder *>((IFolderFolder *)_folder);
+  const UStringVector &paths = folder->GetPaths();
+  if (paths.IsEmpty())
+    return;
+  CContextMenuInfo ci;
+  ci.Load();
+
+  // **************** SSS Modification Start ****************
+  if (showDialog)
+  {
+    // One dialog for ALL archives: 7zG shows a single "Extract to..." dialog
+    // and extracts every archive into the chosen folder. We prefill the
+    // dialog with the parent directory of the first archive.
+    UStringVector all;
+    UString firstParent;
+    for (unsigned i = 0; i < paths.Size(); i++)
+    {
+      FString fullPathF;
+      FString parentFolder;
+      if (NFile::NName::GetFullPath(us2fs(paths[i]), fullPathF) &&
+          NFile::NDir::GetOnlyDirPrefix(fullPathF, parentFolder))
+      {
+        all.Add(fs2us(fullPathF));
+        if (i == 0)
+          firstParent = fs2us(parentFolder);
+      }
+    }
+    if (all.IsEmpty())
+      return;
+    for (unsigned i = 0; i < paths.Size(); i++)
+    {
+      folder->SetState(i, 1); // extracting
+      RedrawListItems();
+    }
+    ::ExtractArchives(all, firstParent, true, false, ci.WriteZone, true, false, (UInt32)(Int32)-1, true);
+    // In dialog mode 7zG owns the result (it reports errors itself). We can't
+    // track per-archive success, so mark everything as done.
+    for (unsigned i = 0; i < paths.Size(); i++)
+    {
+      folder->SetState(i, 2); // done
+      RedrawListItems();
+    }
+    return;
+  }
+  // **************** SSS Modification End ****************
+
+  // **************** SSS Modification Start ****************
+  // Per-batch overwrite policy, shared across archives through a temp file:
+  // each archive runs in its own 7zG process, so "Yes to All" picked in one
+  // archive must be forwarded to the next ones. The temp file is deleted
+  // before the first archive and after the batch, so every batch asks again.
+  // No conflict -> 7zG never prompts -> the file stays absent -> nothing asks.
+  UInt32 batchMode = (UInt32)(Int32)-1; // -1: not decided yet, let 7zG ask
+  const UString owTempFile = SssOwTempFilePath();
+  const UString okFile = SssBatchOkFilePath();
+  UStringVector okPaths; // archives that really finished OK (7zG wrote the marker)
+  unsigned done = 0;
+  unsigned failed = 0;
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    folder->SetState(i, 1); // extracting
+    RedrawListItems();
+    bool ok = false;
+    FString fullPathF;
+    FString parentFolder;
+    if (NFile::NName::GetFullPath(us2fs(paths[i]), fullPathF) &&
+        NFile::NDir::GetOnlyDirPrefix(fullPathF, parentFolder))
+    {
+      if (batchMode == (UInt32)(Int32)-1)
+        NDir::DeleteFileAlways(us2fs(owTempFile)); // drop leftovers from a previous batch
+      NDir::DeleteFileAlways(us2fs(okFile));       // this archive's success marker
+      UStringVector single;
+      single.Add(fs2us(fullPathF));
+      // waitFinish=true: the archive (and its overwrite dialogs) must finish
+      // before we read the "to all" answer and start the next archive.
+      // suppressDelete=true: 7zG must NOT delete this archive yet - all
+      // archives of the batch are deleted together below.
+      ::ExtractArchives(single, fs2us(parentFolder), false, false, ci.WriteZone, true, false, batchMode, true, true);
+      ok = SssReadOkFile(okFile); // 7zG wrote the marker only on real success
+      if (batchMode == (UInt32)(Int32)-1)
+        batchMode = SssReadOwTempFile(owTempFile); // 7zG may have recorded a "to all" answer
+    }
+    folder->SetState(i, ok ? 2 : 3);
+    RedrawListItems();
+    if (ok)
+    {
+      done++;
+      okPaths.Add(fs2us(fullPathF));
+    }
+    else
+      failed++;
+  }
+  NDir::DeleteFileAlways(us2fs(owTempFile)); // end of batch: next batch asks again
+  NDir::DeleteFileAlways(us2fs(okFile));
+  // Delete the successful archives together, in one shot, only after the
+  // whole batch has been extracted (not one-by-one like before).
+  if (!okPaths.IsEmpty() && WantDeleteAfterExtract())
+    SssDeleteBatchArchives(okPaths, WantDeletePermanently());
+  UString msg = L"已解压 ";
+  msg.Add_UInt32(done);
+  msg += L" 个归档";
+  if (failed > 0)
+  {
+    msg += L"，";
+    msg.Add_UInt32(failed);
+    msg += L" 个失败";
+  }
+  MessageBoxW(*this, msg, L"批量解压", MB_ICONINFORMATION);
+  NDir::DeleteFileAlways(us2fs(owTempFile)); // end of batch: next batch asks again
+  // **************** SSS Modification End ****************
+}
+// **************** SSS Modification End ****************

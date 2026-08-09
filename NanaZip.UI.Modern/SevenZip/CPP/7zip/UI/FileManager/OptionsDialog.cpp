@@ -15,6 +15,9 @@
 #include "MenuPageRes.h"
 #include "SettingsPage.h"
 #include "SettingsPageRes.h"
+// **************** SSS Modification Start ****************
+#include "ExtractSettingsPage.h"
+// **************** SSS Modification End ****************
 
 #include "App.h"
 #include "LangUtils.h"
@@ -31,6 +34,9 @@ void OptionsDialog(HWND hwndOwner, HINSTANCE /* hInstance */)
   CFoldersPage foldersPage;
   CEditPage editPage;
   CSettingsPage settingsPage;
+  // **************** SSS Modification Start ****************
+  CExtractSettingsPage extractSettingsPage;
+  // **************** SSS Modification End ****************
 
   CObjectVector<NControl::CPageInfo> pages;
   BIG_DIALOG_SIZE(200, 200);
@@ -39,10 +45,17 @@ void OptionsDialog(HWND hwndOwner, HINSTANCE /* hInstance */)
       SIZED_DIALOG(IDD_MENU),
       SIZED_DIALOG(IDD_FOLDERS),
       SIZED_DIALOG(IDD_EDIT),
-      SIZED_DIALOG(IDD_SETTINGS)
+      SIZED_DIALOG(IDD_SETTINGS),
+      // **************** SSS Modification Start ****************
+      SIZED_DIALOG(IDD_SETTINGS_EXTRACT)
+      // **************** SSS Modification End ****************
   };
 
-  NControl::CPropertyPage *pagePointers[] = { &menuPage, &foldersPage, &editPage, &settingsPage };
+  NControl::CPropertyPage *pagePointers[] = { &menuPage, &foldersPage, &editPage, &settingsPage,
+      // **************** SSS Modification Start ****************
+      &extractSettingsPage
+      // **************** SSS Modification End ****************
+  };
 
   for (unsigned i = 0; i < ARRAY_SIZE(pageIDs); i++)
   {

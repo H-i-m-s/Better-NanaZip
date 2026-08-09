@@ -620,6 +620,11 @@ bool ExecuteFileCommand(unsigned id)
     // File
     case IDM_OPEN: g_App.OpenItem(); break;
 
+    // **************** SSS Modification Start ****************
+    case IDM_SSS_EXTRACT_ALL: g_App.GetFocusedPanel().SssExtractAll(false); break;
+    case IDM_SSS_EXTRACT_ALL_DLG: g_App.GetFocusedPanel().SssExtractAll(true); break;
+    // **************** SSS Modification End ****************
+
     case IDM_OPEN_INSIDE:        g_App.OpenItemInside(NULL); break;
     case IDM_OPEN_INSIDE_ONE:    g_App.OpenItemInside(L"*"); break;
     case IDM_OPEN_INSIDE_PARSER: g_App.OpenItemInside(L"#"); break;

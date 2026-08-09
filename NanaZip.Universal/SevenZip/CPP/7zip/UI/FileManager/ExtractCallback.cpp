@@ -37,6 +37,29 @@ using namespace NWindows;
 using namespace NFile;
 using namespace NFind;
 
+// **************** SSS Modification Start ****************
+// When the user picks a "to all" answer in the overwrite dialog, write it to
+// a temp file so the file manager can apply the same choice to the remaining
+// archives of the batch (each archive runs in its own 7zG process). The file
+// manager deletes the file before each archive and after the batch, so the
+// choice never leaks into the next batch.
+static void SssSaveOverwriteModeToTemp(const wchar_t *mode)
+{
+  wchar_t temp[MAX_PATH];
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString full(temp);
+  full += L"sss_batch_ow.txt";
+  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  ::WriteFile(h, mode, (DWORD)(MyStringLen(mode) * sizeof(wchar_t)), &written, NULL);
+  ::CloseHandle(h);
+}
+// **************** SSS Modification End ****************
+
 extern bool g_DisableUserQuestions;
 
 CExtractCallbackImp::~CExtractCallbackImp() {}
@@ -223,9 +246,24 @@ Z7_COM7F_IMF(CExtractCallbackImp::AskOverwrite(
     case IDCANCEL:        *answer = NOverwriteAnswer::kCancel; return E_ABORT;
     case IDYES:           *answer = NOverwriteAnswer::kYes; break;
     case IDNO:            *answer = NOverwriteAnswer::kNo; break;
-    case IDB_YES_TO_ALL:  *answer = NOverwriteAnswer::kYesToAll; break;
-    case IDB_NO_TO_ALL:   *answer = NOverwriteAnswer::kNoToAll; break;
-    case IDB_AUTO_RENAME: *answer = NOverwriteAnswer::kAutoRename; break;
+    case IDB_YES_TO_ALL:
+      *answer = NOverwriteAnswer::kYesToAll;
+      // **************** SSS Modification Start ****************
+      SssSaveOverwriteModeToTemp(L"a"); // share "Yes to All" across batch archives
+      // **************** SSS Modification End ****************
+      break;
+    case IDB_NO_TO_ALL:
+      *answer = NOverwriteAnswer::kNoToAll;
+      // **************** SSS Modification Start ****************
+      SssSaveOverwriteModeToTemp(L"s"); // share "No to All" across batch archives
+      // **************** SSS Modification End ****************
+      break;
+    case IDB_AUTO_RENAME:
+      *answer = NOverwriteAnswer::kAutoRename;
+      // **************** SSS Modification Start ****************
+      SssSaveOverwriteModeToTemp(L"u"); // share "Auto rename" across batch archives
+      // **************** SSS Modification End ****************
+      break;
     default: return E_FAIL;
   }
   return S_OK;

@@ -44,6 +44,10 @@ static LPCTSTR const kCopyHistory = TEXT("WantCopyHistory");
 static LPCTSTR const kFolderHistory = TEXT("WantFolderHistory");
 static LPCTSTR const kLowercaseHashes = TEXT("LowercaseHashes");
 static LPCTSTR const kSizeFormat = TEXT("SizeFormat");
+// **************** SSS Modification Start ****************
+static LPCTSTR const kDeleteAfterExtract = TEXT("DeleteAfterExtract");
+static LPCTSTR const kDeletePermanently = TEXT("DeletePermanently");
+// **************** SSS Modification End ****************
 
 static LPCTSTR const kFlatViewName = TEXT("FlatViewArc");
 // static LPCTSTR const kShowDeletedFiles = TEXT("ShowDeleted");
@@ -154,6 +158,10 @@ void CFmSettings::Save() const
   SaveOption(kFolderHistory, FolderHistory);
   SaveOption(kLowercaseHashes, LowercaseHashes);
   SaveOption(kSizeFormat, SizeFormat);
+  // **************** SSS Modification Start ****************
+  SaveOption(kDeleteAfterExtract, DeleteAfterExtract);
+  SaveOption(kDeletePermanently, DeletePermanently);
+  // **************** SSS Modification End ****************
   // SaveOption(kUnderline, Underline);
 
   SaveOption(kShowSystemMenu, ShowSystemMenu);
@@ -173,6 +181,10 @@ void CFmSettings::Load()
   FolderHistory = false;
   LowercaseHashes = false;
   SizeFormat = false;
+  // **************** SSS Modification Start ****************
+  DeleteAfterExtract = false;
+  DeletePermanently = false;
+  // **************** SSS Modification End ****************
   // Underline = false;
 
   ShowSystemMenu = false;
@@ -192,6 +204,10 @@ void CFmSettings::Load()
     ReadOption(key, kFolderHistory, FolderHistory);
     ReadOption(key, kLowercaseHashes, LowercaseHashes);
     ReadOption(key, kSizeFormat, SizeFormat);
+    // **************** SSS Modification Start ****************
+    ReadOption(key, kDeleteAfterExtract, DeleteAfterExtract);
+    ReadOption(key, kDeletePermanently, DeletePermanently);
+    // **************** SSS Modification End ****************
     // ReadOption(key, kUnderline, Underline);
 
     ReadOption(key, kShowSystemMenu, ShowSystemMenu );
@@ -211,6 +227,8 @@ bool WantCopyHistory() { return ReadFMOption(kCopyHistory); }
 bool WantFolderHistory() { return ReadFMOption(kFolderHistory); }
 bool WantLowercaseHashes() { return ReadFMOption(kLowercaseHashes); }
 bool WantSizeFormat() { return ReadFMOption(kSizeFormat); }
+bool WantDeleteAfterExtract() { return ReadFMOption(kDeleteAfterExtract); }
+bool WantDeletePermanently() { return ReadFMOption(kDeletePermanently); }
 
 static CSysString GetFlatViewName(UInt32 panelIndex)
 {

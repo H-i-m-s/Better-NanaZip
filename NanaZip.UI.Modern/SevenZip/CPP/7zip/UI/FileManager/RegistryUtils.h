@@ -31,6 +31,8 @@ struct CFmSettings
   bool FolderHistory;
   bool LowercaseHashes;
   bool SizeFormat;   // show human-readable sizes (K/M/G) in the file list
+  bool DeleteAfterExtract;   // delete archives after successful extraction
+  bool DeletePermanently;    // delete without moving to the Recycle Bin
   // bool Underline;
 
   bool ShowSystemMenu;
@@ -51,6 +53,8 @@ bool WantCopyHistory();
 bool WantFolderHistory();
 bool WantLowercaseHashes();
 bool WantSizeFormat();
+bool WantDeleteAfterExtract();
+bool WantDeletePermanently();
 
 void SaveFlatView(UInt32 panelIndex, bool enable);
 bool ReadFlatView(UInt32 panelIndex);

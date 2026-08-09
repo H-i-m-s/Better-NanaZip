@@ -259,7 +259,7 @@
     <value>書籤</value>
   </data>
   <data name="Resource900" xml:space="preserve">
-    <value>選項...</value>
+    <value>設定...</value>
   </data>
   <data name="Resource901" xml:space="preserve">
     <value>效能測試</value>
@@ -529,7 +529,7 @@
     <value>詮釋資料已變更</value>
   </data>
   <data name="Resource2100" xml:space="preserve">
-    <value>選項</value>
+    <value>設定</value>
   </data>
   <data name="Resource2101" xml:space="preserve">
     <value>語言</value>
@@ -627,6 +627,9 @@
   <data name="Resource2500" xml:space="preserve">
     <value>設定</value>
   </data>
+  <data name="Resource12900" xml:space="preserve">
+    <value>解壓縮設定</value>
+  </data>
   <data name="Resource2501" xml:space="preserve">
     <value>顯示 ".." 項目</value>
   </data>
@@ -668,6 +671,12 @@
   </data>
     <data name="Resource2526" xml:space="preserve">
     <value>使用簡寫大小(K/M/G)</value>
+  </data>
+  <data name="Resource2527" xml:space="preserve">
+    <value>解壓成功後刪除壓縮檔</value>
+  </data>
+  <data name="Resource2528" xml:space="preserve">
+    <value>永久刪除（不進資源回收筒）</value>
   </data>
 <data name="Resource2514" xml:space="preserve">
     <value>介面字號</value>

@@ -259,7 +259,7 @@
     <value>Bookmark</value>
   </data>
   <data name="Resource900" xml:space="preserve">
-    <value>Options...</value>
+    <value>Settings...</value>
   </data>
   <data name="Resource901" xml:space="preserve">
     <value>Benchmark</value>
@@ -529,7 +529,7 @@
     <value>Metadata Changed</value>
   </data>
   <data name="Resource2100" xml:space="preserve">
-    <value>Options</value>
+    <value>Settings</value>
   </data>
   <data name="Resource2101" xml:space="preserve">
     <value>Language</value>
@@ -627,6 +627,9 @@
   <data name="Resource2500" xml:space="preserve">
     <value>Settings</value>
   </data>
+  <data name="Resource12900" xml:space="preserve">
+    <value>Extraction Settings</value>
+  </data>
   <data name="Resource2501" xml:space="preserve">
     <value>Show ".." item</value>
   </data>
@@ -668,6 +671,12 @@
   </data>
     <data name="Resource2526" xml:space="preserve">
     <value>Use short sizes (K/M/G)</value>
+  </data>
+  <data name="Resource2527" xml:space="preserve">
+    <value>Delete archive after extraction</value>
+  </data>
+  <data name="Resource2528" xml:space="preserve">
+    <value>Permanent deletion (skip Recycle Bin)</value>
   </data>
 <data name="Resource2514" xml:space="preserve">
     <value>Interface font size</value>

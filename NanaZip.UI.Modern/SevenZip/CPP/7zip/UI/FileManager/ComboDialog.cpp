@@ -5,6 +5,7 @@
 
 #include "../../../Windows/Control/Static.h"
 
+
 #ifdef LANG
 #include "LangUtils.h"
 #endif

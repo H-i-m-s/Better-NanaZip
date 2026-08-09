@@ -36,6 +36,9 @@
 #include "RegistryUtils.h"
 #include "StringUtils.h"
 #include "ViewSettings.h"
+// **************** SSS Modification Start ****************
+#include "MultiOpen.h"
+// **************** SSS Modification End ****************
 
 #include "../../../../../NanaZip.UI.h"
 
@@ -78,6 +81,12 @@ static UString g_ArcFormat;
 // Specified by the filetype handler for the extract-on-open feature.
 static bool g_IsFileTypeHandler;
 // **************** NanaZip Modification End ****************
+// **************** SSS Modification Start ****************
+// Batch-open state parsed from the command line.
+static bool g_SssIsOpen;
+static bool g_SssIsMultiOpen;
+static UStringVector g_SssPaths;
+// **************** SSS Modification End ****************
 
 // HRESULT LoadGlobalCodecs();
 void FreeGlobalCodecs();
@@ -574,6 +583,41 @@ static int WINAPI WinMain2(int nCmdShow)
   #endif
 
   commandsString.Trim();
+  // **************** SSS Modification Start ****************
+  // Full tokenization: the batch-open switch (-multiopen) can carry
+  // more than one quoted path, which the two-token split below cannot.
+  {
+    int nArgs = 0;
+    LPWSTR *argv = ::CommandLineToArgvW(::GetCommandLineW(), &nArgs);
+    if (argv)
+    {
+      for (int i = 1; i < nArgs; i++)
+      {
+        const UString a(argv[i]);
+        if (a.IsPrefixedBy(L"-t") && a.Len() > 2)
+        {
+          g_ArcFormat = a.Ptr(2);
+          continue;
+        }
+        if (a.IsEqualTo_NoCase(L"-open"))
+        {
+          g_IsFileTypeHandler = true;
+          g_SssIsOpen = true;
+          continue;
+        }
+        if (a.IsEqualTo_NoCase(L"-multiopen"))
+        {
+          g_SssIsMultiOpen = true;
+          continue;
+        }
+        g_SssPaths.Add(a);
+      }
+      ::LocalFree(argv);
+    }
+    if (!g_SssPaths.IsEmpty())
+      g_MainPath = g_SssPaths[0];
+  }
+  // **************** SSS Modification End ****************
   UString paramString, tailString;
   SplitStringToTwoStrings(commandsString, paramString, tailString);
   paramString.Trim();
@@ -654,8 +698,23 @@ static int WINAPI WinMain2(int nCmdShow)
   catch(...) { }
   */
 
+  if (!g_SssPaths.IsEmpty() && (g_SssIsOpen || g_SssIsMultiOpen))
+  {
+    if (SssHandleBatchOpen(g_SssPaths, g_SssIsOpen, g_SssIsMultiOpen))
+      return 0;
+  }
+  // **************** SSS Modification End ****************
+
+  // **************** SSS Modification Start ****************
+  // Multi-select: skip the extract-on-open shortcut and do not let
+  // InitInstance open the first path on its own; the batch view will
+  // be mounted after the window is created.
+  if (!g_SssBatchPaths.IsEmpty())
+    g_MainPath.Empty();
+  // **************** SSS Modification End ****************
+
   // **************** NanaZip Modification Start ****************
-  if (CallExtractOnOpen())
+  if (g_SssBatchPaths.IsEmpty() && CallExtractOnOpen())
     return 0;
   // **************** NanaZip Modification End ****************
 
@@ -669,6 +728,16 @@ static int WINAPI WinMain2(int nCmdShow)
   MSG msg;
   if (!InitInstance (nCmdShow))
     return FALSE;
+
+  // **************** SSS Modification Start ****************
+  // The file-manager window exists now: mount the batch view if a
+  // multi-select open was merged by SssHandleBatchOpen.
+  if (!g_SssBatchPaths.IsEmpty())
+  {
+    g_App.GetFocusedPanel().OpenSssBatch(g_SssBatchPaths);
+    g_SssBatchPaths.Clear();
+  }
+  // **************** SSS Modification End ****************
 
   // we will load Global_Codecs at first use instead.
   /*

@@ -17,6 +17,9 @@
 #include "Panel.h"
 #include "FormatUtils.h"
 #include "RegistryUtils.h"
+// **************** SSS Modification Start ****************
+// #include "SssBatchFolder.h"
+// **************** SSS Modification End ****************
 
 using namespace NWindows;
 
@@ -274,6 +277,11 @@ LRESULT CPanel::SetItemText(LVITEMW &item)
 
   if (item.cchTextMax <= 1)
     return 0;
+
+  // **************** SSS Modification Start ****************
+  if (item.iSubItem >= (int)_visibleColumns.Size())
+    return 0;
+  // **************** SSS Modification End ****************
 
   const CPropColumn &property = _visibleColumns[item.iSubItem];
   PROPID propID = property.ID;

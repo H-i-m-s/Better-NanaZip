@@ -98,6 +98,12 @@ public:
   // **************** NanaZip Modification Start ****************
   CBoolPair OpenFolder;
   // **************** NanaZip Modification End ****************
+  // **************** SSS Modification Start ****************
+  // Per-invocation "delete archive after extraction" override.
+  // Default comes from the settings page (registry), changes made in this
+  // dialog are temporary and are NOT written back to the registry.
+  bool DeleteAfterExtract;
+  // **************** SSS Modification End ****************
 
   INT_PTR Create(HWND aWndParent = NULL)
   {
@@ -111,7 +117,10 @@ public:
 
   CExtractDialog():
     PathMode_Force(false),
-    OverwriteMode_Force(false)
+    OverwriteMode_Force(false),
+    // **************** SSS Modification Start ****************
+    DeleteAfterExtract(false)
+    // **************** SSS Modification End ****************
   {
     ElimDup.Val = true;
   }

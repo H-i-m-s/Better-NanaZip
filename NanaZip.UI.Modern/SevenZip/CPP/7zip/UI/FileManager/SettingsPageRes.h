@@ -17,6 +17,11 @@
 
 // **************** SSS Modification Start ****************
 #define IDX_SETTINGS_SIZE_FORMAT            2526
+#define IDX_SETTINGS_DELETE_AFTER_EXTRACT   2527
+#define IDX_SETTINGS_DELETE_PERMANENTLY     2528
+
+#define IDD_SETTINGS_EXTRACT                12900
+#define IDD_SETTINGS_EXTRACT_2             12910
 // **************** SSS Modification End ****************
 #define IDT_SETTINGS_FONT_GROUP           2514
 #define IDT_SETTINGS_FONT_ADDRESSBAR      2517

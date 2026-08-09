@@ -30,6 +30,11 @@
 
 #include "../FileManager/PropertyNameRes.h"
 
+// **************** SSS Modification Start ****************
+#include "../../../Windows/Registry.h"
+#include "../../../Windows/Shell.h"
+// **************** SSS Modification End ****************
+
 using namespace NWindows;
 using namespace NFile;
 using namespace NDir;
@@ -199,6 +204,83 @@ static void BrowseToPath(
 #endif
 // **************** 7-Zip ZS Modification End ****************
 
+// **************** SSS Modification Start ****************
+// Set by the file manager via -snd: don't delete archives here; the file
+// manager deletes every archive of a batch together after all extraction
+// has finished (see SssExtractAll in PanelOperations.cpp).
+extern bool g_SssNoDelete;
+
+// Read the "delete archive after extraction" switches from the settings page.
+// The settings live in HKCU\Software\NanaZip\FM (written by the file manager
+// options dialog). 7zG runs as a separate process, so we read them directly.
+static void SssReadDeleteSettings(bool &deleteAfter, bool &deletePermanently)
+{
+  deleteAfter = false;
+  deletePermanently = false;
+  NWindows::NRegistry::CKey key;
+  if (key.Open(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", KEY_READ) == ERROR_SUCCESS)
+  {
+    key.QueryValue(L"DeleteAfterExtract", deleteAfter);
+    key.QueryValue(L"DeletePermanently", deletePermanently);
+  }
+}
+
+// Delete archives after a successful extraction. Only called when every
+// archive finished OK (extractCallback->IsOK()).
+static void SssDeleteArchivesAfterExtract(const UStringVector &paths, bool permanently)
+{
+  if (paths.IsEmpty())
+    return;
+  if (permanently)
+  {
+    FOR_VECTOR (i, paths)
+      NDir::DeleteFileAlways(us2fs(paths[i]));
+    return;
+  }
+  // Move to the Recycle Bin via SHFileOperationW (FOF_ALLOWUNDO).
+  size_t total = 1; // final NUL
+  FOR_VECTOR (i, paths)
+    total += paths[i].Len() + 1;
+  wchar_t *buf = new wchar_t[total];
+  wchar_t *p = buf;
+  FOR_VECTOR (i, paths)
+  {
+    MyStringCopy(p, paths[i]);
+    p += paths[i].Len() + 1;
+  }
+  *p = 0;
+  SHFILEOPSTRUCTW fo;
+  memset(&fo, 0, sizeof(fo));
+  fo.wFunc = FO_DELETE;
+  fo.pFrom = buf;
+  fo.fFlags = FOF_ALLOWUNDO;
+  ::SHFileOperationW(&fo);
+  delete[] buf;
+}
+
+// Write a "batch archive finished OK" marker to %TEMP%. The file manager
+// deletes the marker before each archive, starts 7zG with -snd (no delete),
+// and after 7zG exits checks the marker to know whether the archive really
+// finished OK (a failed/cancelled extraction leaves no marker, so its
+// archive is never deleted).
+static void SssWriteBatchOk()
+{
+  wchar_t temp[MAX_PATH];
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString full(temp);
+  full += L"sss_batch_ok.txt";
+  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  wchar_t ok = L'1';
+  ::WriteFile(h, &ok, sizeof(ok), &written, NULL);
+  ::CloseHandle(h);
+}
+// **************** SSS Modification End ****************
+
 HRESULT ExtractGUI(
     // DECL_EXTERNAL_CODECS_LOC_VARS
     CCodecs *codecs,
@@ -227,6 +309,12 @@ HRESULT ExtractGUI(
   extracter.codecs = codecs;
   extracter.FormatIndices = &formatIndices;
   extracter.ExcludedFormatIndices = &excludedFormatIndices;
+
+  // **************** SSS Modification Start ****************
+  bool deleteAfter = false;
+  bool deletePermanently = false;
+  SssReadDeleteSettings(deleteAfter, deletePermanently);
+  // **************** SSS Modification End ****************
 
   // **************** 7-Zip ZS Modification Start ****************
 #ifndef Z7_SFX
@@ -259,6 +347,9 @@ HRESULT ExtractGUI(
       dialog.PathMode = options.PathMode;
       dialog.PathMode_Force = options.PathMode_Force;
       dialog.ElimDup = options.ElimDup;
+      // **************** SSS Modification Start ****************
+      dialog.DeleteAfterExtract = deleteAfter;
+      // **************** SSS Modification End ****************
       // **************** NanaZip Modification Start ****************
       dialog.OpenFolder = options.OpenFolder;
       // **************** NanaZip Modification End ****************
@@ -284,6 +375,9 @@ HRESULT ExtractGUI(
       // **************** NanaZip Modification Start ****************
       options.OpenFolder = dialog.OpenFolder;
       // **************** NanaZip Modification End ****************
+      // **************** SSS Modification Start ****************
+      deleteAfter = dialog.DeleteAfterExtract;
+      // **************** SSS Modification End ****************
       
       #ifndef Z7_SFX
       // **************** 7-Zip ZS Modification Start ****************
@@ -382,5 +476,17 @@ HRESULT ExtractGUI(
   }
 #endif
   // **************** 7-Zip ZS Modification End ****************
+  // **************** SSS Modification Start ****************
+  // Record success for the batch file manager, then delete only when 7zG
+  // owns the deletion (dialog mode). In batch mode the file manager passed
+  // -snd, so the archives stay until every archive has been extracted and
+  // the file manager deletes them all in one shot.
+  if (!options.TestMode && extracter.Result == S_OK && extractCallback->IsOK())
+  {
+    SssWriteBatchOk();
+    if (!g_SssNoDelete && deleteAfter)
+      SssDeleteArchivesAfterExtract(archivePathsFull, deletePermanently);
+  }
+  // **************** SSS Modification End ****************
   return extracter.Result;
 }

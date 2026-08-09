@@ -1,0 +1,7 @@
+CAPTION ""
+BEGIN
+  // **************** SSS Modification Start ****************
+  CONTROL  "Delete archive after extraction", IDX_SETTINGS_DELETE_AFTER_EXTRACT, MY_CHECKBOX, m, 14, xc, 10
+  CONTROL  "Permanent deletion",            IDX_SETTINGS_DELETE_PERMANENTLY,   MY_CHECKBOX, m, 28, xc, 10
+  // **************** SSS Modification End ****************
+END

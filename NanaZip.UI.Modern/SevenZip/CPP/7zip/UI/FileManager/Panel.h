@@ -553,6 +553,11 @@ public:
   HRESULT BindToPath(const UString &fullPath, const UString &arcFormat, COpenResult &openRes); // can be prefix
   HRESULT BindToPathAndRefresh(const UString &path);
   void OpenDrivesFolder();
+  // **************** SSS Modification Start ****************
+  void OpenSssBatch(const UStringVector &paths);
+  bool IsSssBatchFolder() const;
+  void SssExtractAll(bool showDialog);
+  // **************** SSS Modification End ****************
 
   void SetBookmark(unsigned index);
   void OpenBookmark(unsigned index);

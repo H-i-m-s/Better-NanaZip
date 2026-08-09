@@ -356,7 +356,7 @@ HRESULT CompressFiles(
   MY_TRY_FINISH
 }
 
-static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, bool isHash)
+static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, bool isHash, bool waitFinish)
 {
   AddLagePagesSwitch(params);
   params += (isHash ? kHashIncludeSwitches : kArcIncludeSwitches);
@@ -364,14 +364,14 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
   NSynchronization::CManualResetEvent event;
   HRESULT result = CreateMap(arcPaths, fileMapping, event, params);
   if (result == S_OK)
-    result = Call7zGui(params, false, &event);
+    result = Call7zGui(params, waitFinish, &event);
   if (result != S_OK)
     ErrorMessageHRESULT(result);
 }
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
@@ -388,6 +388,21 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
     params += " -sps";
   if (openFolder)
     params += " -sre";
+  // **************** SSS Modification Start ****************
+  // Force an overwrite policy for every archive in this call.
+  // NOverwriteMode: kOverwrite=1 -> -aoa, kSkip=2 -> -aos, kRename=3 -> -aou.
+  if (overwriteMode != (UInt32)(Int32)-1)
+  {
+    static const wchar_t * const kAoSwitch[] = { L" -aoa", L" -aos", L" -aou" };
+    if (overwriteMode >= 1 && overwriteMode <= 3)
+      params += kAoSwitch[overwriteMode - 1];
+  }
+  // Suppress 7zG's own delete-after-extract: the batch file manager deletes
+  // every archive together once the whole batch has finished (see
+  // CPanel::SssExtractAll in PanelOperations.cpp).
+  if (suppressDelete)
+    params += L" -snd";
+  // **************** SSS Modification End ****************
   // **************** NanaZip Modification End ****************
   if (writeZone != (UInt32)(Int32)-1)
   {
@@ -396,7 +411,7 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   }
   if (showDialog)
     params += kShowDialogSwitch;
-  ExtractGroupCommand(arcPaths, params, false);
+  ExtractGroupCommand(arcPaths, params, false, waitFinish);
   MY_TRY_FINISH_VOID
 }
 
@@ -410,7 +425,7 @@ void TestArchives(const UStringVector &arcPaths, bool hashMode)
     params += kArchiveTypeSwitch;
     params += "hash";
   }
-  ExtractGroupCommand(arcPaths, params, false);
+  ExtractGroupCommand(arcPaths, params, false, false);
   MY_TRY_FINISH_VOID
 }
 
@@ -451,7 +466,7 @@ void CalcChecksum(const UStringVector &paths,
     }
     */
   }
-  ExtractGroupCommand(paths, params, true);
+  ExtractGroupCommand(paths, params, true, false);
   MY_TRY_FINISH_VOID
 }
 

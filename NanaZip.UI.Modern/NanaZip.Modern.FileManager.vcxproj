@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="Globals">
     <ProjectGuid>{F4511F91-B0EB-41B4-99D6-AEB48169132B}</ProjectGuid>
@@ -153,6 +153,7 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\LinkDialog.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\MenuPage.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\MessagesDialog.cpp" />
+    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\MultiOpen.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\MyLoadMenu.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\NetFolder.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\OpenCallback.cpp" />
@@ -180,9 +181,11 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RegistryUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RootFolder.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SettingsPage.cpp" />
+    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\ExtractSettingsPage.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\FontUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SplitDialog.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SplitUtils.cpp" />
+    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SssBatchFolder.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\StdAfx.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\StringUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SysIconUtils.cpp" />
@@ -337,6 +340,7 @@
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\LinkDialog.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MenuPage.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MessagesDialog.h" />
+    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MultiOpen.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MyCom2.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MyLoadMenu.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MyWindowsNew.h" />
@@ -355,8 +359,10 @@
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\resource.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\RootFolder.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SettingsPage.h" />
+    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\ExtractSettingsPage.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SplitDialog.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SplitUtils.h" />
+    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SssBatchFolder.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\StdAfx.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\StringUtils.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SysIconUtils.h" />

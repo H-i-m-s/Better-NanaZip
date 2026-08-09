@@ -249,6 +249,11 @@ bool CExtractDialog::OnInit()
   CheckButton_TwoBools(IDX_EXTRACT_ELIM_DUP,    ElimDup,    _info.ElimDup);
   // **************** NanaZip Modification Start ****************
   CheckButton_TwoBools(IDX_EXTRACT_OPEN_FOLDER, OpenFolder, _info.OpenFolder);
+  // **************** SSS Modification Start ****************
+  // Per-invocation delete flag: default from the settings page; the dialog
+  // checkbox change is temporary and is NOT written back to the registry.
+  CheckButton(IDX_EXTRACT_DELETE_AFTER, DeleteAfterExtract);
+  // **************** SSS Modification End ****************
   // **************** NanaZip Modification End ****************
 
   CheckButton(IDX_PASSWORD_SHOW, _info.ShowPassword.Val);
@@ -411,6 +416,10 @@ void CExtractDialog::OnOK()
   GetButton_Bools(IDX_EXTRACT_ELIM_DUP,    ElimDup,    _info.ElimDup);
   // **************** NanaZip Modification Start ****************
   GetButton_Bools(IDX_EXTRACT_OPEN_FOLDER, OpenFolder, _info.OpenFolder);
+  // **************** SSS Modification Start ****************
+  DeleteAfterExtract = IsButtonCheckedBool(IDX_EXTRACT_DELETE_AFTER);
+  // (not persisted - this is a per-invocation override only)
+  // **************** SSS Modification End ****************
   // **************** NanaZip Modification End ****************
 
   bool showPassword = IsShowPasswordChecked();

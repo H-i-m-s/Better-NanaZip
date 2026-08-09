@@ -259,7 +259,7 @@
     <value>书签</value>
   </data>
   <data name="Resource900" xml:space="preserve">
-    <value>选项</value>
+    <value>设置</value>
   </data>
   <data name="Resource901" xml:space="preserve">
     <value>基准测试</value>
@@ -529,7 +529,7 @@
     <value>原数据已改变</value>
   </data>
   <data name="Resource2100" xml:space="preserve">
-    <value>选项</value>
+    <value>设置</value>
   </data>
   <data name="Resource2101" xml:space="preserve">
     <value>语言</value>
@@ -627,6 +627,9 @@
   <data name="Resource2500" xml:space="preserve">
     <value>显示</value>
   </data>
+  <data name="Resource12900" xml:space="preserve">
+    <value>解压缩设置</value>
+  </data>
   <data name="Resource2501" xml:space="preserve">
     <value>显示「..」项 (双击向上)</value>
   </data>
@@ -668,6 +671,12 @@
   </data>
     <data name="Resource2526" xml:space="preserve">
     <value>使用简写大小(K/M/G)</value>
+  </data>
+  <data name="Resource2527" xml:space="preserve">
+    <value>解压成功后删除压缩包</value>
+  </data>
+  <data name="Resource2528" xml:space="preserve">
+    <value>永久删除（不进回收站）</value>
   </data>
 <data name="Resource2514" xml:space="preserve">
     <value>界面字号</value>

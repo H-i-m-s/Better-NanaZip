@@ -30,6 +30,7 @@
 // **************** NanaZip Modification End ****************
 #include "Panel.h"
 #include "RootFolder.h"
+#include "SssBatchFolder.h"
 #include "ViewSettings.h"
 
 #include "resource.h"
@@ -1057,6 +1058,18 @@ void CPanel::OpenDrivesFolder()
   RefreshListCtrl();
 }
 
+// **************** SSS Modification Start ****************
+void CPanel::OpenSssBatch(const UStringVector &paths)
+{
+  CSssBatchFolder *folderSpec = new CSssBatchFolder;
+  folderSpec->Init(paths);
+  CloseOpenFolders();
+  SetNewFolder(folderSpec);
+  LoadFullPath();
+  RefreshListCtrl();
+}
+// **************** SSS Modification End ****************
+
 void CPanel::OpenFolder(int index)
 {
   if (index == kParentIndex)
@@ -1073,6 +1086,17 @@ void CPanel::OpenFolder(int index)
   }
   if (!newFolder)
     return;
+  // **************** SSS Modification Start ****************
+  // Inside the batch view, opening an archive must remember the batch
+  // view itself so the Back button can return to the list.
+  if (::IsSssBatchFolder(_folder) && newFolder)
+  {
+    CFolderLink link;
+    link.ParentFolder = _folder;
+    link.ParentFolderPath = _currentFolderPrefix;
+    _parentFolders.Add(link);
+  }
+  // **************** SSS Modification End ****************
   SetNewFolder(newFolder);
   LoadFullPath();
   RefreshListCtrl();

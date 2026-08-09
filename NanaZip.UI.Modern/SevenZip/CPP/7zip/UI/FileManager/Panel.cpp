@@ -1107,6 +1107,9 @@ bool CPanel::IsRootFolder() const { return IsFolderTypeEqTo("RootFolder"); }
 bool CPanel::IsFSFolder() const { return IsFolderTypeEqTo("FSFolder"); }
 bool CPanel::IsFSDrivesFolder() const { return IsFolderTypeEqTo("FSDrives"); }
 bool CPanel::IsAltStreamsFolder() const { return IsFolderTypeEqTo("AltStreamsFolder"); }
+// **************** SSS Modification Start ****************
+bool CPanel::IsSssBatchFolder() const { return IsFolderTypeEqTo("SssBatchFolder"); }
+// **************** SSS Modification End ****************
 bool CPanel::IsArcFolder() const
 {
   return GetFolderTypeID().IsPrefixedBy_Ascii_NoCase("NanaZip");
@@ -1363,6 +1366,15 @@ void CPanel::GetFilePaths(const CRecordVector<UInt32> &indices, UStringVector &p
 
 void CPanel::ExtractArchives()
 {
+  // **************** SSS Modification Start ****************
+  if (IsSssBatchFolder())
+  {
+    // Batch view: the toolbar Extract button means "extract every archive
+    // to its own folder" (smart extract next to each archive, no dialog).
+    SssExtractAll(false);
+    return;
+  }
+  // **************** SSS Modification End ****************
   if (_parentFolders.Size() > 0)
   {
     ExtractFromArchive();

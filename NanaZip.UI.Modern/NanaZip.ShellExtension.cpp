@@ -412,27 +412,38 @@ namespace NanaZip::ShellExtension
             {
             case CommandID::Open:
             {
-                if (FilePaths.size() != 1)
+                // **************** SSS Modification Start ****************
+                // Multi-select: pass every archive path in one command
+                // line and mark it with -multiopen so the app can merge
+                // them into a single batch-extract window. Folders and
+                // non-archives are skipped.
+                if (FilePaths.empty())
                 {
                     break;
                 }
-
-                DWORD FileAttributes = ::GetFileAttributesW(
-                    FilePaths[0].c_str());
-                if (FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                {
-                    break;
-                }
-
-                if (!DoNeedExtract(FilePaths[0].c_str()))
-                {
-                    break;
-                }
-
                 UString params;
-                params = GetQuotedString(FilePaths[0].c_str());
+                unsigned count = 0;
+                for (size_t i = 0; i < FilePaths.size(); i++)
+                {
+                    const std::wstring &p = FilePaths[i];
+                    DWORD fa = ::GetFileAttributesW(p.c_str());
+                    if (fa == INVALID_FILE_ATTRIBUTES || (fa & FILE_ATTRIBUTE_DIRECTORY))
+                        continue;
+                    if (!DoNeedExtract(p.c_str()))
+                        continue;
+                    if (count != 0)
+                        params += L' ';
+                    params += GetQuotedString(p.c_str());
+                    count++;
+                }
+                if (count == 0)
+                {
+                    break;
+                }
+                if (count > 1)
+                    params += L" -multiopen";
                 NWindows::MyCreateProcess(::GetNanaZipPath(), params);
-
+                // **************** SSS Modification End ****************
                 break;
             }
             case CommandID::Test:

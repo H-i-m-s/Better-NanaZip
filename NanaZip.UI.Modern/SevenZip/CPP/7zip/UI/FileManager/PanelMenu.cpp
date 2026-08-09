@@ -1096,6 +1096,15 @@ void CPanel::CreateFileMenu(HMENU menuSpec,
   }
 
   fm.Load(menu, menu.GetItemCount());
+
+  // **************** SSS Modification Start ****************
+  if (IsSssBatchFolder())
+  {
+    menu.AppendItem(MF_SEPARATOR, 0, (LPCTSTR)0);
+    menu.AppendItem(MF_STRING, IDM_SSS_EXTRACT_ALL, L"全部解压到各自文件夹(&E)");
+    menu.AppendItem(MF_STRING, IDM_SSS_EXTRACT_ALL_DLG, L"全部解压到…(&A)");
+  }
+  // **************** SSS Modification End ****************
 }
 
 bool CPanel::InvokePluginCommand(unsigned id)

@@ -26,6 +26,9 @@
 // **************** NanaZip Modification Start ****************
 #define IDX_EXTRACT_OPEN_FOLDER     3433
 #define IDX_EXTRACT_ON_OPEN         3434
+// **************** SSS Modification Start ****************
+#define IDX_EXTRACT_DELETE_AFTER    3435
+// **************** SSS Modification End ****************
 // **************** NanaZip Modification End ****************
 
 #define IDX_PASSWORD_SHOW           3803
