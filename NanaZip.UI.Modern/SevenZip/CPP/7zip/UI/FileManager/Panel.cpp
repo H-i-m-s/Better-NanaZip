@@ -21,6 +21,7 @@
 #include "../Common/ArchiveName.h"
 #include "../Common/CompressCall.h"
 #include "../Common/ZipRegistry.h"
+#include "FontUtils.h"
 
 #include "../Agent/IFolderArchive.h"
 
@@ -132,6 +133,45 @@ HRESULT CPanel::Create(HWND mainWindow, HWND parentWindow, UINT id,
 
 // extern UInt32 g_NumMessages;
 
+// **************** SSS Modification Start ****************
+static void ApplyFontToContentWindow(HWND window, unsigned pt)
+{
+  if (!window)
+    return;
+  using winrt::Windows::UI::Xaml::Hosting::DesktopWindowXamlSource;
+  DesktopWindowXamlSource XamlSource = nullptr;
+  winrt::copy_from_abi(XamlSource, ::GetPropW(window, L"XamlWindowSource"));
+  ApplyFontSizeToXamlSource(XamlSource, pt);
+}
+// **************** SSS Modification End ****************
+
+void CPanel::ApplyFontSettings(const CFontSizeInfo &fontSizes)
+{
+  if (!PanelCreated)
+    return;
+
+  if (_listView)
+  {
+    HFONT font = nullptr;
+    if (fontSizes.List != 0)
+    {
+      const UINT dpi = ::GetDpiForWindow(_listView);
+      font = GetAppFontByPt(fontSizes.List, dpi);
+    }
+    ::SendMessageW(_listView, WM_SETFONT, (WPARAM)font, TRUE);
+    _listView.InvalidateRect(nullptr, TRUE);
+    ::UpdateWindow(_listView);
+  }
+
+  ApplyFontToContentWindow(_addressBarWindow, fontSizes.AddressBar);
+  ApplyFontToContentWindow(_statusBarWindow, fontSizes.StatusBar);
+
+  RECT rect = {};
+  if (::GetClientRect(*this, &rect))
+    ChangeWindowSize(RECT_SIZE_X(rect), RECT_SIZE_Y(rect));
+}
+// **************** SSS Modification End ****************
+
 LRESULT CPanel::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
 {
   // g_NumMessages++;
@@ -150,7 +190,16 @@ LRESULT CPanel::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
       return OnOpenItemChanged(lParam);
     case kRefresh_StatusBar:
       if (_processStatusBar)
+      {
         Refresh_StatusBar();
+        // **************** SSS Modification Start ****************
+        {
+          CFontSizeInfo fs;
+          fs.Load();
+          ApplyFontToContentWindow(_statusBarWindow, fs.StatusBar);
+        }
+        // **************** SSS Modification End ****************
+      }
       return 0;
     #ifdef UNDER_CE
     case kRefresh_HeaderComboBox:
@@ -404,6 +453,20 @@ bool CPanel::OnCreate(CREATESTRUCT * /* createStruct */)
   _listView.InvalidateRect(NULL, true);
   _listView.Update();
 
+  // **************** SSS Modification Start ****************
+  {
+    CFontSizeInfo fs;
+    fs.Load();
+    if (fs.List != 0)
+    {
+      const UINT dpi = ::GetDpiForWindow(_listView);
+      HFONT font = GetAppFontByPt(fs.List, dpi);
+      if (font)
+        ::SendMessageW(_listView, WM_SETFONT, (WPARAM)font, TRUE);
+    }
+  }
+  // **************** SSS Modification End ****************
+
   // Ensure that the common control DLL is loaded.
   INITCOMMONCONTROLSEX icex;
 
@@ -507,6 +570,13 @@ bool CPanel::OnCreate(CREATESTRUCT * /* createStruct */)
       winrt::single_threaded_observable_vector<
       winrt::NanaZip::Modern::AddressBarItem>();
   _addressBarControl.ItemsSource(_items);
+
+  {
+    CFontSizeInfo fs;
+    fs.Load();
+    ApplyFontToContentWindow(_addressBarWindow, fs.AddressBar);
+  }
+
   _addressBarControl.DropDownOpened({ this, &CPanel::OnDropDownOpened });
 
   _addressBarControl.KeyUp(
@@ -520,7 +590,7 @@ bool CPanel::OnCreate(CREATESTRUCT * /* createStruct */)
           if (args.Key() == winrt::Windows::System::VirtualKey::Escape)
           {
               _addressBarControl.Text(_currentFolderPrefix.Ptr());
-              PostMsg(kSetFocusToListView);
+          PostMsg(kSetFocusToListView);
           }
       }
   );
@@ -589,6 +659,12 @@ bool CPanel::OnCreate(CREATESTRUCT * /* createStruct */)
               break;
           }
       });
+  }
+
+  {
+    CFontSizeInfo fs;
+    fs.Load();
+    ApplyFontToContentWindow(_statusBarWindow, fs.StatusBar);
   }
 
   g_K7ControlList.push_back(_addressBarWindow);
@@ -769,12 +845,18 @@ void CPanel::ChangeWindowSize(int xSize, int ySize)
   // int kStatusBar2Size;
   // RECT rect;
 
+  CFontSizeInfo fontSizes;
+  fontSizes.Load();
+  const UINT dpi = ::GetDpiForWindow(*this);
+
   // kHeaderSize = RECT_SIZE_Y(rect);
-  kHeaderSize = MulDiv(AddressBarHeight, ::GetDpiForWindow(*this), USER_DEFAULT_SCREEN_DPI);
+  kHeaderSize = (int)GetAppFontContainerHeight(
+      AddressBarHeight, fontSizes.AddressBar, dpi, 4);
 
   // _statusBar.GetWindowRect(&rect);
   // kStatusBarSize = RECT_SIZE_Y(rect);
-  kStatusBarSize = MulDiv(StatusBarHeight, ::GetDpiForWindow(*this), USER_DEFAULT_SCREEN_DPI);
+  kStatusBarSize = (int)GetAppFontContainerHeight(
+      StatusBarHeight, fontSizes.StatusBar, dpi, 4);
 
   // _statusBar2.GetWindowRect(&rect);
   // kStatusBar2Size = RECT_SIZE_Y(rect);
@@ -829,13 +911,16 @@ bool CPanel::OnSize(WPARAM /* wParam */, int xSize, int ySize)
   if (_addressBarWindow)
   {
       int ControlDpi = ::GetDpiForWindow(_addressBarWindow);
+      CFontSizeInfo fontSizes;
+      fontSizes.Load();
       ::SetWindowPos(
           _addressBarWindow,
           nullptr,
           0,
           0,
           xSize,
-          ::MulDiv(AddressBarHeight, ControlDpi, USER_DEFAULT_SCREEN_DPI),
+          (int)GetAppFontContainerHeight(
+              AddressBarHeight, fontSizes.AddressBar, ControlDpi, 4),
           SWP_SHOWWINDOW
       );
   }

@@ -180,6 +180,7 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RegistryUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RootFolder.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SettingsPage.cpp" />
+    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\FontUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SplitDialog.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SplitUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\StdAfx.cpp" />

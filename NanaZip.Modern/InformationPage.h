@@ -4,6 +4,10 @@
 
 #include <Windows.h>
 
+#include <winrt/Windows.UI.Xaml.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
+
 namespace winrt
 {
     using Windows::Foundation::IInspectable;
@@ -24,6 +28,13 @@ namespace winrt::NanaZip::Modern::implementation
         void CloseButtonClickedHandler(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& args);
+
+        // **************** SSS Modification Start ****************
+        void ApplyFontSettings();
+        void ApplyFontSizeToElement(
+            winrt::Windows::UI::Xaml::DependencyObject const& element,
+            double size);
+        // **************** SSS Modification End ****************
 
     private:
 

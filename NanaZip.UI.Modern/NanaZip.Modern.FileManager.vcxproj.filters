@@ -206,6 +206,9 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\ProgressDialog2.cpp">
       <Filter>SevenZip\Dialog</Filter>
     </ClCompile>
+    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\FontUtils.cpp">
+      <Filter>SevenZip\Dialog</Filter>
+    </ClCompile>
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SplitDialog.cpp">
       <Filter>SevenZip\Dialog</Filter>
     </ClCompile>
@@ -571,6 +574,9 @@
     </ClInclude>
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MenuPage.h">
       <Filter>SevenZip\Dialog\Options</Filter>
+    </ClInclude>
+    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\FontUtils.h">
+      <Filter>SevenZip\Dialog</Filter>
     </ClInclude>
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SettingsPage.h">
       <Filter>SevenZip\Dialog\Options</Filter>

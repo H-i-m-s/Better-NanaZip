@@ -22,6 +22,240 @@ extern bool g_IsNT;
 namespace NWindows {
 namespace NControl {
 
+// **************** SSS Modification Start ****************
+// Generic dialog font support: every dialog built on CDialog reads the
+// registered dialog font size once at WM_INITDIALOG, applies the font and
+// recomputes a compact layout (row heights only, horizontal positions
+// untouched) so the dialog adapts without stretching the gaps. The original
+// template layout is captured once and remembered in the SSS_OrigLayout
+// property, so repeated calls are idempotent.
+
+static HFONT CreateSssDialogFont(unsigned pt, unsigned dpi)
+{
+  LOGFONTW lf = {};
+  lf.lfHeight = -::MulDiv((int)pt, (int)dpi, 72);
+  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfQuality = CLEARTYPE_QUALITY;
+
+  NONCLIENTMETRICSW ncm = {};
+  ncm.cbSize = sizeof(ncm);
+  if (::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0) &&
+      ncm.lfMessageFont.lfFaceName[0])
+    wcscpy_s(lf.lfFaceName, ncm.lfMessageFont.lfFaceName);
+  else
+    wcscpy_s(lf.lfFaceName, L"Segoe UI");
+
+  return ::CreateFontIndirectW(&lf);
+}
+
+static BOOL CALLBACK SssSetChildFontProc(HWND hwnd, LPARAM lParam)
+{
+  ::SendMessageW(hwnd, WM_SETFONT, (WPARAM)lParam, TRUE);
+  return TRUE;
+}
+
+static void SssApplyFontToTree(HWND hwnd, unsigned pt)
+{
+  HDC dc = ::GetDC(hwnd);
+  const UINT dpi = dc ? static_cast<UINT>(::GetDeviceCaps(dc, LOGPIXELSY)) : 96;
+  if (dc)
+    ::ReleaseDC(hwnd, dc);
+  HFONT font = CreateSssDialogFont(pt, dpi);
+  if (!font)
+    return;
+
+  ::SendMessageW(hwnd, WM_SETFONT, (WPARAM)font, TRUE);
+  ::EnumChildWindows(hwnd, SssSetChildFontProc, (LPARAM)font);
+}
+
+struct SssLayoutItem
+{
+  HWND Hwnd;
+  int X, Y, Width, Height;
+};
+
+struct SssLayoutHeader
+{
+  UINT Count;
+  SssLayoutItem Items[1]; // actually Count entries
+};
+
+struct SssCollectContext
+{
+  HWND Parent;
+  CRecordVector<SssLayoutItem> Items;
+};
+
+static BOOL CALLBACK SssCollectProc(HWND hwnd, LPARAM lParam)
+{
+  SssCollectContext *ctx = (SssCollectContext *)lParam;
+  RECT r = {};
+  if (::GetWindowRect(hwnd, &r))
+  {
+    POINT p = { r.left, r.top };
+    ::ScreenToClient(ctx->Parent, &p);
+    SssLayoutItem item;
+    item.Hwnd = hwnd;
+    item.X = p.x;
+    item.Y = p.y;
+    item.Width = r.right - r.left;
+    item.Height = r.bottom - r.top;
+    ctx->Items.Add(item);
+  }
+  return TRUE;
+}
+
+static void SssSaveLayout(HWND dialog)
+{
+  if (::GetPropW(dialog, L"SSS_OrigLayout"))
+    return;
+
+  SssCollectContext ctx;
+  ctx.Parent = dialog;
+  ::EnumChildWindows(dialog, SssCollectProc, (LPARAM)&ctx);
+
+  const SIZE_T total = sizeof(SssLayoutHeader) +
+      (ctx.Items.Size() > 1 ? (ctx.Items.Size() - 1) * sizeof(SssLayoutItem) : 0);
+  HGLOBAL hMem = ::GlobalAlloc(GMEM_MOVEABLE, total);
+  if (!hMem)
+    return;
+  SssLayoutHeader *header = (SssLayoutHeader *)::GlobalLock(hMem);
+  header->Count = ctx.Items.Size();
+  for (UINT i = 0; i < header->Count; i++)
+    header->Items[i] = ctx.Items[i];
+  ::GlobalUnlock(hMem);
+  ::SetPropW(dialog, L"SSS_OrigLayout", (HANDLE)hMem);
+}
+
+static void SssFreeLayout(HWND dialog)
+{
+  HANDLE h = ::GetPropW(dialog, L"SSS_OrigLayout");
+  if (h)
+  {
+    ::GlobalFree((HGLOBAL)h);
+    ::RemovePropW(dialog, L"SSS_OrigLayout");
+  }
+}
+
+// Returns the new client height needed to contain all rows (incl. padding).
+static int SssRelayoutCompact(HWND dialog, unsigned pt)
+{
+  SssSaveLayout(dialog);
+  HANDLE h = ::GetPropW(dialog, L"SSS_OrigLayout");
+  if (!h)
+    return 0;
+  SssLayoutHeader *header = (SssLayoutHeader *)::GlobalLock(h);
+  if (!header || header->Count == 0)
+  {
+    ::GlobalUnlock(h);
+    return 0;
+  }
+
+  HDC dc = ::GetDC(dialog);
+  const UINT dpi = dc ? static_cast<UINT>(::GetDeviceCaps(dc, LOGPIXELSY)) : 96;
+  if (dc)
+    ::ReleaseDC(dialog, dc);
+  const int fontPx = ::MulDiv((int)pt, (int)dpi, 72);
+  const int rowH = fontPx * 7 / 5;   // compact 1.4x line height
+  const int pad = fontPx / 2 + 4;
+  const int minH = fontPx + 8;
+
+  CRecordVector<unsigned> order;
+  for (UINT i = 0; i < header->Count; i++)
+    order.Add(i);
+  for (UINT i = 1; i < order.Size(); i++)
+  {
+    unsigned v = order[i];
+    UINT j = i;
+    while (j > 0)
+    {
+      const SssLayoutItem &a = header->Items[order[j - 1]];
+      const SssLayoutItem &b = header->Items[v];
+      if (a.Y < b.Y || (a.Y == b.Y && a.X <= b.X))
+        break;
+      order[j] = order[j - 1];
+      j--;
+    }
+    order[j] = v;
+  }
+
+  int rowIndex = -1;
+  int rowBaseY = 0;
+  int bottom = pad;
+  for (UINT k = 0; k < order.Size(); k++)
+  {
+    const SssLayoutItem &item = header->Items[order[k]];
+    if (rowIndex < 0 || item.Y - rowBaseY > 6)
+    {
+      rowIndex++;
+      rowBaseY = item.Y;
+    }
+    int newH = item.Height;
+    if (newH < minH)
+      newH = minH;
+    const int newY = pad + rowIndex * rowH;
+    ::MoveWindow(item.Hwnd, item.X, newY, item.Width, newH, TRUE);
+    // The window must contain the actual bottom of every control, not just
+    // the row height: combo boxes carry their drop-down list inside their
+    // height, so sizing the window by rows alone would clip the list.
+    const int itemBottom = newY + newH + pad;
+    if (itemBottom > bottom)
+      bottom = itemBottom;
+  }
+
+  ::GlobalUnlock(h);
+  return bottom;
+}
+
+static void SssResizeDialogToContent(HWND dialog, int contentBottom)
+{
+  if (contentBottom <= 0)
+    return;
+  RECT r = {};
+  RECT cr = {};
+  if (!::GetWindowRect(dialog, &r) || !::GetClientRect(dialog, &cr))
+    return;
+  const int newH = (r.bottom - r.top) - cr.bottom + contentBottom;
+  if (newH > (int)(r.bottom - r.top))
+    ::SetWindowPos(dialog, nullptr, r.left, r.top, r.right - r.left, newH,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+static BOOL CALLBACK SssClearComboSelectionProc(HWND hwnd, LPARAM /* lParam */)
+{
+  wchar_t cls[64] = {};
+  ::GetClassNameW(hwnd, cls, 64);
+  if (::lstrcmpiW(cls, L"ComboBox") == 0)
+  {
+    ::SendMessageW(hwnd, CB_SETEDITSEL, 0, MAKELPARAM(0, 0));
+    COMBOBOXINFO info = { sizeof(info) };
+    if (::GetComboBoxInfo(hwnd, &info) && info.hwndItem)
+      ::SendMessageW(info.hwndItem, EM_SETSEL, 0, 0);
+  }
+  return TRUE;
+}
+
+static void SssApplyRegisteredDialogSettings(HWND hwnd)
+{
+  DWORD pt = 0;
+  HKEY key = nullptr;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+      KEY_READ, &key) == ERROR_SUCCESS)
+  {
+    DWORD size = sizeof(pt);
+    ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+        reinterpret_cast<LPBYTE>(&pt), &size);
+    ::RegCloseKey(key);
+  }
+  if (pt == 0)
+    return;
+
+  SssResizeDialogToContent(hwnd, SssRelayoutCompact(hwnd, pt));
+  SssApplyFontToTree(hwnd, pt);
+  ::EnumChildWindows(hwnd, SssClearComboSelectionProc, 0);
+}
+// **************** SSS Modification End ****************
+
 static
 #ifdef Z7_OLD_WIN_SDK
   BOOL
@@ -42,10 +276,17 @@ DialogProcedure(HWND dialogHWND, UINT message, WPARAM wParam, LPARAM lParam)
   {
   // **************** NanaZip Modification End ****************
     dialog->Attach(dialogHWND);
+  // **************** SSS Modification Start ****************
+    SssApplyRegisteredDialogSettings(dialogHWND);
+  // **************** SSS Modification End ****************
   // **************** NanaZip Modification Start ****************
     ::K7UserModernSetForegroundWindow(dialogHWND);
   }
   // **************** NanaZip Modification End ****************
+  // **************** SSS Modification Start ****************
+  else if (message == WM_DESTROY)
+    SssFreeLayout(dialogHWND);
+  // **************** SSS Modification End ****************
 
   /* MSDN: The dialog box procedure should return
        TRUE  - if it processed the message

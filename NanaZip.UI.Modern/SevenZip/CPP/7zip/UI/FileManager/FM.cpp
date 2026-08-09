@@ -32,6 +32,7 @@
 #include "LangUtils.h"
 #include "MyLoadMenu.h"
 #include "Panel.h"
+#include "FontUtils.h"
 #include "RegistryUtils.h"
 #include "StringUtils.h"
 #include "ViewSettings.h"
@@ -860,6 +861,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
   switch (message)
   {
+    case kApplyFontSettingsMessage:
+      g_App.ApplyFontSettings();
+      return 0;
+
     case WM_COMMAND:
     {
       unsigned wmId    = LOWORD(wParam);

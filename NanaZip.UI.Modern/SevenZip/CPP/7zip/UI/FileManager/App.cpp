@@ -29,6 +29,9 @@
 
 #include "PropertyNameRes.h"
 
+#include "../Common/ZipRegistry.h"
+#include "FontUtils.h"
+
 #include <NanaZip.Modern.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <vector>
@@ -120,6 +123,22 @@ void CApp::SetListSettings()
       style &= ~LVS_SINGLESEL;
     panel._listView.SetStyle(style);
     panel.SetExtendedStyle();
+  }
+}
+
+void CApp::ApplyFontSettings()
+{
+  CFontSizeInfo fs;
+  fs.Load();
+
+  for (unsigned i = 0; i < kNumPanelsMax; i++)
+    Panels[i].ApplyFontSettings(fs);
+
+  if (_window)
+  {
+    RECT rect = {};
+    if (::GetClientRect(_window, &rect))
+      MoveSubWindows();
   }
 }
 
@@ -293,6 +312,8 @@ HRESULT CApp::Create(HWND hwnd, const UString &mainPath, const UString &arcForma
       }
     }
   }
+
+  ApplyFontSettings();
 
   SetFocusedPanel(LastFocusedPanel);
   Panels[LastFocusedPanel].SetFocusToList();

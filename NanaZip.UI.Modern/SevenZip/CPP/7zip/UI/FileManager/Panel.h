@@ -37,6 +37,7 @@
 #include "../../Archive/IArchive.h"
 
 #include "ExtractCallback.h"
+#include "../Common/ZipRegistry.h"
 
 #include "AppState.h"
 #include "IFolder.h"
@@ -883,6 +884,7 @@ public:
     AutoRefresh_Mode = mode;
   }
 
+  void ApplyFontSettings(const CFontSizeInfo &fontSizes);
   void Post_Refresh_StatusBar();
   void Refresh_StatusBar();
 

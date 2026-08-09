@@ -19,6 +19,7 @@
 #include "LangUtils.h"
 #include "MenuPage.h"
 #include "MenuPageRes.h"
+#include "FontUtils.h"
 
 // **************** NanaZip Modification Start ****************
 #include <K7User.h>
@@ -195,6 +196,14 @@ bool CMenuPage::OnInit()
 
   _listView.SetColumnWidthAuto(0);
   _initMode = false;
+
+  // **************** SSS Modification Start ****************
+  {
+    CFontSizeInfo fs;
+    fs.Load();
+    ApplyFontToDialog(*this, fs.Dialog);
+  }
+  // **************** SSS Modification End ****************
 
   return CPropertyPage::OnInit();
 }

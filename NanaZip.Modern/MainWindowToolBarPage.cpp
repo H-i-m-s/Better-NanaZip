@@ -16,247 +16,12 @@ namespace winrt::Mile
 {
     using namespace ::Mile;
 }
-
-#include <appmodel.h>
-#include <ShObjIdl_core.h>
-
-namespace
-{
-    DWORD GetShellProcessId()
-    {
-        HWND ShellWindowHandle = ::GetShellWindow();
-        if (!ShellWindowHandle)
-        {
-            return static_cast<DWORD>(-1);
-        }
-
-        DWORD ShellProcessId = static_cast<DWORD>(-1);
-        if (!::GetWindowThreadProcessId(ShellWindowHandle, &ShellProcessId))
-        {
-            return static_cast<DWORD>(-1);
-        }
-        return ShellProcessId;
-    }
-
-    std::wstring GetCurrentProcessModulePath()
-    {
-        // 32767 is the maximum path length without the terminating null character.
-        std::wstring Path(32767, L'\0');
-        Path.resize(::GetModuleFileNameW(
-            nullptr, &Path[0], static_cast<DWORD>(Path.size())));
-        return Path;
-    }
-
-    void UnpackagedLaunchSponsorDialog()
-    {
-        DWORD ShellProcessId = ::GetShellProcessId();
-        if (static_cast<DWORD>(-1) == ShellProcessId)
-        {
-            return;
-        }
-
-        HANDLE ShellProcessHandle = nullptr;
-
-        auto Handler = Mile::ScopeExitTaskHandler([&]()
-        {
-            if (ShellProcessHandle)
-            {
-                ::CloseHandle(ShellProcessHandle);
-            }
-        });
-
-        ShellProcessHandle = ::OpenProcess(
-            PROCESS_CREATE_PROCESS,
-            FALSE,
-            ShellProcessId);
-        if (!ShellProcessHandle)
-        {
-            return;
-        }
-
-        SIZE_T AttributeListSize = 0;
-        ::InitializeProcThreadAttributeList(
-            nullptr,
-            1,
-            0,
-            &AttributeListSize);
-
-        std::vector<std::uint8_t> AttributeListBuffer =
-            std::vector<std::uint8_t>(AttributeListSize);
-
-        PPROC_THREAD_ATTRIBUTE_LIST AttributeList =
-            reinterpret_cast<PPROC_THREAD_ATTRIBUTE_LIST>(
-                &AttributeListBuffer[0]);
-
-        if (!::InitializeProcThreadAttributeList(
-            AttributeList,
-            1,
-            0,
-            &AttributeListSize))
-        {
-            return;
-        }
-
-        if (!::UpdateProcThreadAttribute(
-            AttributeList,
-            0,
-            PROC_THREAD_ATTRIBUTE_PARENT_PROCESS,
-            &ShellProcessHandle,
-            sizeof(ShellProcessHandle),
-            nullptr,
-            nullptr))
-        {
-            return;
-        }
-
-        STARTUPINFOEXW StartupInfoEx = {};
-        PROCESS_INFORMATION ProcessInformation = {};
-        StartupInfoEx.StartupInfo.cb = sizeof(STARTUPINFOEXW);
-        StartupInfoEx.lpAttributeList = AttributeList;
-
-        std::wstring ApplicationName = ::GetCurrentProcessModulePath();
-
-        if (!::CreateProcessW(
-            ApplicationName.c_str(),
-            const_cast<LPWSTR>(L"NanaZip --AcquireSponsorEdition"),
-            nullptr,
-            nullptr,
-            TRUE,
-            CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
-            nullptr,
-            nullptr,
-            &StartupInfoEx.StartupInfo,
-            &ProcessInformation))
-        {
-            return;
-        }
-
-        ::AllowSetForegroundWindow(
-            ::GetProcessId(ProcessInformation.hProcess));
-
-        ::CloseHandle(ProcessInformation.hThread);
-        ::WaitForSingleObjectEx(ProcessInformation.hProcess, INFINITE, FALSE);
-        ::CloseHandle(ProcessInformation.hProcess);
-    }
-
-    // Note: Temporary workaround for not breaking the K7User ABI, this will be
-    // removed in the next release.
-    static LONG GetCurrentApplicationUserModelIdWrapper(
-        _Inout_ PUINT32 applicationUserModelIdLength,
-        _Out_opt_ PWSTR applicationUserModelId)
-    {
-        using ProcType = decltype(::GetCurrentApplicationUserModelId)*;
-
-        static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
-        {
-            HMODULE ModuleHandle = ::GetModuleHandleW(L"kernel32.dll");
-            if (ModuleHandle)
-            {
-                return ::GetProcAddress(
-                    ModuleHandle,
-                    "GetCurrentApplicationUserModelId");
-            }
-            return nullptr;
-        }());
-
-        if (ProcAddress)
-        {
-            return ProcAddress(
-                applicationUserModelIdLength,
-                applicationUserModelId);
-        }
-
-        return ERROR_NOINTERFACE;
-    }
-
-    // Note: Temporary workaround for not breaking the K7User ABI, this will be
-    // removed in the next release.
-    static std::wstring GetCurrentApplicationUserModelIdSimple()
-    {
-        static std::wstring CachedResult = ([]() -> std::wstring
-        {
-            std::wstring ApplicationUserModelId;
-            {
-                UINT32 ApplicationUserModelIdLength = 0;
-                LONG Result = ::GetCurrentApplicationUserModelIdWrapper(
-                    &ApplicationUserModelIdLength,
-                    nullptr);
-                if (ERROR_INSUFFICIENT_BUFFER == Result)
-                {
-                    ApplicationUserModelId.resize(ApplicationUserModelIdLength);
-                    Result = ::GetCurrentApplicationUserModelIdWrapper(
-                        &ApplicationUserModelIdLength,
-                        reinterpret_cast<PWSTR>(ApplicationUserModelId.data()));
-                    if (ERROR_SUCCESS == Result)
-                    {
-                        // Remove the trailing null character added by the API.
-                        if (!ApplicationUserModelId.empty() &&
-                            L'\0' == ApplicationUserModelId.back())
-                        {
-                            ApplicationUserModelId.pop_back();
-                        }
-                    }
-                }
-            }
-            return ApplicationUserModelId;
-        }());
-
-        return CachedResult;
-    }
-
-    void PackagedLaunchSponsorDialog()
-    {
-        IApplicationActivationManager* ActivationManager = nullptr;
-        // Use CLSCTX_LOCAL_SERVER for creating non-elevated process.
-        // Use CLSCTX_INPROC_SERVER for creating same-elevation-level process.
-        // Microsoft Store API needs non-elevated process to launch the
-        // in-purchase dialog, so we use CLSCTX_LOCAL_SERVER here.
-        if (SUCCEEDED(::CoCreateInstance(
-            CLSID_ApplicationActivationManager,
-            nullptr,
-            CLSCTX_LOCAL_SERVER,
-            IID_IApplicationActivationManager,
-            reinterpret_cast<LPVOID*>(&ActivationManager))))
-        {
-            std::wstring CurrentApplicationUserModelId =
-                ::GetCurrentApplicationUserModelIdSimple();
-
-            // Try to allow the foreground window to be set to the new process.
-            ::CoAllowSetForegroundWindow(ActivationManager, nullptr);
-
-            DWORD ProcessId = 0;
-            if (SUCCEEDED(ActivationManager->ActivateApplication(
-                CurrentApplicationUserModelId.c_str(),
-                L"--AcquireSponsorEdition",
-                AO_NONE,
-                &ProcessId)))
-            {
-                // Wait for the process to exit.
-                HANDLE ProcessHandle = ::OpenProcess(
-                    SYNCHRONIZE,
-                    FALSE,
-                    ProcessId);
-                if (ProcessHandle)
-                {
-                    ::WaitForSingleObjectEx(ProcessHandle, INFINITE, FALSE);
-                    ::CloseHandle(ProcessHandle);
-                }
-            }
-
-            ActivationManager->Release();
-        }
-    }
-}
-
 namespace winrt
 {
     using Windows::Foundation::Point;
-    using Windows::Foundation::IAsyncAction;
-    using Windows::Services::Store::StoreProduct;
-    using Windows::Services::Store::StoreProductQueryResult;
-    using Windows::System::DispatcherQueuePriority;
     using Windows::UI::Xaml::Automation::AutomationProperties;
     using Windows::UI::Xaml::Controls::AppBarButton;
+    using Windows::UI::Xaml::Controls::Grid;
     using Windows::UI::Xaml::Controls::ToolTipService;
     using Windows::UI::Xaml::Media::GeneralTransform;
 }
@@ -350,16 +115,6 @@ namespace winrt::NanaZip::Modern::implementation
                 winrt::box_value(Resource));
         }
 
-        this->m_DispatcherQueue =
-            winrt::DispatcherQueue::GetForCurrentThread();
-
-        std::wstring sponsorButtonLabel = L"[";
-        sponsorButtonLabel += Mile::WinRT::GetLocalizedString(
-            L"NanaZip.Modern/MainWindowToolBarPage/SponsorButton/AcquireText",
-            L"Sponsor NanaZip");
-        sponsorButtonLabel += L"]";
-
-        this->SponsorButton().Content(winrt::box_value(sponsorButtonLabel));
     }
 
     void MainWindowToolBarPage::PageLoaded(
@@ -368,8 +123,6 @@ namespace winrt::NanaZip::Modern::implementation
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-
-        this->RefreshSponsorButtonContent();
     }
 
     void MainWindowToolBarPage::AddButtonClick(
@@ -554,7 +307,7 @@ namespace winrt::NanaZip::Modern::implementation
             DpiValue,
             USER_DEFAULT_SCREEN_DPI);
         MenuPosition.y = ::MulDiv(
-            48,
+            44,
             DpiValue,
             USER_DEFAULT_SCREEN_DPI);
         ::MapWindowPoints(
@@ -605,109 +358,6 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    void MainWindowToolBarPage::SponsorButtonClick(
-        winrt::IInspectable const& sender,
-        winrt::RoutedEventArgs const& e)
-    {
-        UNREFERENCED_PARAMETER(sender);
-        UNREFERENCED_PARAMETER(e);
-
-        winrt::handle(Mile::CreateThread([=]()
-        {
-            if (Mile::WinRT::IsPackagedMode())
-            {
-                ::PackagedLaunchSponsorDialog();
-            }
-            else
-            {
-                ::UnpackagedLaunchSponsorDialog();
-            }
-
-            ::RegDeleteKeyValueW(
-                HKEY_CURRENT_USER,
-                L"Software\\NanaZip",
-                L"SponsorEdition");
-
-            this->RefreshSponsorButtonContent();
-        }));
-    }
-
-    bool MainWindowToolBarPage::CheckSponsorEditionLicense()
-    {
-        {
-            DWORD Data = 0;
-            DWORD Length = sizeof(DWORD);
-            if (ERROR_SUCCESS == ::RegGetValueW(
-                HKEY_CURRENT_USER,
-                L"Software\\NanaZip",
-                L"SponsorEdition",
-                RRF_RT_REG_DWORD | RRF_SUBKEY_WOW6464KEY,
-                nullptr,
-                &Data,
-                &Length))
-            {
-                return Data;
-            }
-        }
-
-        if (!this->m_StoreContext)
-        {
-            this->m_StoreContext = winrt::StoreContext::GetDefault();
-        }
-
-        bool Sponsored = false;
-
-        if (this->m_StoreContext)
-        {
-            winrt::StoreProductQueryResult ProductQueryResult =
-                this->m_StoreContext.GetStoreProductsAsync(
-                    { L"Durable" },
-                    { L"9N9DNPT6D6Z9" }).get();
-            for (auto Item : ProductQueryResult.Products())
-            {
-                winrt::StoreProduct Product = Item.Value();
-                Sponsored = Product.IsInUserCollection();
-            }
-        }
-
-        {
-            DWORD Data = Sponsored;
-            ::RegSetKeyValueW(
-                HKEY_CURRENT_USER,
-                L"Software\\NanaZip",
-                L"SponsorEdition",
-                REG_DWORD,
-                &Data,
-                sizeof(DWORD));
-        }
-
-        return Sponsored;
-    }
-
-    void MainWindowToolBarPage::RefreshSponsorButtonContent()
-    {
-        winrt::handle(Mile::CreateThread([=]()
-        {
-            bool Sponsored = this->CheckSponsorEditionLicense();
-
-            if (!this->m_DispatcherQueue)
-            {
-                return;
-            }
-            this->m_DispatcherQueue.TryEnqueue(
-                winrt::DispatcherQueuePriority::Normal,
-                [=]()
-            {
-                std::wstring ResourcePath = L"NanaZip.Modern/";
-                ResourcePath += L"MainWindowToolBarPage/SponsorButton/";
-                ResourcePath += Sponsored ? L"SponsoredText" : L"AcquireText";
-                winrt::hstring ResourceContent =
-                    Mile::WinRT::GetLocalizedString(ResourcePath.c_str());
-                this->SponsorButton().Content(
-                    winrt::box_value(ResourceContent));
-            });
-        }));
-    }
 }
 
 EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(

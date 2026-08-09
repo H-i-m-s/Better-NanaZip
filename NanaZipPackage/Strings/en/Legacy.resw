@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -665,6 +665,24 @@
   </data>
   <data name="Resource2513" xml:space="preserve">
     <value>Use Lowercase Hashes</value>
+  </data>
+  <data name="Resource2514" xml:space="preserve">
+    <value>Interface font size</value>
+  </data>
+  <data name="Resource2517" xml:space="preserve">
+    <value>Address bar(&amp;A):</value>
+  </data>
+  <data name="Resource2519" xml:space="preserve">
+    <value>File list(&amp;L):</value>
+  </data>
+  <data name="Resource2521" xml:space="preserve">
+    <value>Status bar(&amp;S):</value>
+  </data>
+  <data name="Resource2523" xml:space="preserve">
+    <value>Dialog(&amp;D):</value>
+  </data>
+  <data name="Resource2525" xml:space="preserve">
+    <value>Default</value>
   </data>
   <data name="Resource2900" xml:space="preserve">
     <value>About NanaZip</value>

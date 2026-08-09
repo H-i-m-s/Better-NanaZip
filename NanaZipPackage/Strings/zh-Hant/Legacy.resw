@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -665,6 +665,24 @@
   </data>
   <data name="Resource2513" xml:space="preserve">
     <value>使用小寫字母驗證值</value>
+  </data>
+  <data name="Resource2514" xml:space="preserve">
+    <value>介面字號</value>
+  </data>
+  <data name="Resource2517" xml:space="preserve">
+    <value>位址列(&amp;A)：</value>
+  </data>
+  <data name="Resource2519" xml:space="preserve">
+    <value>檔案清單(&amp;L)：</value>
+  </data>
+  <data name="Resource2521" xml:space="preserve">
+    <value>狀態列(&amp;S)：</value>
+  </data>
+  <data name="Resource2523" xml:space="preserve">
+    <value>對話方塊(&amp;D)：</value>
+  </data>
+  <data name="Resource2525" xml:space="preserve">
+    <value>預設</value>
   </data>
   <data name="Resource2900" xml:space="preserve">
     <value>關於 NanaZip</value>

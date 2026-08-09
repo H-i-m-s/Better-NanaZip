@@ -8,6 +8,8 @@
 #include "BrowseDialog.h"
 #include "LangUtils.h"
 #include "RegistryUtils.h"
+#include "../Common/ZipRegistry.h"
+#include "FontUtils.h"
 
 using namespace NWindows;
 
@@ -47,6 +49,14 @@ bool CEditPage::OnInit()
   }
 
   _initMode = false;
+
+  // **************** SSS Modification Start ****************
+  {
+    CFontSizeInfo fs;
+    fs.Load();
+    ApplyFontToDialog(*this, fs.Dialog);
+  }
+  // **************** SSS Modification End ****************
 
   return CPropertyPage::OnInit();
 }

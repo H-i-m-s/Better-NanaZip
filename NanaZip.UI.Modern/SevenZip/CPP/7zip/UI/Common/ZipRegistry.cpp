@@ -615,3 +615,41 @@ void CContextMenuInfo::Load()
 
   Flags_Def = (key.GetValue_IfOk(kContextMenu, Flags) == ERROR_SUCCESS);
 }
+
+// **************** SSS Modification Start ****************
+static LPCTSTR const kFontSizeAddressBar = TEXT("FontSizeAddressBar");
+static LPCTSTR const kFontSizeList = TEXT("FontSizeList");
+static LPCTSTR const kFontSizeStatusBar = TEXT("FontSizeStatusBar");
+static LPCTSTR const kFontSizeDialog = TEXT("FontSizeDialog");
+
+void CFontSizeInfo::Save() const
+{
+  CS_LOCK
+  CKey key;
+  CreateMainKey(key, kOptionsInfoKeyName);
+
+  Key_Set_UInt32(key, kFontSizeAddressBar, AddressBar);
+  Key_Set_UInt32(key, kFontSizeList, List);
+  Key_Set_UInt32(key, kFontSizeStatusBar, StatusBar);
+  Key_Set_UInt32(key, kFontSizeDialog, Dialog);
+}
+
+void CFontSizeInfo::Load()
+{
+  AddressBar = 0;
+  List = 0;
+  StatusBar = 0;
+  Dialog = 0;
+
+  CS_LOCK
+
+  CKey key;
+  if (OpenMainKey(key, kOptionsInfoKeyName) != ERROR_SUCCESS)
+    return;
+
+  Key_Get_UInt32(key, kFontSizeAddressBar, AddressBar);
+  Key_Get_UInt32(key, kFontSizeList, List);
+  Key_Get_UInt32(key, kFontSizeStatusBar, StatusBar);
+  Key_Get_UInt32(key, kFontSizeDialog, Dialog);
+}
+// **************** SSS Modification End ****************

@@ -211,4 +211,17 @@ struct CContextMenuInfo
   void Load();
 };
 
+// **************** SSS Modification Start ****************
+struct CFontSizeInfo
+{
+  UInt32 AddressBar;    // font size in points, 0 = system default
+  UInt32 List;
+  UInt32 StatusBar;
+  UInt32 Dialog;
+
+  void Save() const;
+  void Load();
+};
+// **************** SSS Modification End ****************
+
 #endif

@@ -11,6 +11,13 @@ class CSettingsPage: public NWindows::NControl::CPropertyPage
 {
   bool _wasChanged;
   bool _largePages_wasChanged;
+
+  // **************** SSS Modification Start ****************
+  bool _fontSizes_wasChanged;
+  bool _fontInitGuard;
+  NWindows::NControl::CComboBox _fontCombo[4];
+  void InitFontCombo(unsigned index, UInt32 pt);
+  // **************** SSS Modification End ****************
   /*
   bool _wasChanged_MemLimit;
   NWindows::NControl::CComboBox _memCombo;
@@ -22,7 +29,7 @@ class CSettingsPage: public NWindows::NControl::CPropertyPage
   */
 
   // void EnableSubItems();
-  // bool OnCommand(int code, int itemID, LPARAM param);
+  bool OnCommand(int code, int itemID, LPARAM param);
   bool OnButtonClicked(int buttonID, HWND buttonHWND);
   virtual bool OnInit();
   virtual LONG OnApply();

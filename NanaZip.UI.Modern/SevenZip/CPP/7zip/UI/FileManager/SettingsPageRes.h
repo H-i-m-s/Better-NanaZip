@@ -15,6 +15,19 @@
 #define IDX_SETTINGS_WANT_FOLDER_HISTORY    2512
 #define IDX_SETTINGS_LOWERCASE_HASHES       2513
 
+// **************** SSS Modification Start ****************
+#define IDT_SETTINGS_FONT_GROUP           2514
+#define IDT_SETTINGS_FONT_ADDRESSBAR      2517
+#define IDC_SETTINGS_FONT_ADDRESSBAR      2518
+#define IDT_SETTINGS_FONT_LIST            2519
+#define IDC_SETTINGS_FONT_LIST            2520
+#define IDT_SETTINGS_FONT_STATUSBAR       2521
+#define IDC_SETTINGS_FONT_STATUSBAR       2522
+#define IDT_SETTINGS_FONT_DIALOG          2523
+#define IDC_SETTINGS_FONT_DIALOG          2524
+#define IDT_SETTINGS_FONT_DEFAULT          2525
+// **************** SSS Modification End ****************
+
 
 // #define IDT_SETTINGS_MEM     100
 // #define IDC_SETTINGS_MEM     101

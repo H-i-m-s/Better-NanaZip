@@ -4,6 +4,7 @@
 
 // #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
+#include "../../../Common/StringToInt.h"
 
 #ifndef UNDER_CE
 #include "../../../Windows/MemoryLock.h"
@@ -12,8 +13,12 @@
 
 // #include "../Common/ZipRegistry.h"
 
+#include "../Common/ZipRegistry.h"
+#include "FontUtils.h"
+
 #include "LangUtils.h"
 #include "RegistryUtils.h"
+#include "App.h"
 #include "SettingsPage.h"
 #include "SettingsPageRes.h"
 
@@ -34,6 +39,13 @@ static const UInt32 kLangIDs[] =
   IDX_SETTINGS_WANT_COPY_HISTORY,
   IDX_SETTINGS_WANT_FOLDER_HISTORY,
   IDX_SETTINGS_LOWERCASE_HASHES,
+  // **************** SSS Modification Start ****************
+  IDT_SETTINGS_FONT_GROUP,
+  IDT_SETTINGS_FONT_ADDRESSBAR,
+  IDT_SETTINGS_FONT_LIST,
+  IDT_SETTINGS_FONT_STATUSBAR,
+  IDT_SETTINGS_FONT_DIALOG
+  // **************** SSS Modification End ****************
   // , IDT_COMPRESS_MEMORY
 };
 
@@ -108,6 +120,10 @@ bool CSettingsPage::OnInit()
 {
   _wasChanged = false;
   _largePages_wasChanged = false;
+  // **************** SSS Modification Start ****************
+  _fontSizes_wasChanged = false;
+  _fontInitGuard = true;
+  // **************** SSS Modification End ****************
   /*
   _wasChanged_MemLimit = false;
   _memLimitStrings.Clear();
@@ -139,6 +155,39 @@ bool CSettingsPage::OnInit()
   CheckButton(IDX_SETTINGS_WANT_COPY_HISTORY, st.CopyHistory);
   CheckButton(IDX_SETTINGS_WANT_FOLDER_HISTORY, st.FolderHistory);
   CheckButton(IDX_SETTINGS_LOWERCASE_HASHES, st.LowercaseHashes);
+
+  // **************** SSS Modification Start ****************
+  {
+    static const UINT kFontComboIDs[4] =
+    {
+      IDC_SETTINGS_FONT_ADDRESSBAR,
+      IDC_SETTINGS_FONT_LIST,
+      IDC_SETTINGS_FONT_STATUSBAR,
+      IDC_SETTINGS_FONT_DIALOG
+    };
+
+    CFontSizeInfo fs;
+    fs.Load();
+    const UInt32 kFontValues[4] = { fs.AddressBar, fs.List, fs.StatusBar, fs.Dialog };
+    for (unsigned i = 0; i < 4; i++)
+    {
+      _fontCombo[i].Attach(GetItem(kFontComboIDs[i]));
+      InitFontCombo(i, kFontValues[i]);
+    }
+    // Clear the edit selection so the values do not appear highlighted.
+    for (unsigned i = 0; i < 4; i++)
+    {
+      _fontCombo[i].SendMsg(CB_SETEDITSEL, 0, MAKELPARAM(0, 0));
+      COMBOBOXINFO info = { sizeof(info) };
+      if (::GetComboBoxInfo(_fontCombo[i], &info) && info.hwndItem)
+        ::SendMessageW(info.hwndItem, EM_SETSEL, 0, 0);
+    }
+    _fontInitGuard = false;
+
+    // Apply the dialog font size to this page.
+    ApplyFontToDialog(*this, fs.Dialog);
+  }
+  // **************** SSS Modification End ****************
 
   /*
   NCompression::CMemUse mu;
@@ -193,20 +242,28 @@ bool CSettingsPage::OnInit()
   return CPropertyPage::OnInit();
 }
 
-/*
-void CSettingsPage::EnableSubItems()
+// **************** SSS Modification Start ****************
+static UInt32 ParseFontPt(NWindows::NControl::CComboBox &combo)
 {
-  EnableItem(IDX_SETTINGS_UNDERLINE, IsButtonCheckedBool(IDX_SETTINGS_SINGLE_CLICK));
-}
-*/
+  UString s;
+  combo.GetText(s);
+  s.Trim();
+  if (s.IsEmpty())
+    return 0;
 
-/*
-static void AddSize_MB(UString &s, UInt64 size)
-{
-  s.Add_UInt64((size + (1 << 20) - 1) >> 20);
-  s += " MB";
+  const UString defaultStr = LangString(IDT_SETTINGS_FONT_DEFAULT);
+  if (!defaultStr.IsEmpty() && s.IsEqualTo_NoCase(defaultStr))
+    return 0;
+  if (s.IsEqualTo_NoCase(L"Default"))
+    return 0;
+
+  const wchar_t *end;
+  const UInt64 v = ConvertStringToUInt64(s, &end);
+  if (end && *end == 0 && v >= 1 && v <= 100)
+    return (UInt32)v;
+  return 0;
 }
-*/
+// **************** SSS Modification End ****************
 
 LONG CSettingsPage::OnApply()
 {
@@ -231,6 +288,32 @@ LONG CSettingsPage::OnApply()
     st.Save();
     _wasChanged = false;
   }
+
+  // **************** SSS Modification Start ****************
+  if (_fontSizes_wasChanged)
+  {
+    CFontSizeInfo fs;
+    fs.AddressBar = ParseFontPt(_fontCombo[0]);
+    fs.List = ParseFontPt(_fontCombo[1]);
+    fs.StatusBar = ParseFontPt(_fontCombo[2]);
+    fs.Dialog = ParseFontPt(_fontCombo[3]);
+    fs.Save();
+    _fontSizes_wasChanged = false;
+
+    // Apply the dialog font size to this page with a compact re-layout
+    // (the parent property sheet is adjusted automatically).
+    HWND propertySheet = CPropertyPage::GetParent();
+    ApplyFontToDialogCompact(*this, fs.Dialog, true);
+
+    // The main window owns the panels. Ask it to re-read the saved settings
+    // and apply them to the live controls.
+    HWND owner = propertySheet ? ::GetParent(propertySheet) : nullptr;
+    if (!owner)
+      owner = g_HWND;
+    if (owner)
+      ::PostMessageW(owner, kApplyFontSettingsMessage, 0, 0);
+  }
+  // **************** SSS Modification End ****************
 
   #ifndef UNDER_CE
   if (_largePages_wasChanged)
@@ -325,6 +408,94 @@ bool CSettingsPage::OnCommand(int code, int itemID, LPARAM param)
   return CPropertyPage::OnCommand(code, itemID, param);
 }
 */
+
+bool CSettingsPage::OnCommand(int code, int itemID, LPARAM param)
+{
+  if (_fontInitGuard)
+    return CPropertyPage::OnCommand(code, itemID, param);
+  if (code == CBN_SELCHANGE || code == CBN_EDITCHANGE)
+  {
+    switch (itemID)
+    {
+      case IDC_SETTINGS_FONT_ADDRESSBAR:
+      case IDC_SETTINGS_FONT_LIST:
+      case IDC_SETTINGS_FONT_STATUSBAR:
+      case IDC_SETTINGS_FONT_DIALOG:
+        _fontSizes_wasChanged = true;
+        Changed();
+        break;
+    }
+  }
+  // **************** SSS Modification Start ****************
+  // When a combo box gains focus, Windows auto-selects its whole edit text
+  // (shown as a blue selection). Clear the selection right away so the
+  // values never appear highlighted. Also clear after picking an item.
+  if (code == CBN_SETFOCUS || code == CBN_SELCHANGE)
+  {
+    const HWND itemHwnd = ::GetDlgItem(*this, itemID);
+    if (itemHwnd)
+    {
+      for (unsigned i = 0; i < 4; i++)
+      {
+        if ((HWND)_fontCombo[i] == itemHwnd)
+        {
+          _fontCombo[i].SendMsg(CB_SETEDITSEL, 0, MAKELPARAM(0, 0));
+          COMBOBOXINFO info = { sizeof(info) };
+          if (::GetComboBoxInfo(_fontCombo[i], &info) && info.hwndItem)
+            ::SendMessageW(info.hwndItem, EM_SETSEL, 0, 0);
+          break;
+        }
+      }
+    }
+  }
+  // **************** SSS Modification End ****************
+  return CPropertyPage::OnCommand(code, itemID, param);
+}
+
+// **************** SSS Modification Start ****************
+static UInt32 GetDefaultUiFontPt(HWND hwnd)
+{
+  HFONT font = (HFONT)::GetStockObject(DEFAULT_GUI_FONT);
+  LOGFONTW lf = {};
+  if (::GetObjectW(font, sizeof(lf), &lf) == 0 || lf.lfHeight >= 0)
+    return 0;
+  UINT dpi = hwnd ? ::GetDpiForWindow(hwnd) : USER_DEFAULT_SCREEN_DPI;
+  return (UInt32)(((double)-lf.lfHeight * 72.0 / dpi) + 0.5);
+}
+
+void CSettingsPage::InitFontCombo(unsigned index, UInt32 pt)
+{
+  NWindows::NControl::CComboBox &combo = _fontCombo[index];
+
+  combo.ResetContent();
+
+  static const UInt32 kValues[] = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24 };
+  for (unsigned i = 0; i < ARRAY_SIZE(kValues); i++)
+  {
+    UString s;
+    s.Add_UInt32(kValues[i]);
+    combo.AddString(s);
+  }
+
+  // Show the effective font size: if the setting is 0 (follow system),
+  // show the actual system UI size instead of a vague "Default" label.
+  if (pt == 0)
+    pt = GetDefaultUiFontPt(*this);
+
+  for (unsigned i = 0; i < ARRAY_SIZE(kValues); i++)
+  {
+    if (kValues[i] == pt)
+    {
+      combo.SetCurSel((int)i);
+      return;
+    }
+  }
+
+  UString s;
+  s.Add_UInt32(pt);
+  combo.SetText(s);
+}
+// **************** SSS Modification End ****************
 
 bool CSettingsPage::OnButtonClicked(int buttonID, HWND buttonHWND)
 {

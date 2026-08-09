@@ -22,6 +22,9 @@ extern bool g_IsSmallScreen;
 const int kMenuCmdID_Toolbar_Start = 1070;
 const int kMenuCmdID_Plugin_Start = 1100;
 
+// Posted by the options page after font settings are saved.
+const UINT kApplyFontSettingsMessage = WM_APP + 1;
+
 enum
 {
   kMenuCmdID_Toolbar_Add = kMenuCmdID_Toolbar_Start,
@@ -265,6 +268,7 @@ public:
   */
 
   void SetListSettings();
+  void ApplyFontSettings();
   HRESULT SwitchOnOffOnePanel();
   
   CIntVector _timestampLevels;

@@ -24,6 +24,62 @@
 #include "ExtractDialogRes.h"
 #include "ExtractRes.h"
 
+// **************** SSS Modification Start ****************
+static HFONT CreateExtractDialogFont(unsigned pt, unsigned dpi)
+{
+  if (pt == 0)
+    return nullptr;
+
+  LOGFONTW lf = {};
+  lf.lfHeight = -::MulDiv((int)pt, (int)dpi, 72);
+  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfQuality = CLEARTYPE_QUALITY;
+
+  NONCLIENTMETRICSW ncm = {};
+  ncm.cbSize = sizeof(ncm);
+  if (::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0) &&
+      ncm.lfMessageFont.lfFaceName[0])
+    wcscpy_s(lf.lfFaceName, ncm.lfMessageFont.lfFaceName);
+  else
+    wcscpy_s(lf.lfFaceName, L"Segoe UI");
+
+  return ::CreateFontIndirectW(&lf);
+}
+
+static BOOL CALLBACK SetExtractDialogChildFont(HWND hwnd, LPARAM lParam)
+{
+  ::SendMessageW(hwnd, WM_SETFONT, (WPARAM)lParam, TRUE);
+  return TRUE;
+}
+
+static void ApplyExtractDialogFont(HWND dialog)
+{
+  DWORD pt = 0;
+  HKEY key = nullptr;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+      KEY_READ, &key) == ERROR_SUCCESS)
+  {
+    DWORD size = sizeof(pt);
+    ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+        reinterpret_cast<LPBYTE>(&pt), &size);
+    ::RegCloseKey(key);
+  }
+  if (pt == 0)
+    return;
+
+  HDC dc = ::GetDC(dialog);
+  const UINT dpi = dc ? static_cast<UINT>(::GetDeviceCaps(dc, LOGPIXELSY)) : 96;
+  if (dc)
+    ::ReleaseDC(dialog, dc);
+  HFONT font = CreateExtractDialogFont(pt, dpi ? dpi : 96);
+  if (!font)
+    return;
+
+  ::SendMessageW(dialog, WM_SETFONT, (WPARAM)font, TRUE);
+  ::EnumChildWindows(dialog, SetExtractDialogChildFont, (LPARAM)font);
+}
+// **************** SSS Modification End ****************
+
 using namespace NWindows;
 using namespace NFile;
 using namespace NName;
@@ -262,6 +318,10 @@ bool CExtractDialog::OnInit()
 
   HICON icon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_ICON));
   SetIcon(ICON_BIG, icon);
+
+  // **************** SSS Modification Start ****************
+  ApplyExtractDialogFont(*this);
+  // **************** SSS Modification End ****************
 
   // CWindow filesWindow = GetItem(IDC_EXTRACT_RADIO_FILES);
   // filesWindow.Enable(_enableFilesButton);
