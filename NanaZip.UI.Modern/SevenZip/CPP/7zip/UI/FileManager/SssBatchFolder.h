@@ -37,6 +37,9 @@ public:
   STDMETHOD_(Int32, CompareItems)(UInt32 index1, UInt32 index2, PROPID propID, Int32 propIsRaw);
 
   void Init(const UStringVector &paths);
+  // Append late-arriving archives (Explorer launches the multi-select
+  // open command in chunks); duplicates are skipped.
+  void Append(const UStringVector &paths);
   void SetState(unsigned index, Byte state);
 
   const UStringVector &GetPaths() const { return _paths; }

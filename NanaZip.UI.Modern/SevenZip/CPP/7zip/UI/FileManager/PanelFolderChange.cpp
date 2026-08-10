@@ -1068,6 +1068,16 @@ void CPanel::OpenSssBatch(const UStringVector &paths)
   LoadFullPath();
   RefreshListCtrl();
 }
+
+void CPanel::AppendSssBatch(const UStringVector &paths)
+{
+  if (!IsSssBatchFolder())
+    return;
+  CSssBatchFolder *folderSpec = (CSssBatchFolder *)(IFolderFolder *)_folder;
+  folderSpec->Append(paths);
+  LoadFullPath();
+  RefreshListCtrl();
+}
 // **************** SSS Modification End ****************
 
 void CPanel::OpenFolder(int index)

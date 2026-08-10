@@ -12,6 +12,11 @@
 
 #include "../../../Common/MyString.h"
 
+// Custom message: posted to the main window when a late batch (a process
+// started by Explorer after the primary already opened its batch view)
+// forwarded its paths. The message loop appends them to the live batch view.
+const UINT WM_SSS_BATCH_APPEND = WM_APP + 0x5B;
+
 // Returns true if the request was fully handled here (the process
 // should exit); false if the caller should continue the normal
 // single-file flow (primary instance, nothing else arrived).

@@ -555,6 +555,10 @@ public:
   void OpenDrivesFolder();
   // **************** SSS Modification Start ****************
   void OpenSssBatch(const UStringVector &paths);
+  // Append archives that arrived after the batch view was mounted
+  // (Explorer chunks the multi-select open command). No-op unless the
+  // current folder is the batch view.
+  void AppendSssBatch(const UStringVector &paths);
   bool IsSssBatchFolder() const;
   void SssExtractAll(bool showDialog);
   // **************** SSS Modification End ****************

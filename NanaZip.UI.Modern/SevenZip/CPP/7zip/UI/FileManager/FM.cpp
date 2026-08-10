@@ -752,6 +752,17 @@ static int WINAPI WinMain2(int nCmdShow)
     HACCEL hAccels = LoadAcceleratorsW(g_hInstance, MAKEINTRESOURCEW(IDR_ACCELERATOR1));
     while (GetMessageW(&msg, NULL, 0, 0))
     {
+      // **************** SSS Modification Start ****************
+      if (msg.message == WM_SSS_BATCH_APPEND)
+      {
+        if (!g_SssBatchPaths.IsEmpty())
+        {
+          g_App.GetFocusedPanel().AppendSssBatch(g_SssBatchPaths);
+          g_SssBatchPaths.Clear();
+        }
+        continue;
+      }
+      // **************** SSS Modification End ****************
       if (TranslateAcceleratorW(g_HWND, hAccels, &msg) == 0)
       {
         TranslateMessage(&msg);
@@ -765,6 +776,17 @@ static int WINAPI WinMain2(int nCmdShow)
     HACCEL hAccels = LoadAccelerators(g_hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1));
     while (GetMessage(&msg, NULL, 0, 0))
     {
+      // **************** SSS Modification Start ****************
+      if (msg.message == WM_SSS_BATCH_APPEND)
+      {
+        if (!g_SssBatchPaths.IsEmpty())
+        {
+          g_App.GetFocusedPanel().AppendSssBatch(g_SssBatchPaths);
+          g_SssBatchPaths.Clear();
+        }
+        continue;
+      }
+      // **************** SSS Modification End ****************
       if (TranslateAccelerator(g_HWND, hAccels, &msg) == 0)
       {
         // if (g_Hwnd != NULL || !IsDialogMessage(g_Hwnd, &msg))

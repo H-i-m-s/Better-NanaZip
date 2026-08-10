@@ -89,6 +89,42 @@ void CSssBatchFolder::SetState(unsigned index, Byte state)
     _states[index] = state;
 }
 
+void CSssBatchFolder::Append(const UStringVector &paths)
+{
+  FOR_VECTOR(i, paths)
+  {
+    const UString &path = paths[i];
+    bool dup = false;
+    FOR_VECTOR(j, _paths)
+      if (_paths[j].IsEqualTo_NoCase(path))
+      {
+        dup = true;
+        break;
+      }
+    if (dup)
+      continue;
+    NFile::NFind::CFileInfo fi;
+    if (!fi.Find(us2fs(path)))
+      continue;
+    _paths.Add(path);
+    _names.Add(fs2us(fi.Name));
+    UString dir;
+    {
+      FString fullPath;
+      FString dirPrefix;
+      if (NFile::NName::GetFullPath(us2fs(path), fullPath) &&
+          NFile::NDir::GetOnlyDirPrefix(fullPath, dirPrefix))
+        dir = fs2us(dirPrefix);
+    }
+    _dirs.Add(dir);
+    _sizes.Add(fi.Size);
+    int iconIndex = -1;
+    GetRealIconIndex(us2fs(path), 0, iconIndex);
+    _iconIndices.Add(iconIndex);
+    _states.Add(kSssStatePending);
+  }
+}
+
 STDMETHODIMP CSssBatchFolder::LoadItems()
 {
   return S_OK;

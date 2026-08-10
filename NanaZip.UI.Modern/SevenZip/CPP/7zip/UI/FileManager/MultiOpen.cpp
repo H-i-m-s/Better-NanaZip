@@ -15,21 +15,33 @@ static const wchar_t kMutexName[] = L"Local\\SSS.NanaZip.SingleInstance";
 
 static UStringVector g_Queue;
 static UInt32 g_Flags; // bit0: some path came with -open, bit1: with -multiopen
+// True while the primary is still inside its batching loop; WM_COPYDATA
+// then merges into g_Queue. Once false (batch view is being mounted) a
+// late batch is appended to g_SssBatchPaths and the main window is
+// notified so it can add the paths to the live batch view.
+static bool g_SssBatching = false;
 
-static void SssAddPathsUnique(const UStringVector &v)
+extern HWND g_HWND;
+
+static void SssAddPathsUniqueTo(UStringVector &dst, const UStringVector &v)
 {
   FOR_VECTOR(i, v)
   {
     bool dup = false;
-    FOR_VECTOR(j, g_Queue)
-      if (g_Queue[j].IsEqualTo_NoCase(v[i]))
+    FOR_VECTOR(j, dst)
+      if (dst[j].IsEqualTo_NoCase(v[i]))
       {
         dup = true;
         break;
       }
     if (!dup)
-      g_Queue.Add(v[i]);
+      dst.Add(v[i]);
   }
+}
+
+static void SssAddPathsUnique(const UStringVector &v)
+{
+  SssAddPathsUniqueTo(g_Queue, v);
 }
 
 static void SssSplitLines(const UString &s, UStringVector &v)
@@ -89,7 +101,19 @@ static LRESULT CALLBACK SssBatchWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
         g_Flags |= 1;
       UStringVector v;
       SssSplitLines(UString(data + 1), v);
-      SssAddPathsUnique(v);
+      if (g_SssBatching)
+      {
+        // Still inside the batching loop: merge into the primary queue.
+        SssAddPathsUnique(v);
+      }
+      else
+      {
+        // The batch view is already up (or about to be): append the late
+        // paths and tell the main window to refresh the live view.
+        SssAddPathsUniqueTo(g_SssBatchPaths, v);
+        if (g_HWND)
+          ::PostMessageW(g_HWND, WM_SSS_BATCH_APPEND, 0, 0);
+      }
     }
     return TRUE;
   }
@@ -137,6 +161,7 @@ bool SssHandleBatchOpen(const UStringVector &paths, bool isOpen, bool isMultiOpe
 
   // Batching window: 300 ms normally, 100 ms after the first forwarded
   // batch arrives (explorer starts the processes almost simultaneously).
+  g_SssBatching = true;
   MSG msg;
   const DWORD start = ::GetTickCount();
   bool gotAny = false;
@@ -157,16 +182,28 @@ bool SssHandleBatchOpen(const UStringVector &paths, bool isOpen, bool isMultiOpe
     }
     ::WaitMessage();
   }
-  if (wnd)
-    ::DestroyWindow(wnd);
-  if (mutex)
-    ::CloseHandle(mutex);
+  g_SssBatching = false;
 
   // A single non-multi path: nothing else arrived, behave as before.
   if (g_Queue.Size() <= 1 && !(g_Flags & 2))
+  {
+    // Plain single-file open: release the coordinator so a later process
+    // can start its own window (double-clicking two archives must open
+    // two windows).
+    if (wnd)
+      ::DestroyWindow(wnd);
+    if (mutex)
+      ::CloseHandle(mutex);
     return false;
+  }
 
   // **************** SSS Modification Start ****************
+  // Batch scenario: keep the coordinator window and the mutex alive for
+  // the whole lifetime of this process (they are reclaimed by the OS
+  // when the process exits). Explorer launches the command handler in
+  // chunks, so late processes keep forwarding their paths here and the
+  // main window appends them to the live batch view via
+  // WM_SSS_BATCH_APPEND.
   // Hand the merged list to the main-window flow: FM.cpp mounts it as
   // the batch view right after the file-manager window is created.
   g_SssBatchPaths = g_Queue;
