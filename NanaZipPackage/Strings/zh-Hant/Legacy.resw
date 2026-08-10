@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -678,6 +678,76 @@
   <data name="Resource2528" xml:space="preserve">
     <value>永久刪除（不進資源回收筒）</value>
   </data>
+  <data name="Resource2542" xml:space="preserve">
+    <value>自動比對（解壓時）</value>
+  </data>
+  <data name="Resource2530" xml:space="preserve">
+    <value>自動查詢雲端密碼</value>
+  </data>
+  <data name="Resource2536" xml:space="preserve">
+    <value>API 位址:</value>
+  </data>
+  <data name="Resource2537" xml:space="preserve">
+    <value>AppID:</value>
+  </data>
+  <data name="Resource2538" xml:space="preserve">
+    <value>AES 金鑰:</value>
+  </data>
+  <data name="Resource2539" xml:space="preserve">
+    <value>簽名金鑰:</value>
+  </data>
+  <data name="Resource2540" xml:space="preserve">
+    <value>套件名稱:</value>
+  </data>
+  <data name="Resource2541" xml:space="preserve">
+    <value>指紋:</value>
+  </data>
+  <data name="Resource2531" xml:space="preserve">
+    <value>自動比對本機密碼</value>
+  </data>
+  <data name="Resource2532" xml:space="preserve">
+    <value>解壓自動比對密碼優先級:</value>
+  </data>
+  <data name="Resource2533" xml:space="preserve">
+    <value>自動顯示密碼</value>
+  </data>
+  <data name="Resource2543" xml:space="preserve">
+    <value>本機密碼本（輸入即存，每行一個密碼）</value>
+  </data>
+  <data name="Resource2535" xml:space="preserve">
+    <value>匯入密碼本 txt</value>
+  </data>
+  <data name="Resource2544" xml:space="preserve">
+    <value>本機→雲端</value>
+  </data>
+  <data name="Resource2545" xml:space="preserve">
+    <value>雲端→本機</value>
+  </data>
+  <data name="Resource2546" xml:space="preserve">
+    <value>API 位址:</value>
+  </data>
+  <data name="Resource2547" xml:space="preserve">
+    <value>AppID:</value>
+  </data>
+  <data name="Resource2548" xml:space="preserve">
+    <value>AES 金鑰:</value>
+  </data>
+  <data name="Resource2549" xml:space="preserve">
+    <value>簽名金鑰:</value>
+  </data>
+  <data name="Resource2550" xml:space="preserve">
+    <value>套件名稱:</value>
+  </data>
+  <data name="Resource2551" xml:space="preserve">
+    <value>指紋:</value>
+  </data>
+  <data name="Resource2552" xml:space="preserve">
+    <value>解壓自動比對密碼優先級:</value>
+  </data>
+
+
+
+
 <data name="Resource2514" xml:space="preserve">
     <value>介面字號</value>
   </data>

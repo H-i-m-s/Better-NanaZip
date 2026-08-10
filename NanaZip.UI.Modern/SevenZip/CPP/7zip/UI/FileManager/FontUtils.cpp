@@ -64,7 +64,8 @@ static HFONT CreateAppFont(unsigned pt, unsigned dpi)
 
 HFONT GetAppFontByPt(unsigned pt, unsigned dpi)
 {
-  if (pt == 0)
+  // SSS defensive: absurd sizes (corrupt registry values) are ignored.
+  if (pt == 0 || pt > 36)
     return nullptr;
   if (dpi == 0)
     dpi = USER_DEFAULT_SCREEN_DPI;
@@ -85,7 +86,10 @@ unsigned GetAppFontContainerHeight(unsigned baseHeight, unsigned pt,
 {
   if (dpi == 0)
     dpi = USER_DEFAULT_SCREEN_DPI;
-  if (pt == 0)
+  // SSS defensive: absurd sizes (corrupt registry values) fall back to the
+  // system default; otherwise the header heights explode and the file list
+  // collapses to zero height.
+  if (pt == 0 || pt > 36)
     return MulDiv((int)baseHeight, (int)dpi, USER_DEFAULT_SCREEN_DPI);
 
   const unsigned textHeight = MulDiv((int)pt, (int)dpi, 72);

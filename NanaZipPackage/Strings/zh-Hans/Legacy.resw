@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -678,6 +678,76 @@
   <data name="Resource2528" xml:space="preserve">
     <value>永久删除（不进回收站）</value>
   </data>
+  <data name="Resource2542" xml:space="preserve">
+    <value>自动匹配（解压时）</value>
+  </data>
+  <data name="Resource2530" xml:space="preserve">
+    <value>自动查找云端密码</value>
+  </data>
+  <data name="Resource2536" xml:space="preserve">
+    <value>API 地址:</value>
+  </data>
+  <data name="Resource2537" xml:space="preserve">
+    <value>AppID:</value>
+  </data>
+  <data name="Resource2538" xml:space="preserve">
+    <value>AES 密钥:</value>
+  </data>
+  <data name="Resource2539" xml:space="preserve">
+    <value>签名密钥:</value>
+  </data>
+  <data name="Resource2540" xml:space="preserve">
+    <value>包名:</value>
+  </data>
+  <data name="Resource2541" xml:space="preserve">
+    <value>指纹:</value>
+  </data>
+  <data name="Resource2531" xml:space="preserve">
+    <value>自动匹配本地密码</value>
+  </data>
+  <data name="Resource2532" xml:space="preserve">
+    <value>解压自动匹配密码优先级:</value>
+  </data>
+  <data name="Resource2533" xml:space="preserve">
+    <value>自动显示密码</value>
+  </data>
+  <data name="Resource2543" xml:space="preserve">
+    <value>本地密码本（输入即保存，每行一个密码）</value>
+  </data>
+  <data name="Resource2535" xml:space="preserve">
+    <value>导入密码本 txt</value>
+  </data>
+  <data name="Resource2544" xml:space="preserve">
+    <value>本地→云端</value>
+  </data>
+  <data name="Resource2545" xml:space="preserve">
+    <value>云端→本地</value>
+  </data>
+  <data name="Resource2546" xml:space="preserve">
+    <value>API 地址:</value>
+  </data>
+  <data name="Resource2547" xml:space="preserve">
+    <value>AppID:</value>
+  </data>
+  <data name="Resource2548" xml:space="preserve">
+    <value>AES 密钥:</value>
+  </data>
+  <data name="Resource2549" xml:space="preserve">
+    <value>签名密钥:</value>
+  </data>
+  <data name="Resource2550" xml:space="preserve">
+    <value>包名:</value>
+  </data>
+  <data name="Resource2551" xml:space="preserve">
+    <value>指纹:</value>
+  </data>
+  <data name="Resource2552" xml:space="preserve">
+    <value>解压自动匹配密码优先级:</value>
+  </data>
+
+
+
+
 <data name="Resource2514" xml:space="preserve">
     <value>界面字号</value>
   </data>

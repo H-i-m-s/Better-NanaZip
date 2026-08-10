@@ -33,6 +33,12 @@ struct CFmSettings
   bool SizeFormat;   // show human-readable sizes (K/M/G) in the file list
   bool DeleteAfterExtract;   // delete archives after successful extraction
   bool DeletePermanently;    // delete without moving to the Recycle Bin
+  // **************** SSS Modification Start (extraction settings) ****************
+  bool AutoQueryCloud;       // auto query cloud password API at extract time
+  bool AutoMatchLocal;       // auto try local password book entries
+  UInt32 MatchPriority;      // 0 = local first (default), 1 = cloud first
+  bool AutoShowPassword;     // default checked state of "show password" in extract dialog
+  // **************** SSS Modification End ****************
   // bool Underline;
 
   bool ShowSystemMenu;
@@ -55,6 +61,12 @@ bool WantLowercaseHashes();
 bool WantSizeFormat();
 bool WantDeleteAfterExtract();
 bool WantDeletePermanently();
+// **************** SSS Modification Start (extraction settings) ****************
+bool WantAutoQueryCloud();
+bool WantAutoMatchLocal();
+UInt32 ReadMatchPriority();
+bool WantAutoShowPassword();
+// **************** SSS Modification End ****************
 
 void SaveFlatView(UInt32 panelIndex, bool enable);
 bool ReadFlatView(UInt32 panelIndex);

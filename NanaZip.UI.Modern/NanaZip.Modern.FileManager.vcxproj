@@ -179,6 +179,7 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RegistryAssociations.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RegistryPlugins.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RegistryUtils.cpp" />
+    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SssPasswordFile.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\RootFolder.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SettingsPage.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\ExtractSettingsPage.cpp" />
@@ -356,6 +357,7 @@
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\RegistryAssociations.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\RegistryPlugins.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\RegistryUtils.h" />
+    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SssPasswordFile.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\resource.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\RootFolder.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SettingsPage.h" />

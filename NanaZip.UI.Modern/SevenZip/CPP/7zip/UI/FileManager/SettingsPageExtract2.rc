@@ -1,7 +1,33 @@
 CAPTION ""
 BEGIN
   // **************** SSS Modification Start ****************
-  CONTROL  "Delete archive after extraction", IDX_SETTINGS_DELETE_AFTER_EXTRACT, MY_CHECKBOX, m, 14, xc, 10
-  CONTROL  "Permanent deletion",            IDX_SETTINGS_DELETE_PERMANENTLY,   MY_CHECKBOX, m, 28, xc, 10
+  CONTROL  "Delete archive after extraction", IDX_SETTINGS_DELETE_AFTER_EXTRACT, MY_CHECKBOX, m, 8, xc, 10
+  CONTROL  "Permanent deletion",            IDX_SETTINGS_DELETE_PERMANENTLY,   MY_CHECKBOX, m, 22, xc, 10
+  // **************** SSS Modification End ****************
+
+  // **************** SSS Modification Start (extraction settings) ****************
+  // 对齐规则：勾选框文字起点 = m + 13（框宽 ~12 DLU + 间隙 1）；非勾选行全部从 m+13 开始
+  CONTROL  "Auto query cloud password", IDX_SETTINGS_AUTO_QUERY_CLOUD, MY_CHECKBOX, m, 38, xc, 10
+  LTEXT    "API URL:",         IDT_SETTINGS_API_URL,          m + 13, 52, 52, 8
+  EDITTEXT IDX_SETTINGS_API_URL, m + 69, 50, xc - 77, 14, ES_AUTOHSCROLL
+  LTEXT    "AppID:",           IDT_SETTINGS_API_APP_ID,       m + 13, 66, 52, 8
+  EDITTEXT IDX_SETTINGS_API_APP_ID, m + 69, 64, xc - 77, 14, ES_AUTOHSCROLL
+  LTEXT    "AES key:",         IDT_SETTINGS_API_AES_KEY,      m + 13, 80, 52, 8
+  EDITTEXT IDX_SETTINGS_API_AES_KEY, m + 69, 78, xc - 77, 14, ES_AUTOHSCROLL
+  LTEXT    "Signing key:",     IDT_SETTINGS_API_SIGNING_KEY,  m + 13, 94, 52, 8
+  EDITTEXT IDX_SETTINGS_API_SIGNING_KEY, m + 69, 92, xc - 77, 14, ES_AUTOHSCROLL
+  LTEXT    "Package:",         IDT_SETTINGS_API_PACKAGE_NAME, m + 13, 108, 52, 8
+  EDITTEXT IDX_SETTINGS_API_PACKAGE_NAME, m + 69, 106, xc - 77, 14, ES_AUTOHSCROLL
+  LTEXT    "Fingerprint:",     IDT_SETTINGS_API_FINGERPRINT,  m + 13, 122, 52, 8
+  EDITTEXT IDX_SETTINGS_API_FINGERPRINT, m + 69, 120, xc - 77, 14, ES_AUTOHSCROLL
+  CONTROL  "Auto match local password", IDX_SETTINGS_AUTO_MATCH_LOCAL, MY_CHECKBOX, m, 140, xc, 10
+  LTEXT    "Match priority:",  IDT_SETTINGS_MATCH_PRIORITY,   m + 13, 156, 96, 8
+  CONTROL  "", IDX_SETTINGS_MATCH_PRIORITY, "ComboBox", MY_COMBO, m + 113, 154, 100, 80
+
+  CONTROL  "Auto show password", IDX_SETTINGS_AUTO_SHOW_PASSWORD, MY_CHECKBOX, m, 178, xc, 10
+
+  LTEXT    "Local password book (saved on input, one per line)", IDT_SETTINGS_GROUP_BOOK, m + 13, 194, xc, 8
+  EDITTEXT IDX_SETTINGS_PASSWORD_BOOK, m + 13, 206, xc - 13, 64, ES_MULTILINE | ES_WANTRETURN | WS_VSCROLL | ES_AUTOVSCROLL
+  CONTROL  "Import password txt", IDX_SETTINGS_IMPORT_BOOK, "Button", BS_PUSHBUTTON | WS_TABSTOP, m + 13, 278, 84, 14
   // **************** SSS Modification End ****************
 END

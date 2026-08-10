@@ -651,5 +651,14 @@ void CFontSizeInfo::Load()
   Key_Get_UInt32(key, kFontSizeList, List);
   Key_Get_UInt32(key, kFontSizeStatusBar, StatusBar);
   Key_Get_UInt32(key, kFontSizeDialog, Dialog);
+
+  // **************** SSS Modification Start (defensive) ****************
+  // Clamp absurd font sizes: corrupt registry values would otherwise blow up
+  // the main-window header heights and collapse the file list to zero height.
+  if (AddressBar > 36) AddressBar = 0;
+  if (List > 36) List = 0;
+  if (StatusBar > 36) StatusBar = 0;
+  if (Dialog > 36) Dialog = 0;
+  // **************** SSS Modification End (defensive) ****************
 }
 // **************** SSS Modification End ****************

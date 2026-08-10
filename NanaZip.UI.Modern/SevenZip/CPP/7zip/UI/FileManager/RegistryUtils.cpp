@@ -48,6 +48,12 @@ static LPCTSTR const kSizeFormat = TEXT("SizeFormat");
 static LPCTSTR const kDeleteAfterExtract = TEXT("DeleteAfterExtract");
 static LPCTSTR const kDeletePermanently = TEXT("DeletePermanently");
 // **************** SSS Modification End ****************
+// **************** SSS Modification Start (extraction settings) ****************
+static LPCTSTR const kAutoQueryCloud = TEXT("AutoQueryCloud");
+static LPCTSTR const kAutoMatchLocal = TEXT("AutoMatchLocal");
+static LPCTSTR const kMatchPriority = TEXT("MatchPriority");
+static LPCTSTR const kAutoShowPassword = TEXT("AutoShowPassword");
+// **************** SSS Modification End ****************
 
 static LPCTSTR const kFlatViewName = TEXT("FlatViewArc");
 // static LPCTSTR const kShowDeletedFiles = TEXT("ShowDeleted");
@@ -162,6 +168,16 @@ void CFmSettings::Save() const
   SaveOption(kDeleteAfterExtract, DeleteAfterExtract);
   SaveOption(kDeletePermanently, DeletePermanently);
   // **************** SSS Modification End ****************
+  // **************** SSS Modification Start (extraction settings) ****************
+  SaveOption(kAutoQueryCloud, AutoQueryCloud);
+  SaveOption(kAutoMatchLocal, AutoMatchLocal);
+  {
+    CKey key;
+    key.Create(HKEY_CURRENT_USER, kCU_FMPath);
+    key.SetValue(kMatchPriority, MatchPriority);
+  }
+  SaveOption(kAutoShowPassword, AutoShowPassword);
+  // **************** SSS Modification End ****************
   // SaveOption(kUnderline, Underline);
 
   SaveOption(kShowSystemMenu, ShowSystemMenu);
@@ -184,6 +200,12 @@ void CFmSettings::Load()
   // **************** SSS Modification Start ****************
   DeleteAfterExtract = false;
   DeletePermanently = false;
+  // **************** SSS Modification End ****************
+  // **************** SSS Modification Start (extraction settings) ****************
+  AutoQueryCloud = false;
+  AutoMatchLocal = false;
+  MatchPriority = 0;
+  AutoShowPassword = false;
   // **************** SSS Modification End ****************
   // Underline = false;
 
@@ -208,6 +230,13 @@ void CFmSettings::Load()
     ReadOption(key, kDeleteAfterExtract, DeleteAfterExtract);
     ReadOption(key, kDeletePermanently, DeletePermanently);
     // **************** SSS Modification End ****************
+    // **************** SSS Modification Start (extraction settings) ****************
+    ReadOption(key, kAutoQueryCloud, AutoQueryCloud);
+    ReadOption(key, kAutoMatchLocal, AutoMatchLocal);
+    if (key.QueryValue(kMatchPriority, MatchPriority) != ERROR_SUCCESS)
+      MatchPriority = 0;
+    ReadOption(key, kAutoShowPassword, AutoShowPassword);
+    // **************** SSS Modification End ****************
     // ReadOption(key, kUnderline, Underline);
 
     ReadOption(key, kShowSystemMenu, ShowSystemMenu );
@@ -229,6 +258,20 @@ bool WantLowercaseHashes() { return ReadFMOption(kLowercaseHashes); }
 bool WantSizeFormat() { return ReadFMOption(kSizeFormat); }
 bool WantDeleteAfterExtract() { return ReadFMOption(kDeleteAfterExtract); }
 bool WantDeletePermanently() { return ReadFMOption(kDeletePermanently); }
+// **************** SSS Modification Start (extraction settings) ****************
+bool WantAutoQueryCloud() { return ReadFMOption(kAutoQueryCloud); }
+bool WantAutoMatchLocal() { return ReadFMOption(kAutoMatchLocal); }
+UInt32 ReadMatchPriority()
+{
+  UInt32 priority = 0;
+  CKey key;
+  if (key.Open(HKEY_CURRENT_USER, kCU_FMPath, KEY_READ) == ERROR_SUCCESS)
+    if (key.QueryValue(kMatchPriority, priority) != ERROR_SUCCESS)
+      priority = 0;
+  return priority;
+}
+bool WantAutoShowPassword() { return ReadFMOption(kAutoShowPassword); }
+// **************** SSS Modification End ****************
 
 static CSysString GetFlatViewName(UInt32 panelIndex)
 {

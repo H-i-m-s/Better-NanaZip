@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -678,6 +678,76 @@
   <data name="Resource2528" xml:space="preserve">
     <value>Permanent deletion (skip Recycle Bin)</value>
   </data>
+  <data name="Resource2542" xml:space="preserve">
+    <value>Automatic matching (extract)</value>
+  </data>
+  <data name="Resource2530" xml:space="preserve">
+    <value>Auto query cloud password</value>
+  </data>
+  <data name="Resource2536" xml:space="preserve">
+    <value>API URL:</value>
+  </data>
+  <data name="Resource2537" xml:space="preserve">
+    <value>AppID:</value>
+  </data>
+  <data name="Resource2538" xml:space="preserve">
+    <value>AES key:</value>
+  </data>
+  <data name="Resource2539" xml:space="preserve">
+    <value>Signing key:</value>
+  </data>
+  <data name="Resource2540" xml:space="preserve">
+    <value>Package:</value>
+  </data>
+  <data name="Resource2541" xml:space="preserve">
+    <value>Fingerprint:</value>
+  </data>
+  <data name="Resource2531" xml:space="preserve">
+    <value>Auto match local password</value>
+  </data>
+  <data name="Resource2532" xml:space="preserve">
+    <value>Match priority:</value>
+  </data>
+  <data name="Resource2533" xml:space="preserve">
+    <value>Auto show password</value>
+  </data>
+  <data name="Resource2543" xml:space="preserve">
+    <value>Local password book (saved on input, one per line)</value>
+  </data>
+  <data name="Resource2535" xml:space="preserve">
+    <value>Import password txt</value>
+  </data>
+  <data name="Resource2544" xml:space="preserve">
+    <value>Local→Cloud</value>
+  </data>
+  <data name="Resource2545" xml:space="preserve">
+    <value>Cloud→Local</value>
+  </data>
+  <data name="Resource2546" xml:space="preserve">
+    <value>API URL:</value>
+  </data>
+  <data name="Resource2547" xml:space="preserve">
+    <value>AppID:</value>
+  </data>
+  <data name="Resource2548" xml:space="preserve">
+    <value>AES key:</value>
+  </data>
+  <data name="Resource2549" xml:space="preserve">
+    <value>Signing key:</value>
+  </data>
+  <data name="Resource2550" xml:space="preserve">
+    <value>Package:</value>
+  </data>
+  <data name="Resource2551" xml:space="preserve">
+    <value>Fingerprint:</value>
+  </data>
+  <data name="Resource2552" xml:space="preserve">
+    <value>Match priority:</value>
+  </data>
+
+
+
+
 <data name="Resource2514" xml:space="preserve">
     <value>Interface font size</value>
   </data>

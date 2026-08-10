@@ -2,7 +2,7 @@
 #include "../../GuiCommon.rc"
 
 #define xc 240
-#define yc 60
+#define yc 310
 
 IDD_SETTINGS_EXTRACT  MY_PAGE
 #include "SettingsPageExtract2.rc"

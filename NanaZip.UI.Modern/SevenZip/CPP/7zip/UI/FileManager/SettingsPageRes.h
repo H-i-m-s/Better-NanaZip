@@ -22,6 +22,33 @@
 
 #define IDD_SETTINGS_EXTRACT                12900
 #define IDD_SETTINGS_EXTRACT_2             12910
+// **************** SSS Modification Start (extraction settings) ****************
+#define IDX_SETTINGS_AUTO_QUERY_CLOUD       2530
+#define IDX_SETTINGS_AUTO_MATCH_LOCAL       2531
+#define IDX_SETTINGS_MATCH_PRIORITY         2532
+#define IDX_SETTINGS_AUTO_SHOW_PASSWORD     2533
+#define IDX_SETTINGS_PASSWORD_BOOK          2534
+#define IDX_SETTINGS_IMPORT_BOOK            2535
+#define IDX_SETTINGS_API_URL                2536
+#define IDX_SETTINGS_API_APP_ID             2537
+#define IDX_SETTINGS_API_AES_KEY            2538
+#define IDX_SETTINGS_API_SIGNING_KEY        2539
+#define IDX_SETTINGS_API_PACKAGE_NAME       2540
+#define IDX_SETTINGS_API_FINGERPRINT        2541
+#define IDT_SETTINGS_GROUP_AUTOMATCH        2542
+#define IDT_SETTINGS_GROUP_BOOK             2543
+// 优先级下拉项（语言资源 ID，非控件）
+#define IDX_SETTINGS_PRIORITY_LOCAL_CLOUD   2544
+#define IDX_SETTINGS_PRIORITY_CLOUD_LOCAL   2545
+// 静态标签
+#define IDT_SETTINGS_API_URL                2546
+#define IDT_SETTINGS_API_APP_ID             2547
+#define IDT_SETTINGS_API_AES_KEY            2548
+#define IDT_SETTINGS_API_SIGNING_KEY        2549
+#define IDT_SETTINGS_API_PACKAGE_NAME       2550
+#define IDT_SETTINGS_API_FINGERPRINT        2551
+#define IDT_SETTINGS_MATCH_PRIORITY         2552
+// **************** SSS Modification End ****************
 // **************** SSS Modification End ****************
 #define IDT_SETTINGS_FONT_GROUP           2514
 #define IDT_SETTINGS_FONT_ADDRESSBAR      2517

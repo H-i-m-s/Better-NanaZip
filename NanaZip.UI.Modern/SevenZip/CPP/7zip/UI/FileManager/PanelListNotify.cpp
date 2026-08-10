@@ -48,7 +48,14 @@ static void ConvertSizeToStringShort(UInt64 val, wchar_t *s) throw()
 {
   if (val < (UInt64)1000)
   {
+    // SSS: bare byte counts look inconsistent next to k/M/G units, so
+    // append the "B" suffix (55 -> 55B).
     ConvertUInt64ToString(val, s);
+    unsigned pos = 0;
+    while (s[pos])
+      pos++;
+    s[pos++] = L'B';
+    s[pos] = 0;
     return;
   }
   static const UInt64 kDiv[6] =

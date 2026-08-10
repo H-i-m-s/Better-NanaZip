@@ -324,6 +324,63 @@ static void SssFitPageToContent(HWND page)
 }
 // **************** SSS Modification End ****************
 
+// **************** SSS Modification Start (dialog position memory) ****************
+// 记住属性表（设置对话框）上次的位置：打开时恢复，关闭时保存。
+// 注册表：HKCU\Software\NanaZip\Options\DlgX / DlgY（DWORD，屏幕坐标）
+static void SssRestoreSheetPos(HWND sheet)
+{
+  if (!sheet)
+    return;
+  DWORD x = 0;
+  DWORD y = 0;
+  HKEY key = NULL;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0, KEY_READ, &key) == ERROR_SUCCESS)
+  {
+    DWORD size = sizeof(x);
+    if (RegQueryValueExW(key, L"DlgX", NULL, NULL, (LPBYTE)&x, &size) != ERROR_SUCCESS)
+      x = 0;
+    size = sizeof(y);
+    if (RegQueryValueExW(key, L"DlgY", NULL, NULL, (LPBYTE)&y, &size) != ERROR_SUCCESS)
+      y = 0;
+    RegCloseKey(key);
+  }
+  if (x == 0 && y == 0)
+    return;
+  // 防止分辨率/多显示器变化后窗口落在屏幕外
+  const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+  const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+  const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+  const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+  RECT r;
+  if (!GetWindowRect(sheet, &r))
+    return;
+  const int w = r.right - r.left;
+  const int h = r.bottom - r.top;
+  if ((int)x < vx || (int)y < vy || (int)x + w > vx + vw || (int)y + h > vy + vh)
+    return;
+  SetWindowPos(sheet, NULL, (int)x, (int)y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+static void SssSaveSheetPos(HWND sheet)
+{
+  if (!sheet)
+    return;
+  RECT r;
+  if (!GetWindowRect(sheet, &r))
+    return;
+  HKEY key = NULL;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0, NULL, 0,
+      KEY_WRITE, NULL, &key, NULL) == ERROR_SUCCESS)
+  {
+    DWORD x = r.left;
+    DWORD y = r.top;
+    RegSetValueExW(key, L"DlgX", 0, REG_DWORD, (const BYTE *)&x, sizeof(x));
+    RegSetValueExW(key, L"DlgY", 0, REG_DWORD, (const BYTE *)&y, sizeof(y));
+    RegCloseKey(key);
+  }
+}
+// **************** SSS Modification End ****************
+
 static INT_PTR APIENTRY MyProperyPageProcedure(HWND dialogHWND, UINT message, WPARAM wParam, LPARAM lParam)
 {
   CWindow tempDialog(dialogHWND);
@@ -337,6 +394,8 @@ static INT_PTR APIENTRY MyProperyPageProcedure(HWND dialogHWND, UINT message, WP
     dialog->Attach(dialogHWND);
     // **************** SSS Modification Start ****************
     SssApplyRegisteredPageSettings(dialogHWND);
+    // 恢复设置对话框上次的位置（属性表窗口 = 页面父窗口）
+    SssRestoreSheetPos(GetParent(dialogHWND));
     // **************** SSS Modification End ****************
   }
   // **************** SSS Modification Start ****************
@@ -347,7 +406,11 @@ static INT_PTR APIENTRY MyProperyPageProcedure(HWND dialogHWND, UINT message, WP
       SssFitPageToContent(dialogHWND);
   }
   else if (message == WM_DESTROY)
+  {
     SssFreeLayout(dialogHWND);
+    // 保存设置对话框位置
+    SssSaveSheetPos(GetParent(dialogHWND));
+  }
   // **************** SSS Modification End ****************
   try { return BoolToBOOL(dialog->OnMessage(message, wParam, lParam)); }
   catch(...) { return TRUE; }
