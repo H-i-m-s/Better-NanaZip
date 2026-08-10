@@ -645,8 +645,184 @@ static void SssDeleteBatchArchives(const UStringVector &paths, bool permanently)
   delete[] buf;
 }
 
+// SSS: arguments for the background extraction loop. The loop runs on a
+// worker thread so the file-manager UI thread keeps pumping messages
+// while 7zG runs (otherwise the main window freezes / shows "not
+// responding" while a dialog is open). UI updates go back to the panel
+// through kSssLoopStateMessage / kSssLoopDoneMessage.
+struct CSssLoopArgs
+{
+  HWND PanelHwnd;
+  UStringVector Paths;
+  CContextMenuInfo Ci;
+  bool IsBatch;       // batch view (per-item status column)
+  bool ShowDialog;    // SssExtractAll(true): one dialog for all archives
+  bool OneByOne;      // per-archive dialog mode
+  UString OwTempFile;
+  UString OkFile;
+  UString DlgFile;     // per-run extract-dialog state (one-by-one only)
+  bool DeleteAfter;
+  bool DeletePermanently;
+};
+
+// Path of the per-run dialog state file shared across the archives of a
+// one-by-one extraction loop (7zG writes/reads it - see ExtractGUI.cpp).
+static UString SssDlgStateFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_dlg.txt";
+  }
+  return p;
+}
+
+static void SssPostLoopState(HWND hwnd, unsigned index, unsigned state)
+{
+  if (::IsWindow(hwnd))
+    ::PostMessageW(hwnd, kSssLoopStateMessage, (WPARAM)index, (LPARAM)state);
+}
+
+static DWORD WINAPI SssExtractLoopThread(void *param)
+{
+  CSssLoopArgs *a = (CSssLoopArgs *)param;
+  UStringVector okPaths;
+  unsigned done = 0;
+  unsigned failed = 0;
+
+  if (a->ShowDialog)
+  {
+    // One dialog for ALL archives: 7zG shows a single "Extract to..."
+    // dialog and extracts every archive into the chosen folder.
+    UStringVector all;
+    UString firstParent;
+    for (unsigned i = 0; i < a->Paths.Size(); i++)
+    {
+      FString fullPathF;
+      FString parentFolder;
+      if (NFile::NName::GetFullPath(us2fs(a->Paths[i]), fullPathF) &&
+          NFile::NDir::GetOnlyDirPrefix(fullPathF, parentFolder))
+      {
+        all.Add(fs2us(fullPathF));
+        if (i == 0)
+          firstParent = fs2us(parentFolder);
+      }
+    }
+    if (!all.IsEmpty())
+    {
+      for (unsigned i = 0; i < a->Paths.Size(); i++)
+        SssPostLoopState(a->PanelHwnd, i, 1);
+      ::ExtractArchives(all, firstParent, true, false, a->Ci.WriteZone, true, false, (UInt32)(Int32)-1, true);
+      // Dialog mode: 7zG owns the result; we can't track per-archive
+      // success, so mark everything as done.
+      for (unsigned i = 0; i < a->Paths.Size(); i++)
+        SssPostLoopState(a->PanelHwnd, i, 2);
+    }
+  }
+  else
+  {
+    // SSS: per-run temp state starts clean.
+    if (a->OneByOne)
+    {
+      NDir::DeleteFileAlways(us2fs(a->OwTempFile));
+      NDir::DeleteFileAlways(us2fs(a->DlgFile));
+    }
+    // Per-batch overwrite policy, shared across archives through a temp
+    // file: each archive runs in its own 7zG process, so "Yes to All"
+    // picked in one archive is forwarded to the next ones.
+    UInt32 batchMode = (UInt32)(Int32)-1; // -1: let 7zG ask
+    for (unsigned i = 0; i < a->Paths.Size(); i++)
+    {
+      if (!::IsWindow(a->PanelHwnd))
+        break; // panel is gone: stop quietly
+      SssPostLoopState(a->PanelHwnd, i, 1);
+      bool ok = false;
+      FString fullPathF;
+      FString parentFolder;
+      if (NFile::NName::GetFullPath(us2fs(a->Paths[i]), fullPathF) &&
+          NFile::NDir::GetOnlyDirPrefix(fullPathF, parentFolder))
+      {
+        UStringVector single;
+        single.Add(fs2us(fullPathF));
+        if (a->OneByOne)
+        {
+          // Dialog per archive; advance only on real success (7zG wrote
+          // the ok marker). Any cancel or failure stops the sequence.
+          // overwriteMode forwards a "to all" overwrite answer from a
+          // previous archive; useDlgState carries the previous dialog's
+          // choices (path, modes, checkboxes, password) into this one.
+          NDir::DeleteFileAlways(us2fs(a->OkFile));
+          ::ExtractArchives(single, fs2us(parentFolder), true, false, a->Ci.WriteZone, true, false, batchMode, true, true, true);
+          ok = SssReadOkFile(a->OkFile);
+          if (batchMode == (UInt32)(Int32)-1)
+            batchMode = SssReadOwTempFile(a->OwTempFile); // "to all" answer
+        }
+        else
+        {
+          if (batchMode == (UInt32)(Int32)-1)
+            NDir::DeleteFileAlways(us2fs(a->OwTempFile)); // drop leftovers
+          NDir::DeleteFileAlways(us2fs(a->OkFile));       // this archive's marker
+          ::ExtractArchives(single, fs2us(parentFolder), false, false, a->Ci.WriteZone, true, false, batchMode, true, true);
+          ok = SssReadOkFile(a->OkFile);
+          if (batchMode == (UInt32)(Int32)-1)
+            batchMode = SssReadOwTempFile(a->OwTempFile);
+        }
+      }
+      SssPostLoopState(a->PanelHwnd, i, ok ? 2 : 3);
+      if (ok)
+      {
+        done++;
+        okPaths.Add(fs2us(fullPathF));
+      }
+      else
+      {
+        failed++;
+        break; // cancelled or failed: stop the whole run
+      }
+    }
+    NDir::DeleteFileAlways(us2fs(a->OwTempFile));
+    NDir::DeleteFileAlways(us2fs(a->OkFile));
+    if (a->OneByOne && !a->DlgFile.IsEmpty())
+      NDir::DeleteFileAlways(us2fs(a->DlgFile));
+    // Delete the successful archives together, in one shot, only after
+    // the whole run has finished. One-by-one runs let every 7zG delete its
+    // own archive according to the dialog's checkbox, so no batch delete
+    // there.
+    if (!a->OneByOne && a->DeleteAfter && !okPaths.IsEmpty())
+      SssDeleteBatchArchives(okPaths, a->DeletePermanently);
+    UString msg = L"已解压 ";
+    msg.Add_UInt32(done);
+    msg += L" 个归档";
+    if (failed > 0)
+    {
+      msg += L"，";
+      msg.Add_UInt32(failed);
+      msg += a->OneByOne ? L" 个未完成" : L" 个失败";
+    }
+    MessageBoxW(0, msg, a->OneByOne ? L"逐个提取" : L"批量解压", MB_ICONINFORMATION);
+  }
+
+  ::PostMessageW(a->PanelHwnd, kSssLoopDoneMessage, 0, 0);
+  delete a;
+  return 0;
+}
+
+static void SssStartLoop(HWND hwnd, CSssLoopArgs *args)
+{
+  args->PanelHwnd = hwnd;
+  HANDLE h = ::CreateThread(NULL, 0, SssExtractLoopThread, (void *)args, 0, NULL);
+  if (!h)
+    delete args;
+  else
+    ::CloseHandle(h); // detached: the thread owns its args
+}
+
 void CPanel::SssExtractAll(bool showDialog)
 {
+  if (_sssLoopRunning)
+    return;
   if (!IsSssBatchFolder())
     return;
   CSssBatchFolder *folder = static_cast<CSssBatchFolder *>((IFolderFolder *)_folder);
@@ -656,108 +832,75 @@ void CPanel::SssExtractAll(bool showDialog)
   CContextMenuInfo ci;
   ci.Load();
 
-  // **************** SSS Modification Start ****************
-  if (showDialog)
+  CSssLoopArgs *args = new CSssLoopArgs;
+  args->Paths = paths;
+  args->Ci = ci;
+  args->IsBatch = true;
+  args->ShowDialog = showDialog;
+  args->OneByOne = false;
+  args->OwTempFile = SssOwTempFilePath();
+  args->OkFile = SssBatchOkFilePath();
+  args->DeleteAfter = WantDeleteAfterExtract();
+  args->DeletePermanently = WantDeletePermanently();
+  _sssLoopRunning = true;
+  SssStartLoop((HWND)*this, args);
+}
+
+// **************** SSS Modification End ****************
+// **************** SSS Modification End ****************
+
+// SSS: one-by-one extraction - one 7zG dialog per archive. Runs on a
+// background thread (see SssExtractLoopThread) so the file-manager UI
+// stays responsive while a dialog is open. The sequence advances to the
+// next archive only when the previous one really finished (7zG wrote the
+// ok marker - success only). Cancelling a dialog, or any archive failure,
+// stops the whole sequence. Target folder defaults to the smart-extract
+// folder of each archive (the dialog lets the user change it). Like the
+// batch path, deletion of the archives happens together at the end when
+// "delete after extract" is on.
+void CPanel::SssExtractOneByOne()
+{
+  if (_sssLoopRunning)
+    return;
+  UStringVector paths;
+  if (IsSssBatchFolder())
   {
-    // One dialog for ALL archives: 7zG shows a single "Extract to..." dialog
-    // and extracts every archive into the chosen folder. We prefill the
-    // dialog with the parent directory of the first archive.
-    UStringVector all;
-    UString firstParent;
-    for (unsigned i = 0; i < paths.Size(); i++)
+    CSssBatchFolder *folder = static_cast<CSssBatchFolder *>((IFolderFolder *)_folder);
+    paths = folder->GetPaths();
+  }
+  else
+  {
+    if (_parentFolders.Size() > 0)
     {
-      FString fullPathF;
-      FString parentFolder;
-      if (NFile::NName::GetFullPath(us2fs(paths[i]), fullPathF) &&
-          NFile::NDir::GetOnlyDirPrefix(fullPathF, parentFolder))
-      {
-        all.Add(fs2us(fullPathF));
-        if (i == 0)
-          firstParent = fs2us(parentFolder);
-      }
-    }
-    if (all.IsEmpty())
+      // Inside an archive there is no per-item "extract one by one"
+      // concept - fall back to the classic extraction of the selection.
+      ExtractFromArchive();
       return;
-    for (unsigned i = 0; i < paths.Size(); i++)
-    {
-      folder->SetState(i, 1); // extracting
-      RedrawListItems();
     }
-    ::ExtractArchives(all, firstParent, true, false, ci.WriteZone, true, false, (UInt32)(Int32)-1, true);
-    // In dialog mode 7zG owns the result (it reports errors itself). We can't
-    // track per-archive success, so mark everything as done.
-    for (unsigned i = 0; i < paths.Size(); i++)
-    {
-      folder->SetState(i, 2); // done
-      RedrawListItems();
-    }
+    CRecordVector<UInt32> indices;
+    GetOperatedItemIndices(indices);
+    GetFilePaths(indices, paths);
+  }
+  if (paths.IsEmpty())
+  {
+    MessageBox_Error_LangID(IDS_SELECT_FILES);
     return;
   }
-  // **************** SSS Modification End ****************
 
-  // **************** SSS Modification Start ****************
-  // Per-batch overwrite policy, shared across archives through a temp file:
-  // each archive runs in its own 7zG process, so "Yes to All" picked in one
-  // archive must be forwarded to the next ones. The temp file is deleted
-  // before the first archive and after the batch, so every batch asks again.
-  // No conflict -> 7zG never prompts -> the file stays absent -> nothing asks.
-  UInt32 batchMode = (UInt32)(Int32)-1; // -1: not decided yet, let 7zG ask
-  const UString owTempFile = SssOwTempFilePath();
-  const UString okFile = SssBatchOkFilePath();
-  UStringVector okPaths; // archives that really finished OK (7zG wrote the marker)
-  unsigned done = 0;
-  unsigned failed = 0;
-  for (unsigned i = 0; i < paths.Size(); i++)
-  {
-    folder->SetState(i, 1); // extracting
-    RedrawListItems();
-    bool ok = false;
-    FString fullPathF;
-    FString parentFolder;
-    if (NFile::NName::GetFullPath(us2fs(paths[i]), fullPathF) &&
-        NFile::NDir::GetOnlyDirPrefix(fullPathF, parentFolder))
-    {
-      if (batchMode == (UInt32)(Int32)-1)
-        NDir::DeleteFileAlways(us2fs(owTempFile)); // drop leftovers from a previous batch
-      NDir::DeleteFileAlways(us2fs(okFile));       // this archive's success marker
-      UStringVector single;
-      single.Add(fs2us(fullPathF));
-      // waitFinish=true: the archive (and its overwrite dialogs) must finish
-      // before we read the "to all" answer and start the next archive.
-      // suppressDelete=true: 7zG must NOT delete this archive yet - all
-      // archives of the batch are deleted together below.
-      ::ExtractArchives(single, fs2us(parentFolder), false, false, ci.WriteZone, true, false, batchMode, true, true);
-      ok = SssReadOkFile(okFile); // 7zG wrote the marker only on real success
-      if (batchMode == (UInt32)(Int32)-1)
-        batchMode = SssReadOwTempFile(owTempFile); // 7zG may have recorded a "to all" answer
-    }
-    folder->SetState(i, ok ? 2 : 3);
-    RedrawListItems();
-    if (ok)
-    {
-      done++;
-      okPaths.Add(fs2us(fullPathF));
-    }
-    else
-      failed++;
-  }
-  NDir::DeleteFileAlways(us2fs(owTempFile)); // end of batch: next batch asks again
-  NDir::DeleteFileAlways(us2fs(okFile));
-  // Delete the successful archives together, in one shot, only after the
-  // whole batch has been extracted (not one-by-one like before).
-  if (!okPaths.IsEmpty() && WantDeleteAfterExtract())
-    SssDeleteBatchArchives(okPaths, WantDeletePermanently());
-  UString msg = L"已解压 ";
-  msg.Add_UInt32(done);
-  msg += L" 个归档";
-  if (failed > 0)
-  {
-    msg += L"，";
-    msg.Add_UInt32(failed);
-    msg += L" 个失败";
-  }
-  MessageBoxW(*this, msg, L"批量解压", MB_ICONINFORMATION);
-  NDir::DeleteFileAlways(us2fs(owTempFile)); // end of batch: next batch asks again
-  // **************** SSS Modification End ****************
+  CContextMenuInfo ci;
+  ci.Load();
+  CSssLoopArgs *args = new CSssLoopArgs;
+  args->Paths = paths;
+  args->Ci = ci;
+  args->IsBatch = IsSssBatchFolder();
+  args->ShowDialog = false;
+  args->OneByOne = true;
+  args->OwTempFile = SssOwTempFilePath();
+  args->OkFile = SssBatchOkFilePath();
+  args->DlgFile = SssDlgStateFilePath();
+  args->DeleteAfter = WantDeleteAfterExtract();
+  args->DeletePermanently = WantDeletePermanently();
+  _sssLoopRunning = true;
+  SssStartLoop((HWND)*this, args);
 }
 // **************** SSS Modification End ****************

@@ -35,6 +35,7 @@ namespace
             Add = 1070,
             Extract = 1071,
             Test = 1072,
+            ExtractOneByOne = 1073,
             Copy = 546,
             Move = 547,
             Delete = 548,
@@ -72,10 +73,11 @@ namespace winrt::NanaZip::Modern::implementation
     {
         MainWindowToolBarPageT::InitializeComponent();
 
-        winrt::AppBarButton ToolBarButtons[10] =
+        winrt::AppBarButton ToolBarButtons[11] =
         {
             this->AddButton(),
-            this->ExtractButton(),
+            this->ExtractOneButton(),
+            this->BatchExtractButton(),
             this->TestButton(),
             this->CopyButton(),
             this->MoveButton(),
@@ -86,10 +88,11 @@ namespace winrt::NanaZip::Modern::implementation
             this->AboutButton()
         };
 
-        const UINT32 ToolBarLegacyStringResources[10] =
+        const UINT32 ToolBarLegacyStringResources[11] =
         {
             7200, // Add
-            7201, // Extract
+            7201, // Extract (one by one)
+            7201, // Extract (batch) - unused, button keeps its XAML label
             7202, // Test
             7203, // Copy
             7204, // Move
@@ -105,6 +108,10 @@ namespace winrt::NanaZip::Modern::implementation
 
         for (size_t i = 0; i < ToolBarButtonCount; ++i)
         {
+            // SSS: the batch-extract button keeps the Chinese label from
+            // XAML ("批量提取") instead of the legacy language resource.
+            if (i == 2)
+                continue;
             winrt::hstring Resource = winrt::hstring(::K7ModernGetLegacyStringResource(
                 ToolBarLegacyStringResources[i]));
             winrt::AutomationProperties::SetName(
@@ -141,7 +148,7 @@ namespace winrt::NanaZip::Modern::implementation
             0);
     }
 
-    void MainWindowToolBarPage::ExtractButtonClick(
+    void MainWindowToolBarPage::BatchExtractButtonClick(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
@@ -153,6 +160,22 @@ namespace winrt::NanaZip::Modern::implementation
             WM_COMMAND,
             MAKEWPARAM(
                 ToolBarCommandID::Extract,
+                BN_CLICKED),
+            0);
+    }
+
+    void MainWindowToolBarPage::ExtractOneButtonClick(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+
+        ::PostMessageW(
+            this->m_WindowHandle,
+            WM_COMMAND,
+            MAKEWPARAM(
+                ToolBarCommandID::ExtractOneByOne,
                 BN_CLICKED),
             0);
     }

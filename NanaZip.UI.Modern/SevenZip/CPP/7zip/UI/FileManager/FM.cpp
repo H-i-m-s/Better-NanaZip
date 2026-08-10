@@ -944,6 +944,8 @@ static void ExecuteCommand(UINT commandID)
   {
     case kMenuCmdID_Toolbar_Add: g_App.AddToArchive(); break;
     case kMenuCmdID_Toolbar_Extract: g_App.ExtractArchives(); break;
+    // SSS: one-by-one extraction (per-archive dialog).
+    case kMenuCmdID_Toolbar_ExtractOneByOne: g_App.ExtractArchivesOneByOne(); break;
     case kMenuCmdID_Toolbar_Test: g_App.TestArchives(); break;
   }
 }

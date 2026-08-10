@@ -31,6 +31,7 @@
 #include "FormatUtils.h"
 #include "Panel.h"
 #include "RootFolder.h"
+#include "SssBatchFolder.h"
 // **************** NanaZip Modification Start ****************
 #include <K7Base.h>
 #include <K7User.h>
@@ -188,6 +189,21 @@ LRESULT CPanel::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
       return 0;
     case kOpenItemChanged:
       return OnOpenItemChanged(lParam);
+    // SSS: background extract loop posted a per-item state change.
+    case kSssLoopStateMessage:
+      if (IsSssBatchFolder())
+      {
+        CSssBatchFolder *folder = static_cast<CSssBatchFolder *>((IFolderFolder *)_folder);
+        const unsigned index = (unsigned)wParam;
+        if (index < folder->GetNumItems())
+          folder->SetState(index, (Byte)lParam);
+        RedrawListItems();
+      }
+      return 0;
+    // SSS: background extract loop finished - release the busy flag.
+    case kSssLoopDoneMessage:
+      _sssLoopRunning = false;
+      return 0;
     case kRefresh_StatusBar:
       if (_processStatusBar)
       {

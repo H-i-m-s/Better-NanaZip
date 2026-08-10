@@ -136,7 +136,7 @@ static const UInt32 kLangIDs[] =
   IDT_EXTRACT_PATH_MODE,
   IDT_EXTRACT_OVERWRITE_MODE,
   // **************** 7-Zip ZS Modification Start ****************
-  IDX_EXTRACT_OPEN_TRG_FLD,
+  // IDX_EXTRACT_OPEN_TRG_FLD,   // SSS: checkbox hidden
   // **************** 7-Zip ZS Modification End ****************
   // IDX_EXTRACT_ALT_STREAMS,
   IDX_EXTRACT_NT_SECUR,
@@ -243,7 +243,7 @@ bool CExtractDialog::OnInit()
 
   // CheckButton_TwoBools(IDX_EXTRACT_ALT_STREAMS, AltStreams, _info.AltStreams);
   // **************** 7-Zip ZS Modification Start ****************
-  CheckButton_TwoBools(IDX_EXTRACT_OPEN_TRG_FLD, OpnTrgFold, _info.OpnTrgFold);
+  // CheckButton_TwoBools(IDX_EXTRACT_OPEN_TRG_FLD, OpnTrgFold, _info.OpnTrgFold); // SSS: checkbox hidden
   // **************** 7-Zip ZS Modification End ****************
   CheckButton_TwoBools(IDX_EXTRACT_NT_SECUR,    NtSecurity, _info.NtSecurity);
   CheckButton_TwoBools(IDX_EXTRACT_ELIM_DUP,    ElimDup,    _info.ElimDup);
@@ -410,7 +410,7 @@ void CExtractDialog::OnOK()
 
   // GetButton_Bools(IDX_EXTRACT_ALT_STREAMS, AltStreams, _info.AltStreams);
   // **************** 7-Zip ZS Modification Start ****************
-  GetButton_Bools(IDX_EXTRACT_OPEN_TRG_FLD, OpnTrgFold,  _info.OpnTrgFold);
+  // GetButton_Bools(IDX_EXTRACT_OPEN_TRG_FLD, OpnTrgFold, _info.OpnTrgFold); // SSS: checkbox hidden
   // **************** 7-Zip ZS Modification End ****************
   GetButton_Bools(IDX_EXTRACT_NT_SECUR,    NtSecurity, _info.NtSecurity);
   GetButton_Bools(IDX_EXTRACT_ELIM_DUP,    ElimDup,    _info.ElimDup);

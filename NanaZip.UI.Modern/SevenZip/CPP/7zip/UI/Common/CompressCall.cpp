@@ -371,7 +371,7 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
@@ -402,6 +402,10 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   // CPanel::SssExtractAll in PanelOperations.cpp).
   if (suppressDelete)
     params += L" -snd";
+  // SSS: carry the previous archive's dialog choices into this one
+  // (one-by-one extraction loop; see ExtractGUI.cpp SssReadDlgStateFile).
+  if (useDlgState)
+    params += L" -ssdlg";
   // **************** SSS Modification End ****************
   // **************** NanaZip Modification End ****************
   if (writeZone != (UInt32)(Int32)-1)

@@ -30,6 +30,8 @@ enum
   kMenuCmdID_Toolbar_Add = kMenuCmdID_Toolbar_Start,
   kMenuCmdID_Toolbar_Extract,
   kMenuCmdID_Toolbar_Test,
+  // SSS: per-archive one-by-one extraction (dialog for every archive).
+  kMenuCmdID_Toolbar_ExtractOneByOne,
   kMenuCmdID_Toolbar_End
 };
 
@@ -316,6 +318,8 @@ public:
 
   void AddToArchive() { GetFocusedPanel().AddToArchive(); }
   void ExtractArchives() { GetFocusedPanel().ExtractArchives(); }
+  // SSS: one-by-one extraction (per-archive dialog).
+  void ExtractArchivesOneByOne() { GetFocusedPanel().SssExtractOneByOne(); }
   void TestArchives() { GetFocusedPanel().TestArchives(); }
 
   void OnNotify(int ctrlID, LPNMHDR pnmh);

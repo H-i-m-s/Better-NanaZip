@@ -31,7 +31,11 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        void ExtractButtonClick(
+        void BatchExtractButtonClick(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
+        void ExtractOneButtonClick(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 

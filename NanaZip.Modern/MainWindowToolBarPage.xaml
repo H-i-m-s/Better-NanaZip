@@ -33,12 +33,19 @@
           Icon="Add"
           ToolTipService.ToolTip="[Add]" />
         <AppBarButton
-          x:Name="ExtractButton"
+          x:Name="ExtractOneButton"
           Width="48"
-          AutomationProperties.Name="[Extract]"
-          Click="ExtractButtonClick"
+          AutomationProperties.Name="提取"
+          Click="ExtractOneButtonClick"
           Icon="MoveToFolder"
-          ToolTipService.ToolTip="[Extract]" />
+          ToolTipService.ToolTip="提取（逐个确认）" />
+        <AppBarButton
+          x:Name="BatchExtractButton"
+          Width="48"
+          AutomationProperties.Name="批量提取"
+          Click="BatchExtractButtonClick"
+          Icon="RepeatAll"
+          ToolTipService.ToolTip="批量提取（全部自动）" />
         <AppBarButton
           x:Name="TestButton"
           Width="48"

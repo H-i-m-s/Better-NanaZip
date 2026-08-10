@@ -623,6 +623,7 @@ bool ExecuteFileCommand(unsigned id)
     // **************** SSS Modification Start ****************
     case IDM_SSS_EXTRACT_ALL: g_App.GetFocusedPanel().SssExtractAll(false); break;
     case IDM_SSS_EXTRACT_ALL_DLG: g_App.GetFocusedPanel().SssExtractAll(true); break;
+    case IDM_SSS_EXTRACT_ONE: g_App.GetFocusedPanel().SssExtractOneByOne(); break;
     // **************** SSS Modification End ****************
 
     case IDM_OPEN_INSIDE:        g_App.OpenItemInside(NULL); break;

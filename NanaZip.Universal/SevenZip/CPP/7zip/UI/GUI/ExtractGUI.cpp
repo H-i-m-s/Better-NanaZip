@@ -209,6 +209,131 @@ static void BrowseToPath(
 // manager deletes every archive of a batch together after all extraction
 // has finished (see SssExtractAll in PanelOperations.cpp).
 extern bool g_SssNoDelete;
+// Set by the file manager via -ssdlg for a one-by-one extraction loop:
+// initialize this dialog from the state file written by the previous
+// archive's dialog, so the user's per-run choices stay consistent.
+extern bool g_SssUseDlgState;
+
+// Path of the per-run dialog state file shared across the archives of a
+// one-by-one extraction loop.
+static UString SssDlgStateFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_dlg.txt";
+  }
+  return p;
+}
+
+// Write the dialog's full state so the next archive of the loop can
+// initialize its dialog identically (path, modes, checkboxes, password).
+static void SssWriteDlgStateFile(CExtractDialog &dialog)
+{
+  const UString path = SssDlgStateFilePath();
+  if (path.IsEmpty())
+    return;
+  HANDLE h = ::CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  UString s;
+  s += L"Path="; s += dialog.DirPath; s += L"\r\n";
+  s += L"PathMode="; s.Add_UInt32((unsigned)dialog.PathMode); s += L"\r\n";
+  s += L"OverwriteMode="; s.Add_UInt32((unsigned)dialog.OverwriteMode); s += L"\r\n";
+  s += L"ElimDup="; s += (dialog.ElimDup.Val ? L"1" : L"0"); s += L"\r\n";
+  #ifndef Z7_SFX
+  s += L"NtSecurity="; s += (dialog.NtSecurity.Val ? L"1" : L"0"); s += L"\r\n";
+  s += L"OpnTrgFold="; s += (dialog.OpnTrgFold.Val ? L"1" : L"0"); s += L"\r\n";
+  #endif
+  s += L"OpenFolder="; s += (dialog.OpenFolder.Val ? L"1" : L"0"); s += L"\r\n";
+  s += L"DeleteAfterExtract="; s += (dialog.DeleteAfterExtract ? L"1" : L"0"); s += L"\r\n";
+  #ifndef Z7_SFX
+  s += L"Password="; s += dialog.Password; s += L"\r\n";
+  #endif
+  DWORD written = 0;
+  ::WriteFile(h, s.Ptr(), (DWORD)(s.Len() * sizeof(wchar_t)), &written, NULL);
+  ::CloseHandle(h);
+}
+
+// Apply the saved dialog state (if any) before the dialog is created.
+static void SssReadDlgStateFile(CExtractDialog &dialog)
+{
+  const UString path = SssDlgStateFilePath();
+  if (path.IsEmpty())
+    return;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  const DWORD sizeLow = ::GetFileSize(h, NULL);
+  if (sizeLow == INVALID_FILE_SIZE || sizeLow == 0 || sizeLow > (1 << 16))
+  {
+    ::CloseHandle(h);
+    return;
+  }
+  const size_t size = (size_t)sizeLow;
+  wchar_t *buf = new wchar_t[size / sizeof(wchar_t) + 1];
+  DWORD read = 0;
+  ::ReadFile(h, buf, (DWORD)size, &read, NULL);
+  ::CloseHandle(h);
+  buf[read / sizeof(wchar_t)] = 0;
+  UString text(buf);
+  delete[] buf;
+  unsigned pos = 0;
+  while (pos < text.Len())
+  {
+    unsigned eol = text.Find(L'\r', pos);
+    if (eol == (unsigned)-1)
+      eol = text.Len();
+    const unsigned eq = text.Find(L'=', pos);
+    if (eq != (unsigned)-1 && eq < eol)
+    {
+      const UString key = text.Mid(pos, eq - pos);
+      const UString val = text.Mid(eq + 1, eol - eq - 1);
+      if (key == L"Path")
+        dialog.DirPath = val;
+      else if (key == L"PathMode")
+      {
+        // A forced mode from the command line (-sps / -spf) wins over the
+        // saved state.
+        if (!dialog.PathMode_Force)
+          dialog.PathMode = (NExtract::NPathMode::EEnum)wcstol(val.Ptr(), NULL, 10);
+      }
+      else if (key == L"OverwriteMode")
+      {
+        // A forced overwrite mode from the command line (-aoa/-aos/-aou,
+        // forwarded by the file manager when the user picked "Yes to All")
+        // wins over the saved state.
+        if (!dialog.OverwriteMode_Force)
+          dialog.OverwriteMode = (NExtract::NOverwriteMode::EEnum)wcstol(val.Ptr(), NULL, 10);
+      }
+      else if (key == L"ElimDup")
+        dialog.ElimDup.Val = (val == L"1");
+      #ifndef Z7_SFX
+      else if (key == L"NtSecurity")
+        dialog.NtSecurity.Val = (val == L"1");
+      else if (key == L"OpnTrgFold")
+        dialog.OpnTrgFold.Val = (val == L"1");
+      #endif
+      else if (key == L"OpenFolder")
+        dialog.OpenFolder.Val = (val == L"1");
+      else if (key == L"DeleteAfterExtract")
+        dialog.DeleteAfterExtract = (val == L"1");
+      #ifndef Z7_SFX
+      else if (key == L"Password")
+        dialog.Password = val;
+      #endif
+    }
+    if (eol >= text.Len())
+      break;
+    pos = eol;
+    while (pos < text.Len() && (text[pos] == L'\r' || text[pos] == L'\n'))
+      pos++;
+  }
+}
 
 // Read the "delete archive after extraction" switches from the settings page.
 // The settings live in HKCU\Software\NanaZip\FM (written by the file manager
@@ -364,6 +489,10 @@ HRESULT ExtractGUI(
         dialog.Password = extractCallback->Password;
       #endif
 
+      // SSS: one-by-one loop - carry the previous dialog's choices over.
+      if (g_SssUseDlgState)
+        SssReadDlgStateFile(dialog);
+
       if (dialog.Create(hwndParent) != IDOK)
         return E_ABORT;
 
@@ -388,17 +517,15 @@ HRESULT ExtractGUI(
       extractCallback->Password = dialog.Password;
       extractCallback->PasswordIsDefined = !dialog.Password.IsEmpty();
       #endif
+
+      // SSS: one-by-one loop - remember this dialog's choices for the
+      // next archive.
+      if (g_SssUseDlgState)
+        SssWriteDlgStateFile(dialog);
     }
     // **************** 7-Zip ZS Modification Start ****************
-    #ifndef Z7_SFX
-    else if (!options.OutputDir.IsEmpty()) // don't open target folder if extract here
-    {
-      // load setting "open target folder" from registry saved by previous dialog
-      NExtract::CInfo _info;
-      _info.Load();
-      OpnTrgFold = _info.OpnTrgFold.Val;
-    }
-    #endif
+    // The "Open target folder" checkbox (ZS legacy) is hidden; keep
+    // OpnTrgFold false so the built-in browse never triggers.
     // **************** 7-Zip ZS Modification End ****************
     if (!MyGetFullPathName(outputDir, options.OutputDir))
     {

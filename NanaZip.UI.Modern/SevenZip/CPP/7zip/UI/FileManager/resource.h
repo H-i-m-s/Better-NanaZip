@@ -109,6 +109,7 @@
 // **************** SSS Modification Start ****************
 #define IDM_SSS_EXTRACT_ALL      600
 #define IDM_SSS_EXTRACT_ALL_DLG  601
+#define IDM_SSS_EXTRACT_ONE      602
 // **************** SSS Modification End ****************
 
 #define IDS_OPTIONS                     2100

@@ -198,6 +198,11 @@ enum MyMessages
   #ifdef UNDER_CE
   , kRefresh_HeaderComboBox
   #endif
+  // SSS: posted by the background extraction loop (wParam = item index,
+  // lParam = state: 0 pending / 1 extracting / 2 done / 3 failed).
+  , kSssLoopStateMessage
+  // SSS: the background extraction loop finished (flag release only).
+  , kSssLoopDoneMessage
 };
 
 UString GetFolderPath(IFolderFolder *folder);
@@ -561,6 +566,10 @@ public:
   void AppendSssBatch(const UStringVector &paths);
   bool IsSssBatchFolder() const;
   void SssExtractAll(bool showDialog);
+  // SSS: one-by-one extraction - one 7zG dialog per archive; the sequence
+  // advances only when the previous archive really finished, and stops as
+  // soon as the user cancels a dialog (or an archive fails).
+  void SssExtractOneByOne();
   // **************** SSS Modification End ****************
 
   void SetBookmark(unsigned index);
@@ -604,6 +613,7 @@ public:
       _thereAreDeletedItems(false),
       _markDeletedItems(true),
       PanelCreated(false),
+      _sssLoopRunning(false),
 
       _ListViewMode(3),
       _xSize(300),
@@ -633,6 +643,10 @@ public:
   bool _needSaveInfo;
   UString _typeIDString;
   CListViewInfo _listViewInfo;
+
+  // SSS: true while a background extract loop (batch / one-by-one) is
+  // running on this panel; guards against starting a second loop.
+  bool _sssLoopRunning;
 
   CPropColumns _columns;
   CPropColumns _visibleColumns;

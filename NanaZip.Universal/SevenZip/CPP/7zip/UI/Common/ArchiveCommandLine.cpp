@@ -48,6 +48,11 @@ extern bool g_PathTrailReplaceMode;
 // -snd: suppress delete-after-extract (the file manager deletes all
 // archives of a batch together after every archive has been extracted).
 bool g_SssNoDelete = false;
+// -ssdlg: use the dialog-state file (written by the previous archive's
+// extract dialog) to initialize this one - keeps the user's per-run
+// choices (path, path mode, overwrite mode, checkboxes, password)
+// consistent across a one-by-one extraction loop.
+bool g_SssUseDlgState = false;
 // **************** SSS Modification End ****************
 
 #ifdef Z7_LARGE_PAGES
@@ -221,6 +226,7 @@ enum Enum
 
   // **************** SSS Modification Start ****************
   kNoDelete,
+  kSSSDlgState,
   // **************** SSS Modification End ****************
 
   kDeleteAfterCompressing,
@@ -384,6 +390,7 @@ static const CSwitchForm kSwitchForms[] =
   
   // **************** SSS Modification Start ****************
   { "snd", SWFRM_MINUS },
+  { "ssdlg", SWFRM_MINUS },
   // **************** SSS Modification End ****************
   
   { "sdel", SWFRM_SIMPLE },
@@ -1512,6 +1519,8 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
   // **************** SSS Modification Start ****************
   if (parser[NKey::kNoDelete].ThereIs)
     g_SssNoDelete = !parser[NKey::kNoDelete].WithMinus;
+  if (parser[NKey::kSSSDlgState].ThereIs)
+    g_SssUseDlgState = !parser[NKey::kSSSDlgState].WithMinus;
   // **************** SSS Modification End ****************
   
   NWildcard::ECensorPathMode censorPathMode = NWildcard::k_RelatPath;
