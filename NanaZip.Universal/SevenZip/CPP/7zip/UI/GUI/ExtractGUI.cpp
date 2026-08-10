@@ -228,6 +228,27 @@ static UString SssDlgStateFilePath()
   return p;
 }
 
+// %TEMP%\sss_batch_del.txt - '1' when the dialog asked to delete the
+// archive after extraction. The file manager reads it after every archive
+// of a one-by-one loop and deletes all marked archives together at the end
+// (single Recycle Bin operation) instead of one-by-one.
+static void SssWriteDeleteMark(bool deleteAfter)
+{
+  wchar_t temp[MAX_PATH];
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString full(temp);
+  full += L"sss_batch_del.txt";
+  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  const wchar_t *mark = deleteAfter ? L"1" : L"0";
+  DWORD written = 0;
+  ::WriteFile(h, mark, 2 * sizeof(wchar_t), &written, NULL);
+  ::CloseHandle(h);
+}
+
 // Write the dialog's full state so the next archive of the loop can
 // initialize its dialog identically (path, modes, checkboxes, password).
 static void SssWriteDlgStateFile(CExtractDialog &dialog)
@@ -519,9 +540,13 @@ HRESULT ExtractGUI(
       #endif
 
       // SSS: one-by-one loop - remember this dialog's choices for the
-      // next archive.
+      // next archive, and record whether this archive should be deleted
+      // (the file manager deletes all marked archives together afterwards).
       if (g_SssUseDlgState)
+      {
         SssWriteDlgStateFile(dialog);
+        SssWriteDeleteMark(dialog.DeleteAfterExtract);
+      }
     }
     // **************** 7-Zip ZS Modification Start ****************
     // The "Open target folder" checkbox (ZS legacy) is hidden; keep

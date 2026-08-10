@@ -848,6 +848,9 @@ public:
   void MessageBox_LastError() const;
   void MessageBox_Error_LangID(UINT resourceID) const;
   void MessageBox_Error_UnsupportOperation() const;
+  // SSS: show "select files" with throttling - rapid repeated clicks on
+  // the extract buttons must not stack one message box per click.
+  void ShowNoSelectionMessage() const;
   // void MessageBoxErrorForUpdate(HRESULT errorCode, UINT resourceID);
 
 

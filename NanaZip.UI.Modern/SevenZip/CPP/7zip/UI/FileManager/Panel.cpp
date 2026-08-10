@@ -1317,7 +1317,7 @@ void CPanel::AddToArchive()
   }
   if (indices.Size() == 0)
   {
-    MessageBox_Error_LangID(IDS_SELECT_FILES);
+    ShowNoSelectionMessage();
     return;
   }
   UStringVector names;
@@ -1375,7 +1375,7 @@ void CPanel::GetFilePaths(const CRecordVector<UInt32> &indices, UStringVector &p
   }
   if (paths.Size() == 0)
   {
-    MessageBox_Error_LangID(IDS_SELECT_FILES);
+    ShowNoSelectionMessage();
     return;
   }
 }

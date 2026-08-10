@@ -661,6 +661,7 @@ struct CSssLoopArgs
   UString OwTempFile;
   UString OkFile;
   UString DlgFile;     // per-run extract-dialog state (one-by-one only)
+  UString DelFile;     // per-archive delete mark (one-by-one only)
   bool DeleteAfter;
   bool DeletePermanently;
 };
@@ -677,6 +678,50 @@ static UString SssDlgStateFilePath()
     p += L"sss_batch_dlg.txt";
   }
   return p;
+}
+
+// Per-archive delete mark: 7zG writes '1' here when the dialog asked to
+// delete the archive after extraction; the file manager collects the
+// marked archives and deletes them all together at the end of the loop.
+static UString SssDelFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_del.txt";
+  }
+  return p;
+}
+
+static bool SssReadDelFile(const UString &path)
+{
+  if (path.IsEmpty())
+    return false;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return false;
+  char buf[4] = { 0 };
+  DWORD read = 0;
+  ::ReadFile(h, buf, 2, &read, NULL);
+  ::CloseHandle(h);
+  return read >= 1 && buf[0] == '1';
+}
+
+// SSS: throttled "select files" prompt. Rapid repeated clicks on the
+// extract / compress buttons with an empty selection would otherwise queue
+// one message box per click; a 1.5s window collapses them into one prompt.
+void CPanel::ShowNoSelectionMessage() const
+{
+  static DWORD s_lastMsgTime = 0;
+  const DWORD now = ::GetTickCount();
+  if (now - s_lastMsgTime >= 1500)
+  {
+    s_lastMsgTime = now;
+    MessageBox_Error_LangID(IDS_SELECT_FILES);
+  }
 }
 
 static void SssPostLoopState(HWND hwnd, unsigned index, unsigned state)
@@ -728,6 +773,7 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     {
       NDir::DeleteFileAlways(us2fs(a->OwTempFile));
       NDir::DeleteFileAlways(us2fs(a->DlgFile));
+      NDir::DeleteFileAlways(us2fs(a->DelFile));
     }
     // Per-batch overwrite policy, shared across archives through a temp
     // file: each archive runs in its own 7zG process, so "Yes to All"
@@ -753,9 +799,14 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
           // overwriteMode forwards a "to all" overwrite answer from a
           // previous archive; useDlgState carries the previous dialog's
           // choices (path, modes, checkboxes, password) into this one.
+          // suppressDelete=true: 7zG must NOT delete yet - the archives
+          // marked for deletion are removed together at the end.
           NDir::DeleteFileAlways(us2fs(a->OkFile));
+          NDir::DeleteFileAlways(us2fs(a->DelFile)); // this archive's delete mark
           ::ExtractArchives(single, fs2us(parentFolder), true, false, a->Ci.WriteZone, true, false, batchMode, true, true, true);
           ok = SssReadOkFile(a->OkFile);
+          if (ok && SssReadDelFile(a->DelFile))
+            okPaths.Add(fs2us(fullPathF)); // marked for deletion
           if (batchMode == (UInt32)(Int32)-1)
             batchMode = SssReadOwTempFile(a->OwTempFile); // "to all" answer
         }
@@ -774,7 +825,8 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
       if (ok)
       {
         done++;
-        okPaths.Add(fs2us(fullPathF));
+        if (!a->OneByOne)
+          okPaths.Add(fs2us(fullPathF)); // batch: all successful archives
       }
       else
       {
@@ -786,11 +838,16 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     NDir::DeleteFileAlways(us2fs(a->OkFile));
     if (a->OneByOne && !a->DlgFile.IsEmpty())
       NDir::DeleteFileAlways(us2fs(a->DlgFile));
-    // Delete the successful archives together, in one shot, only after
-    // the whole run has finished. One-by-one runs let every 7zG delete its
-    // own archive according to the dialog's checkbox, so no batch delete
-    // there.
-    if (!a->OneByOne && a->DeleteAfter && !okPaths.IsEmpty())
+    if (a->OneByOne && !a->DelFile.IsEmpty())
+      NDir::DeleteFileAlways(us2fs(a->DelFile));
+    // Delete the marked archives together, in one shot, after the whole
+    // run has finished (single Recycle Bin operation).
+    if (a->OneByOne)
+    {
+      if (!okPaths.IsEmpty())
+        SssDeleteBatchArchives(okPaths, a->DeletePermanently);
+    }
+    else if (a->DeleteAfter && !okPaths.IsEmpty())
       SssDeleteBatchArchives(okPaths, a->DeletePermanently);
     UString msg = L"已解压 ";
     msg.Add_UInt32(done);
@@ -883,7 +940,7 @@ void CPanel::SssExtractOneByOne()
   }
   if (paths.IsEmpty())
   {
-    MessageBox_Error_LangID(IDS_SELECT_FILES);
+    ShowNoSelectionMessage();
     return;
   }
 
@@ -898,6 +955,7 @@ void CPanel::SssExtractOneByOne()
   args->OwTempFile = SssOwTempFilePath();
   args->OkFile = SssBatchOkFilePath();
   args->DlgFile = SssDlgStateFilePath();
+  args->DelFile = SssDelFilePath();
   args->DeleteAfter = WantDeleteAfterExtract();
   args->DeletePermanently = WantDeletePermanently();
   _sssLoopRunning = true;
