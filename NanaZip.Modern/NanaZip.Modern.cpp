@@ -776,6 +776,13 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
                 return 0;
             }
         }
+        else if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
+        {
+            // Esc closes the dialog like the X button (a cancel: the page's
+            // OnUnloaded clears the OK flag).
+            ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
         return ::DefSubclassProc(
             hWnd,
             uMsg,

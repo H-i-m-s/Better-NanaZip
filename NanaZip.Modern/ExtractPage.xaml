@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
+    KeyDown="OnPageKeyDown"
     Background="Transparent">
 
     <Page.Resources>
@@ -40,7 +41,7 @@
                 <TextBlock
                     x:Name="ExtractToText"
                     TextWrapping="Wrap"/>
-                <Grid Margin="0,4,0,0">
+                <Grid Margin="0,6,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
@@ -153,22 +154,36 @@
                         <PasswordBox
                             x:Name="PasswordBox"
                             Margin="0,6,0,0"/>
+                        <!-- Cloud / local password lookup buttons: UI only
+                             for now, the handlers are placeholders. -->
+                        <StackPanel x:Name="PasswordButtonsPanel" Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button
+                                x:Name="CloudPasswordButton"
+                                Content="查询云端密码"
+                                Click="OnCloudPasswordClicked"/>
+                            <Button
+                                x:Name="LocalPasswordButton"
+                                Content="匹配本地密码"
+                                Margin="6,0,0,0"
+                                Click="OnLocalPasswordClicked"/>
+                        </StackPanel>
                         <CheckBox
                             x:Name="ShowPasswordCheck"
-                            Margin="0,6,0,0"
-                            ContentTemplate="{StaticResource WrapCheckTextTemplate}"
-                            Click="OnShowPasswordClicked"/>
-                        <CheckBox
-                            x:Name="NtSecurityCheck"
                             Margin="0,8,0,0"
                             ContentTemplate="{StaticResource WrapCheckTextTemplate}"
-                            Click="OnNtSecurityClicked"/>
+                            Click="OnShowPasswordClicked"/>
                     </StackPanel>
                 </Border>
 
                 <CheckBox
-                    x:Name="OpenFolderCheck"
+                    x:Name="NtSecurityCheck"
                     Margin="8,10,0,0"
+                    ContentTemplate="{StaticResource WrapCheckTextTemplate}"
+                    Click="OnNtSecurityClicked"/>
+
+                <CheckBox
+                    x:Name="OpenFolderCheck"
+                    Margin="8,6,0,0"
                     ContentTemplate="{StaticResource WrapCheckTextTemplate}"
                     Click="OnOpenFolderClicked"/>
 

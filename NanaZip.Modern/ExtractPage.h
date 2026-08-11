@@ -65,6 +65,15 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        // Placeholders: cloud / local password lookup is implemented later.
+        void OnCloudPasswordClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
+        void OnLocalPasswordClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
         void OnOkClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -77,6 +86,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e);
 
+        void OnPageKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+
         // Moves the path mode / overwrite mode combos to the next row when
         // the dialog is too narrow to fit label + combo on one line.
         void UpdateModeRowLayout();
@@ -85,6 +98,16 @@ namespace winrt::NanaZip::Modern::implementation
         // wrap state may change what the content needs) and writes it back
         // to the context so the window subclass enforces it.
         void RecalcMinTrack();
+
+        // Keeps the path text from being blanked out by the editable combo
+        // when its drop-down is opened/closed.
+        void OnPathComboDropDownOpened(
+            winrt::IInspectable const& sender,
+            winrt::IInspectable const& e);
+
+        void OnPathComboDropDownClosed(
+            winrt::IInspectable const& sender,
+            winrt::IInspectable const& e);
 
     private:
 
@@ -113,5 +136,10 @@ namespace winrt::NanaZip::Modern::implementation
         PK7_EXTRACT_DIALOG_CONTEXT m_Context;
         bool m_InitGuard;
         bool m_OkClicked;
+        bool m_FirstLayout;
+        std::wstring m_PathTextSnapshot;
+        // Page width (DIPs) below which the mode combos wrap below their
+        // labels; computed from the wrapped layout in RecalcMinTrack.
+        double m_WrapThresholdW;
     };
 }

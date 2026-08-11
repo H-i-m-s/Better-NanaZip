@@ -10,6 +10,7 @@
 
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <vector>
@@ -24,7 +25,9 @@ namespace winrt::NanaZip::Modern::implementation
         m_WindowHandle(WindowHandle),
         m_Context(Context),
         m_InitGuard(false),
-        m_OkClicked(false)
+        m_OkClicked(false),
+        m_FirstLayout(true),
+        m_WrapThresholdW(0.0)
     {
         this->Unloaded({ this, &ExtractPage::OnUnloaded });
         this->Loaded({ this, &ExtractPage::OnLoaded });
@@ -280,14 +283,29 @@ namespace winrt::NanaZip::Modern::implementation
 
         PathCombo().Text(winrt::hstring(PathPrefix));
 
+        // Drop-down: the current path goes first, followed by the history
+        // (deduplicated), so the combo never hides what is shown in the box.
+        if (!PathPrefix.empty())
+        {
+            PathCombo().Items().Append(winrt::box_value(
+                winrt::hstring(PathPrefix)));
+        }
         for (UINT32 i = 0; i < Context->NumPaths && i < 16; i++)
         {
-            if (Context->Paths[i][0])
+            if (Context->Paths[i][0] &&
+                Context->Paths[i] != PathPrefix)
             {
                 PathCombo().Items().Append(winrt::box_value(
                     winrt::hstring(Context->Paths[i])));
             }
         }
+
+        // Guard against the editable combo blanking the path text when its
+        // drop-down is opened and closed.
+        PathCombo().DropDownOpened(
+            { this, &ExtractPage::OnPathComboDropDownOpened });
+        PathCombo().DropDownClosed(
+            { this, &ExtractPage::OnPathComboDropDownClosed });
 
         // --- Path mode combo ---
         UINT32 PathMode = Context->PathMode;
@@ -410,6 +428,65 @@ namespace winrt::NanaZip::Modern::implementation
         this->UpdateModeRowLayout();
     }
 
+    void ExtractPage::OnPageKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() == winrt::Windows::System::VirtualKey::Escape)
+        {
+            // Esc closes the dialog like the X button (a cancel).
+            e.Handled(true);
+            if (this->m_Context && !this->m_OkClicked)
+            {
+                this->m_Context->OK = FALSE;
+            }
+            ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        }
+    }
+
+    void ExtractPage::OnPathComboDropDownOpened(
+        winrt::IInspectable const& sender,
+        winrt::IInspectable const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->m_PathTextSnapshot =
+            PathCombo().Text().c_str();
+    }
+
+    void ExtractPage::OnPathComboDropDownClosed(
+        winrt::IInspectable const& sender,
+        winrt::IInspectable const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        if (!this->m_PathTextSnapshot.empty() &&
+            PathCombo().Text().empty())
+        {
+            PathCombo().Text(
+                winrt::hstring(this->m_PathTextSnapshot));
+        }
+        this->m_PathTextSnapshot.clear();
+    }
+
+    // Lays a mode combo out on the same row as its label, or below it
+    // (indented to the label text, with vertical separation).
+    static void SetModeRowLayout(
+        winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
+        bool Wrap)
+    {
+        winrt::Windows::UI::Xaml::Controls::Grid::SetRow(
+            Combo, Wrap ? 1 : 0);
+        winrt::Windows::UI::Xaml::Controls::Grid::SetColumn(
+            Combo, Wrap ? 0 : 1);
+        winrt::Windows::UI::Xaml::Controls::Grid::SetColumnSpan(
+            Combo, Wrap ? 2 : 1);
+        Combo.Margin(Wrap
+            ? winrt::Windows::UI::Xaml::Thickness(28.0, 8.0, 0.0, 0.0)
+            : winrt::Windows::UI::Xaml::Thickness(6.0, 0.0, 0.0, 0.0));
+    }
+
     void ExtractPage::UpdateModeRowLayout()
     {
         if (!this->m_Context)
@@ -417,54 +494,47 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
 
-        // Content width available inside the page padding (12 left + 12
-        // right). The left column is half of it minus the column gap.
         const double PageW = this->ActualWidth();
         if (PageW <= 0.0)
         {
             return;
         }
-        const double LeftColW = (PageW - 24.0 - 24.0) / 2.0;
 
-        // The labels are indented so their text lines up with the checkbox
-        // text ("eliminate duplication..."), not with the check box itself.
-        const double Indent = 28.0;
-        // Wrap with some slack so label + combo never look cramped.
-        const double Slack = 24.0;
-
-        const double PathNeed =
-            Indent + PathModeText().ActualWidth() + 6.0 + 140.0 + Slack;
-        const double OverNeed =
-            Indent + OverwriteModeText().ActualWidth() + 6.0 + 160.0 + Slack;
-
-        const bool PathWrap = PathNeed > LeftColW;
-        const bool OverWrap = OverNeed > LeftColW;
-
-        // Same row: label left, combo right. Wrapped: the combo sits below
-        // the label, indented to the label's text start, with vertical
-        // separation so it does not touch the label.
-        auto SetRowLayout =
-            [](
-                winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
-                bool Wrap)
+        // Wrap once the page gets narrower than the wrapped layout's need
+        // (plus a little slack). The track size is computed from the same
+        // wrapped layout, so the wrap is always reachable before the drag
+        // is stopped. The minimum is only recomputed on the first layout
+        // and on wrap state changes, so dragging stays smooth instead of
+        // re-measuring on every resize tick.
+        const bool Wrap = PageW < this->m_WrapThresholdW;
+        const bool WasWrap =
+            winrt::Windows::UI::Xaml::Controls::Grid::GetRow(
+                PathModeCombo()) == 1;
+        if (this->m_FirstLayout || Wrap != WasWrap)
         {
-            winrt::Windows::UI::Xaml::Controls::Grid::SetRow(
-                Combo, Wrap ? 1 : 0);
-            winrt::Windows::UI::Xaml::Controls::Grid::SetColumn(
-                Combo, Wrap ? 0 : 1);
-            winrt::Windows::UI::Xaml::Controls::Grid::SetColumnSpan(
-                Combo, Wrap ? 2 : 1);
-            Combo.Margin(Wrap
-                ? winrt::Windows::UI::Xaml::Thickness(28.0, 8.0, 0.0, 0.0)
+            this->m_FirstLayout = false;
+            this->RecalcMinTrack();
+        }
+        SetModeRowLayout(PathModeCombo(), Wrap);
+        SetModeRowLayout(OverwriteModeCombo(), Wrap);
+
+        // The two password buttons stay side by side while they fit; when
+        // the right column gets too narrow, the second button drops below
+        // the first one.
+        {
+            const double RightColW = (PageW - 24.0 - 24.0) / 2.0;
+            const double ButtonsNeed =
+                CloudPasswordButton().ActualWidth() +
+                6.0 +
+                LocalPasswordButton().ActualWidth();
+            const bool ButtonsWrap = ButtonsNeed > RightColW;
+            PasswordButtonsPanel().Orientation(ButtonsWrap
+                ? winrt::Windows::UI::Xaml::Controls::Orientation::Vertical
+                : winrt::Windows::UI::Xaml::Controls::Orientation::Horizontal);
+            LocalPasswordButton().Margin(ButtonsWrap
+                ? winrt::Windows::UI::Xaml::Thickness(0.0, 6.0, 0.0, 0.0)
                 : winrt::Windows::UI::Xaml::Thickness(6.0, 0.0, 0.0, 0.0));
-        };
-
-        SetRowLayout(PathModeCombo(), PathWrap);
-        SetRowLayout(OverwriteModeCombo(), OverWrap);
-
-        // The wrap state changed what the layout needs; refresh the minimum
-        // track size so compressing further never clips the content.
-        this->RecalcMinTrack();
+        }
     }
 
     void ExtractPage::RecalcMinTrack()
@@ -480,12 +550,20 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
 
-        // Measure with the current width so DesiredSize reflects the current
-        // wrap state; that is the minimum the content needs right now.
+        // Measure in the wrapped state: that is the smallest the dialog can
+        // shrink to. The wrap threshold sits slightly above it, so the user
+        // can actually reach the wrap before the track size stops the drag
+        // (measuring in the same-row state would set the minimum too high
+        // and block the wrap entirely).
+        SetModeRowLayout(PathModeCombo(), true);
+        SetModeRowLayout(OverwriteModeCombo(), true);
+
         winrt::Windows::Foundation::Size Constraint(
             (float)PageW, 100000.0f);
         this->Measure(Constraint);
         winrt::Windows::Foundation::Size Desired = this->DesiredSize();
+
+        this->m_WrapThresholdW = Desired.Width + 40.0;
 
         const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
         const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
@@ -506,17 +584,10 @@ namespace winrt::NanaZip::Modern::implementation
 
         this->m_Context->MinTrackW = rc.right - rc.left;
         this->m_Context->MinTrackH = rc.bottom - rc.top;
-    }
 
-    static int CALLBACK BrowseCallbackProc(
-        HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
-    {
-        UNREFERENCED_PARAMETER(lParam);
-        if (uMsg == BFFM_INITIALIZED && lpData)
-        {
-            ::SendMessageW(hwnd, BFFM_SETSELECTION, TRUE, lpData);
-        }
-        return 0;
+        // Restore the same-row layout; the caller applies the final state.
+        SetModeRowLayout(PathModeCombo(), false);
+        SetModeRowLayout(OverwriteModeCombo(), false);
     }
 
     void ExtractPage::OnBrowseClicked(
@@ -528,24 +599,54 @@ namespace winrt::NanaZip::Modern::implementation
 
         std::wstring Current =
             PathCombo().Text().c_str();
-
-        BROWSEINFOW Bi = {};
-        Bi.hwndOwner = this->m_WindowHandle;
         std::wstring Title = Res(3402, L"Extract to folder").c_str();
-        Bi.lpszTitle = Title.c_str();
-        Bi.ulFlags = BIF_NEWDIALOGSTYLE | BIF_RETURNONLYFSDIRS;
-        Bi.lpfn = BrowseCallbackProc;
-        Bi.lParam = reinterpret_cast<LPARAM>(Current.c_str());
 
-        LPITEMIDLIST Pidl = ::SHBrowseForFolderW(&Bi);
-        if (Pidl)
+        // Use the modern folder picker (IFileOpenDialog + FOS_PICKFOLDERS)
+        // instead of the legacy SHBrowseForFolder dialog: the modern dialog
+        // follows the system dark theme, while the legacy one renders a
+        // white list even in dark mode.
+        winrt::com_ptr<IFileOpenDialog> Dialog;
+        HRESULT hr = ::CoCreateInstance(
+            CLSID_FileOpenDialog,
+            nullptr,
+            CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&Dialog));
+        if (FAILED(hr))
         {
-            wchar_t Path[MAX_PATH];
-            if (::SHGetPathFromIDListW(Pidl, Path))
+            return;
+        }
+
+        DWORD Options = 0;
+        Dialog->GetOptions(&Options);
+        Dialog->SetOptions(Options | FOS_PICKFOLDERS);
+        Dialog->SetTitle(Title.c_str());
+
+        if (!Current.empty())
+        {
+            winrt::com_ptr<IShellItem> Folder;
+            if (SUCCEEDED(::SHCreateItemFromParsingName(
+                Current.c_str(),
+                nullptr,
+                IID_PPV_ARGS(&Folder))))
             {
-                PathCombo().Text(winrt::hstring(Path));
+                Dialog->SetFolder(Folder.get());
             }
-            ::CoTaskMemFree(Pidl);
+        }
+
+        hr = Dialog->Show(this->m_WindowHandle);
+        if (SUCCEEDED(hr))
+        {
+            winrt::com_ptr<IShellItem> Result;
+            if (SUCCEEDED(Dialog->GetResult(Result.put())))
+            {
+                PWSTR PathOut = nullptr;
+                if (SUCCEEDED(Result->GetDisplayName(
+                    SIGDN_FILESYSPATH, &PathOut)))
+                {
+                    PathCombo().Text(winrt::hstring(PathOut));
+                    ::CoTaskMemFree(PathOut);
+                }
+            }
         }
     }
 
@@ -600,6 +701,24 @@ namespace winrt::NanaZip::Modern::implementation
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+    }
+
+    void ExtractPage::OnCloudPasswordClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        // Placeholder: cloud password lookup is implemented later.
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+    }
+
+    void ExtractPage::OnLocalPasswordClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        // Placeholder: local password matching is implemented later.
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
     }

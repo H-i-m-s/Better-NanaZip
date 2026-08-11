@@ -633,9 +633,25 @@ HRESULT ExtractGUI(
           xInfo.SplitDest.Def = true;
           xInfo.SplitDest.Val = (ctx.SplitDestVal2 != FALSE);
         }
-        xInfo.Paths.Clear();
-        for (UINT32 i = 0; i < ctx.NumPaths; i++)
-          xInfo.Paths.Add(ctx.Paths[i]);
+        // Put the current extraction folder at the front of the path
+        // history (deduplicated, capped at 16 entries) so the drop-down has
+        // content next time; then persist like the original dialog does.
+        {
+          UString newPath = dialog.DirPath;
+          UStringVector merged;
+          if (!newPath.IsEmpty())
+            merged.Add(newPath);
+          FOR_VECTOR (i, xInfo.Paths)
+          {
+            if (xInfo.Paths[i] != newPath)
+            {
+              merged.Add(xInfo.Paths[i]);
+              if (merged.Size() >= 16)
+                break;
+            }
+          }
+          xInfo.Paths = merged;
+        }
         xInfo.Save();
 
         xamlDone = true;
