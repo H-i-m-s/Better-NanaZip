@@ -710,17 +710,28 @@ static bool SssReadDelFile(const UString &path)
   return read >= 1 && buf[0] == '1';
 }
 
-// SSS: throttled "select files" prompt. Rapid repeated clicks on the
-// extract / compress buttons with an empty selection would otherwise queue
-// one message box per click; a 1.5s window collapses them into one prompt.
+// SSS: "select files" prompt. The modal box runs its own message loop:
+// clicks made while it is up get dispatched straight into the panel's
+// WndProc (nested call), which would re-trigger this prompt. A re-entrancy
+// guard collapses those nested calls; the drain below then drops any
+// toolbar clicks left in the queue (the user already saw the prompt) and
+// re-dispatches everything else in FIFO order so no other input is lost.
 void CPanel::ShowNoSelectionMessage() const
 {
-  static DWORD s_lastMsgTime = 0;
-  const DWORD now = ::GetTickCount();
-  if (now - s_lastMsgTime >= 1500)
+  static bool s_inPrompt = false;
+  if (s_inPrompt)
+    return; // nested dispatch from the modal box's message loop
+  s_inPrompt = true;
+  MessageBox_Error_LangID(IDS_SELECT_FILES);
+  s_inPrompt = false;
+  MSG msg;
+  while (::PeekMessageW(&msg, NULL, WM_COMMAND, WM_COMMAND, PM_REMOVE))
   {
-    s_lastMsgTime = now;
-    MessageBox_Error_LangID(IDS_SELECT_FILES);
+    const WORD cmd = (WORD)msg.wParam;
+    if (cmd >= 1070 && cmd <= 1073)
+      continue; // queued duplicate toolbar click that also needs a selection
+    ::TranslateMessage(&msg);
+    ::DispatchMessageW(&msg);
   }
 }
 
@@ -936,13 +947,15 @@ void CPanel::SssExtractOneByOne()
     }
     CRecordVector<UInt32> indices;
     GetOperatedItemIndices(indices);
+    if (indices.Size() == 0)
+    {
+      ShowNoSelectionMessage();
+      return;
+    }
     GetFilePaths(indices, paths);
   }
   if (paths.IsEmpty())
-  {
-    ShowNoSelectionMessage();
-    return;
-  }
+    return; // the prompt was already shown by GetFilePaths (folders-only case)
 
   CContextMenuInfo ci;
   ci.Load();
