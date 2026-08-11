@@ -18,6 +18,8 @@
 #include "App.h"
 #include "SponsorPage.h"
 #include "AboutPage.h"
+#include "ExtractPage.h"
+#include "OverwritePage.h"
 #include "InformationPage.h"
 #include "ProgressPage.h"
 #include "CopyLocationPage.h"
@@ -660,6 +662,104 @@ EXTERN_C LPCWSTR WINAPI K7ModernGetCopyLocationDialogPath(
         return nullptr;
     }
     return winrt::get_self<Implementation>(InstanceObject)->GetPath();
+}
+
+EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_OVERWRITE_DIALOG_CONTEXT Context)
+{
+    if (!Context)
+    {
+        return -1;
+    }
+
+    HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
+    if (!WindowHandle)
+    {
+        return -1;
+    }
+
+    using Interface =
+        winrt::NanaZip::Modern::OverwritePage;
+    using Implementation =
+        winrt::NanaZip::Modern::implementation::OverwritePage;
+
+    Interface Window = winrt::make<Implementation>(
+        WindowHandle,
+        Context);
+
+    ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
+
+    if (ParentWindowHandle)
+    {
+        ::EnableWindow(ParentWindowHandle, FALSE);
+    }
+
+    if (FAILED(::MileXamlSetXamlContentForContentWindow(
+        WindowHandle,
+        winrt::get_abi(Window))))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+
+    int Result = ::K7ModernShowXamlWindow(
+        WindowHandle,
+        420,
+        260,
+        ParentWindowHandle,
+        nullptr);
+
+    return Result;
+}
+
+EXTERN_C INT WINAPI K7ModernShowExtractDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_EXTRACT_DIALOG_CONTEXT Context)
+{
+    if (!Context)
+    {
+        return -1;
+    }
+
+    HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
+    if (!WindowHandle)
+    {
+        return -1;
+    }
+
+    using Interface =
+        winrt::NanaZip::Modern::ExtractPage;
+    using Implementation =
+        winrt::NanaZip::Modern::implementation::ExtractPage;
+
+    Interface Window = winrt::make<Implementation>(
+        WindowHandle,
+        Context);
+
+    ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
+
+    if (ParentWindowHandle)
+    {
+        ::EnableWindow(ParentWindowHandle, FALSE);
+    }
+
+    if (FAILED(::MileXamlSetXamlContentForContentWindow(
+        WindowHandle,
+        winrt::get_abi(Window))))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+
+    int Result = ::K7ModernShowXamlWindow(
+        WindowHandle,
+        500,
+        400,
+        ParentWindowHandle,
+        nullptr);
+
+    return Result;
 }
 
 EXTERN_C INT WINAPI K7ModernShowSettingsDialog(

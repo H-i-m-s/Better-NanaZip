@@ -958,6 +958,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       g_App.ApplyFontSettings();
       return 0;
 
+    case kAskOverwriteMessage:
+    {
+      // The extraction worker thread asks the main UI thread to show the
+      // XAML overwrite dialog (XAML requires the UI thread).
+      const K7_ASK_OVERWRITE_INFO *Info =
+          reinterpret_cast<const K7_ASK_OVERWRITE_INFO *>(lParam);
+      if (Info && Info->Context && Info->Event)
+      {
+        ::K7ModernShowOverwriteDialog(hWnd, Info->Context);
+        ::SetEvent(Info->Event);
+      }
+      return 0;
+    }
+
     case WM_COMMAND:
     {
       unsigned wmId    = LOWORD(wParam);

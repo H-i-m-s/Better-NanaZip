@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.OverwritePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="Transparent">
+
+    <Grid Padding="12,12,12,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock
+            x:Name="HeaderText"
+            Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+            Margin="0,0,0,10"
+            TextWrapping="Wrap"/>
+
+        <TextBlock
+            x:Name="QuestionBeginText"
+            Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+            Margin="0,0,0,6"
+            TextWrapping="Wrap"/>
+
+        <Image
+            x:Name="OldFileIcon"
+            Grid.Row="2" Grid.Column="0"
+            Width="24" Height="24"
+            Margin="0,4,8,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"/>
+
+        <TextBlock
+            x:Name="OldFileInfoText"
+            Grid.Row="2" Grid.Column="1"
+            Margin="0,4,0,8"
+            TextWrapping="Wrap"/>
+
+        <TextBlock
+            x:Name="QuestionEndText"
+            Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+            Margin="0,0,0,6"
+            TextWrapping="Wrap"/>
+
+        <Image
+            x:Name="NewFileIcon"
+            Grid.Row="4" Grid.Column="0"
+            Width="24" Height="24"
+            Margin="0,4,8,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"/>
+
+        <TextBlock
+            x:Name="NewFileInfoText"
+            Grid.Row="4" Grid.Column="1"
+            Margin="0,4,0,0"
+            TextWrapping="Wrap"/>
+
+        <StackPanel
+            Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom">
+            <StackPanel Orientation="Vertical" Margin="0,12,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,6">
+                    <Button
+                        x:Name="YesButton"
+                        MinWidth="88"
+                        Margin="0,0,6,0"
+                        Click="OnYesClicked"/>
+                    <Button
+                        x:Name="YesToAllButton"
+                        MinWidth="88"
+                        Margin="0,0,6,0"
+                        Click="OnYesToAllClicked"/>
+                    <Button
+                        x:Name="AutoRenameButton"
+                        MinWidth="104"
+                        Click="OnAutoRenameClicked"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button
+                        x:Name="NoButton"
+                        MinWidth="88"
+                        Margin="0,0,6,0"
+                        Click="OnNoClicked"/>
+                    <Button
+                        x:Name="NoToAllButton"
+                        MinWidth="88"
+                        Margin="0,0,6,0"
+                        Click="OnNoToAllClicked"/>
+                    <Button
+                        x:Name="CancelButton"
+                        MinWidth="104"
+                        Click="OnCancelClicked"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Page>

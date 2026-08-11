@@ -28,6 +28,8 @@
 #include "ExtractGUI.h"
 #include "HashGUI.h"
 
+#include "NanaZip.Modern.h"
+
 #include "../FileManager/PropertyNameRes.h"
 
 // **************** SSS Modification Start ****************
@@ -476,6 +478,173 @@ HRESULT ExtractGUI(
     #endif
     if (showDialog)
     {
+      // **************** SSS Modification Start ****************
+      // XAML dialog path. The XAML page only exchanges a snapshot; all
+      // registry persistence and the batch (Sss) state file handling stay
+      // here, so the behavior matches the Win32 dialog exactly.
+      #ifndef Z7_SFX
+      bool xamlDone = false;
+      if (K7ModernAvailable())
+      {
+        CExtractDialog dialog; // not created; state exchange only
+        NExtract::CInfo xInfo;
+        xInfo.Load();
+
+        FString outputDirFullX;
+        if (!MyGetFullPathName(outputDir, outputDirFullX))
+        {
+          ShowErrorMessage(kIncorrectOutDir);
+          messageWasDisplayed = true;
+          return E_FAIL;
+        }
+        NName::NormalizeDirPathPrefix(outputDirFullX);
+
+        dialog.DirPath = fs2us(outputDirFullX);
+        dialog.OverwriteMode = options.OverwriteMode;
+        dialog.OverwriteMode_Force = options.OverwriteMode_Force;
+        dialog.PathMode = options.PathMode;
+        dialog.PathMode_Force = options.PathMode_Force;
+        dialog.ElimDup = options.ElimDup;
+        dialog.DeleteAfterExtract = deleteAfter;
+        dialog.OpenFolder = options.OpenFolder;
+        if (archivePathsFull.Size() == 1)
+          dialog.ArcPath = archivePathsFull[0];
+        dialog.NtSecurity = options.NtOptions.NtSecurity;
+        if (extractCallback->PasswordIsDefined)
+          dialog.Password = extractCallback->Password;
+
+        // SSS: one-by-one loop - carry the previous dialog's choices over.
+        if (g_SssUseDlgState)
+          SssReadDlgStateFile(dialog);
+
+        K7_EXTRACT_DIALOG_CONTEXT ctx = {};
+        wcscpy_s(ctx.DirPath, dialog.DirPath.Ptr());
+        wcscpy_s(ctx.ArcPath, dialog.ArcPath.Ptr());
+        ctx.PathMode = dialog.PathMode;
+        ctx.OverwriteMode = dialog.OverwriteMode;
+        ctx.PathMode_Force = dialog.PathMode_Force;
+        ctx.OverwriteMode_Force = dialog.OverwriteMode_Force;
+        ctx.PathModeDefault =
+            xInfo.PathMode_Force ? xInfo.PathMode : 0xFFFFFFFF;
+        ctx.OverwriteModeDefault =
+            xInfo.OverwriteMode_Force ? xInfo.OverwriteMode : 0xFFFFFFFF;
+        ctx.ElimDupDef = dialog.ElimDup.Def;
+        ctx.ElimDupVal = dialog.ElimDup.Val;
+        ctx.ElimDupDef2 = xInfo.ElimDup.Def;
+        ctx.ElimDupVal2 = xInfo.ElimDup.Val;
+        ctx.NtSecurityDef = dialog.NtSecurity.Def;
+        ctx.NtSecurityVal = dialog.NtSecurity.Val;
+        ctx.NtSecurityDef2 = xInfo.NtSecurity.Def;
+        ctx.NtSecurityVal2 = xInfo.NtSecurity.Val;
+        ctx.OpenFolderDef = dialog.OpenFolder.Def;
+        ctx.OpenFolderVal = dialog.OpenFolder.Val;
+        ctx.OpenFolderDef2 = xInfo.OpenFolder.Def;
+        ctx.OpenFolderVal2 = xInfo.OpenFolder.Val;
+        ctx.ShowPasswordDef = FALSE;
+        ctx.ShowPasswordVal = xInfo.ShowPassword.Val;
+        ctx.ShowPasswordDef2 = FALSE;
+        ctx.ShowPasswordVal2 = xInfo.ShowPassword.Val;
+        ctx.SplitDestDef = FALSE;
+        ctx.SplitDestVal = xInfo.SplitDest.Val;
+        ctx.SplitDestDef2 = FALSE;
+        ctx.SplitDestVal2 = xInfo.SplitDest.Val;
+        ctx.DeleteAfterExtract = dialog.DeleteAfterExtract;
+        wcscpy_s(ctx.Password, dialog.Password.Ptr());
+        ctx.NumPaths = 0;
+        FOR_VECTOR (i, xInfo.Paths)
+        {
+          if (i >= 16)
+            break;
+          wcscpy_s(ctx.Paths[i], xInfo.Paths[i].Ptr());
+          ctx.NumPaths = (UInt32)(i + 1);
+        }
+        {
+          DWORD pt = 0;
+          HKEY key = nullptr;
+          if (::RegOpenKeyExW(HKEY_CURRENT_USER,
+              L"Software\\NanaZip\\Options", 0, KEY_READ, &key) == ERROR_SUCCESS)
+          {
+            DWORD size = sizeof(pt);
+            ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+                reinterpret_cast<LPBYTE>(&pt), &size);
+            ::RegCloseKey(key);
+          }
+          ctx.FontSizeDialog = pt;
+        }
+
+        ::K7ModernShowExtractDialog(hwndParent, &ctx);
+        if (!ctx.OK)
+          return E_ABORT;
+
+        // Write the results back (mirrors the Create/OnOK flow).
+        dialog.DirPath = ctx.OutDirPath;
+        dialog.PathMode = (NExtract::NPathMode::EEnum)ctx.PathMode;
+        dialog.OverwriteMode = (NExtract::NOverwriteMode::EEnum)ctx.OverwriteMode;
+        dialog.ElimDup.Def = ctx.ElimDupDef;
+        dialog.ElimDup.Val = ctx.ElimDupVal;
+        dialog.NtSecurity.Def = ctx.NtSecurityDef;
+        dialog.NtSecurity.Val = ctx.NtSecurityVal;
+        dialog.OpenFolder.Def = ctx.OpenFolderDef;
+        dialog.OpenFolder.Val = ctx.OpenFolderVal;
+        dialog.DeleteAfterExtract = ctx.DeleteAfterExtract;
+        dialog.Password = ctx.Password;
+
+        outputDir = us2fs(dialog.DirPath);
+        options.OverwriteMode = dialog.OverwriteMode;
+        options.PathMode = dialog.PathMode;
+        options.ElimDup = dialog.ElimDup;
+        options.OpenFolder = dialog.OpenFolder;
+        deleteAfter = dialog.DeleteAfterExtract;
+        OpnTrgFold = false;
+        options.NtOptions.NtSecurity = dialog.NtSecurity;
+        extractCallback->Password = dialog.Password;
+        extractCallback->PasswordIsDefined = !dialog.Password.IsEmpty();
+
+        // SSS: one-by-one loop - remember this dialog's choices.
+        if (g_SssUseDlgState)
+        {
+          SssWriteDlgStateFile(dialog);
+          SssWriteDeleteMark(dialog.DeleteAfterExtract);
+        }
+
+        // Persist the remembered settings (mirrors CExtractDialog::OnOK).
+        if (xInfo.PathMode != dialog.PathMode)
+        {
+          xInfo.PathMode_Force = true;
+          xInfo.PathMode = dialog.PathMode;
+        }
+        if (!options.OverwriteMode_Force &&
+            xInfo.OverwriteMode != dialog.OverwriteMode)
+          xInfo.OverwriteMode_Force = true;
+        xInfo.OverwriteMode = dialog.OverwriteMode;
+        xInfo.ElimDup.Def = ctx.ElimDupDef2;
+        xInfo.ElimDup.Val = ctx.ElimDupVal2;
+        xInfo.NtSecurity.Def = ctx.NtSecurityDef2;
+        xInfo.NtSecurity.Val = ctx.NtSecurityVal2;
+        xInfo.OpenFolder.Def = ctx.OpenFolderDef2;
+        xInfo.OpenFolder.Val = ctx.OpenFolderVal2;
+        if ((ctx.ShowPasswordVal2 != FALSE) != xInfo.ShowPassword.Val)
+        {
+          xInfo.ShowPassword.Def = true;
+          xInfo.ShowPassword.Val = (ctx.ShowPasswordVal2 != FALSE);
+        }
+        if ((ctx.SplitDestVal2 != FALSE) != xInfo.SplitDest.Val)
+        {
+          xInfo.SplitDest.Def = true;
+          xInfo.SplitDest.Val = (ctx.SplitDestVal2 != FALSE);
+        }
+        xInfo.Paths.Clear();
+        for (UINT32 i = 0; i < ctx.NumPaths; i++)
+          xInfo.Paths.Add(ctx.Paths[i]);
+        xInfo.Save();
+
+        xamlDone = true;
+      }
+      if (!xamlDone)
+      {
+      #endif
+      // **************** SSS Modification End ****************
+
       CExtractDialog dialog;
       FString outputDirFull;
       if (!MyGetFullPathName(outputDir, outputDirFull))
@@ -547,6 +716,11 @@ HRESULT ExtractGUI(
         SssWriteDlgStateFile(dialog);
         SssWriteDeleteMark(dialog.DeleteAfterExtract);
       }
+      // **************** SSS Modification Start ****************
+      #ifndef Z7_SFX
+      }
+      #endif
+      // **************** SSS Modification End ****************
     }
     // **************** 7-Zip ZS Modification Start ****************
     // The "Open target folder" checkbox (ZS legacy) is hidden; keep

@@ -28,6 +28,9 @@
 #include "FormatUtils.h"
 #include "LangUtils.h"
 #include "OverwriteDialog.h"
+
+#include "App.h"
+#include "NanaZip.Modern.h"
 #ifndef _NO_CRYPTO
 #include "PasswordDialog.h"
 #endif
@@ -196,6 +199,80 @@ STDMETHODIMP CExtractCallbackImp::AskOverwrite(
     const wchar_t *newName, const FILETIME *newTime, const UInt64 *newSize,
     Int32 *answer)
 {
+  // XAML path: the extraction callback runs on the worker thread, while the
+  // XAML dialog must run on the main UI thread, so marshal the call through
+  // the main window (see kAskOverwriteMessage in App.h).
+  if (K7ModernAvailable() && g_HWND)
+  {
+    K7_OVERWRITE_DIALOG_CONTEXT ctx = {};
+
+    ctx.ShowExtraButtons = TRUE;
+    ctx.DefaultIsNo = FALSE;
+
+    ctx.OldTimeDefined = existTime ? TRUE : FALSE;
+    if (existTime)
+      ctx.OldTime = *existTime;
+    ctx.OldSizeDefined = existSize ? TRUE : FALSE;
+    if (existSize)
+      ctx.OldSize = *existSize;
+    wcscpy_s(ctx.OldName, existName ? existName : L"");
+
+    ctx.NewTimeDefined = newTime ? TRUE : FALSE;
+    if (newTime)
+      ctx.NewTime = *newTime;
+    ctx.NewSizeDefined = newSize ? TRUE : FALSE;
+    if (newSize)
+      ctx.NewSize = *newSize;
+    wcscpy_s(ctx.NewName, newName ? newName : L"");
+
+    // Dialog font size from the registry (mirrors the ExtractDialog font).
+    {
+      DWORD pt = 0;
+      HKEY key = nullptr;
+      if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+          KEY_READ, &key) == ERROR_SUCCESS)
+      {
+        DWORD size = sizeof(pt);
+        ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+            reinterpret_cast<LPBYTE>(&pt), &size);
+        ::RegCloseKey(key);
+      }
+      ctx.FontSizeDialog = pt;
+    }
+
+    ProgressDialog->WaitCreating();
+
+    HANDLE hEvent = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (hEvent)
+    {
+      K7_ASK_OVERWRITE_INFO info = { &ctx, hEvent };
+      ::PostMessageW(g_HWND, kAskOverwriteMessage, 0,
+          reinterpret_cast<LPARAM>(&info));
+      ::WaitForSingleObject(hEvent, INFINITE);
+      ::CloseHandle(hEvent);
+
+      switch (ctx.Result)
+      {
+        case K7_OVERWRITE_DIALOG_RESULT_CANCEL:
+          *answer = NOverwriteAnswer::kCancel; return E_ABORT;
+        case K7_OVERWRITE_DIALOG_RESULT_YES:
+          *answer = NOverwriteAnswer::kYes; break;
+        case K7_OVERWRITE_DIALOG_RESULT_NO:
+          *answer = NOverwriteAnswer::kNo; break;
+        case K7_OVERWRITE_DIALOG_RESULT_YES_TO_ALL:
+          *answer = NOverwriteAnswer::kYesToAll; break;
+        case K7_OVERWRITE_DIALOG_RESULT_NO_TO_ALL:
+          *answer = NOverwriteAnswer::kNoToAll; break;
+        case K7_OVERWRITE_DIALOG_RESULT_AUTO_RENAME:
+          *answer = NOverwriteAnswer::kAutoRename; break;
+        default:
+          return E_FAIL;
+      }
+      return S_OK;
+    }
+    // Fall through to the Win32 dialog if the event could not be created.
+  }
+
   COverwriteDialog dialog;
 
   dialog.OldFileInfo.SetTime(existTime);

@@ -76,6 +76,12 @@
     <Page Include="SettingsPage.xaml">
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="OverwritePage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ExtractPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="MainWindowToolBarPage.xaml">
       <SubType>Designer</SubType>
     </Page>
@@ -113,6 +119,12 @@
     </Midl>
     <Midl Include="SettingsPage.idl">
       <DependentUpon>SettingsPage.xaml</DependentUpon>
+    </Midl>
+    <Midl Include="OverwritePage.idl">
+      <DependentUpon>OverwritePage.xaml</DependentUpon>
+    </Midl>
+    <Midl Include="ExtractPage.idl">
+      <DependentUpon>ExtractPage.xaml</DependentUpon>
     </Midl>
     <Midl Include="MainWindowToolBarPage.idl">
       <DependentUpon>MainWindowToolBarPage.xaml</DependentUpon>
@@ -160,6 +172,12 @@
     <ClInclude Include="SettingsPage.h">
       <DependentUpon>SettingsPage.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="OverwritePage.h">
+      <DependentUpon>OverwritePage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="ExtractPage.h">
+      <DependentUpon>ExtractPage.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="MainWindowToolBarPage.h">
       <DependentUpon>MainWindowToolBarPage.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -204,6 +222,12 @@
     </ClCompile>
     <ClCompile Include="SettingsPage.cpp">
       <DependentUpon>SettingsPage.xaml</DependentUpon>
+    </ClCompile>
+    <ClCompile Include="OverwritePage.cpp">
+      <DependentUpon>OverwritePage.xaml</DependentUpon>
+    </ClCompile>
+    <ClCompile Include="ExtractPage.cpp">
+      <DependentUpon>ExtractPage.xaml</DependentUpon>
     </ClCompile>
     <ClCompile Include="MainWindowToolBarPage.cpp">
       <DependentUpon>MainWindowToolBarPage.xaml</DependentUpon>

@@ -331,6 +331,58 @@ EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(
     return nullptr;
 }
 
+EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_OVERWRITE_DIALOG_CONTEXT Context)
+{
+    using ProcType = decltype(::K7ModernShowOverwriteDialog)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowOverwriteDialog");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(ParentWindowHandle, Context);
+    }
+
+    return -1;
+}
+
+EXTERN_C INT WINAPI K7ModernShowExtractDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_EXTRACT_DIALOG_CONTEXT Context)
+{
+    using ProcType = decltype(::K7ModernShowExtractDialog)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowExtractDialog");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(ParentWindowHandle, Context);
+    }
+
+    return -1;
+}
+
 EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_SETTINGS_DIALOG_CONTEXT Context)

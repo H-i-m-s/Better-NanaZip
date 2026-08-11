@@ -367,6 +367,150 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
 } K7_SETTINGS_DIALOG_CONTEXT, *PK7_SETTINGS_DIALOG_CONTEXT;
 
 /**
+ * @brief The overwrite dialog context structure. The caller fills it with
+ *        the old/new file information before calling K7ModernShowOverwriteDialog,
+ *        and the dialog writes the clicked button into the Result field.
+ */
+#define K7_OVERWRITE_DIALOG_RESULT_CANCEL      0
+#define K7_OVERWRITE_DIALOG_RESULT_YES         1
+#define K7_OVERWRITE_DIALOG_RESULT_YES_TO_ALL  2
+#define K7_OVERWRITE_DIALOG_RESULT_NO          3
+#define K7_OVERWRITE_DIALOG_RESULT_NO_TO_ALL   4
+#define K7_OVERWRITE_DIALOG_RESULT_AUTO_RENAME 5
+
+typedef struct _K7_OVERWRITE_DIALOG_CONTEXT
+{
+    // If true, the "Yes to All / No to All / Auto Rename" buttons are shown.
+    BOOLEAN ShowExtraButtons;
+    // If true, the "No" button is the default (focused) button.
+    BOOLEAN DefaultIsNo;
+
+    // Existing (old) file information.
+    BOOLEAN OldSizeDefined;
+    BOOLEAN OldTimeDefined;
+    UINT64  OldSize;
+    FILETIME OldTime;
+    WCHAR   OldName[MAX_PATH];
+
+    // Replacing (new) file information.
+    BOOLEAN NewSizeDefined;
+    BOOLEAN NewTimeDefined;
+    UINT64  NewSize;
+    FILETIME NewTime;
+    WCHAR   NewName[MAX_PATH];
+
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32  FontSizeDialog;
+
+    // The clicked button, one of the K7_OVERWRITE_DIALOG_RESULT_* values.
+    // The caller should ignore it when the dialog is dismissed without a
+    // button click (the X close button), which behaves like Cancel.
+    UINT32  Result;
+} K7_OVERWRITE_DIALOG_CONTEXT, *PK7_OVERWRITE_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the overwrite (confirm file replace) dialog.
+ * @param ParentWindowHandle A handle to the owner window of the dialog to be
+ *                           created. If this parameter is nullptr, the dialog
+ *                           has no owner window.
+ * @param Context The overwrite dialog context. The caller fills it with the
+ *                old/new file information before calling this function. The
+ *                dialog writes the clicked button into it. The caller must
+ *                keep it valid until this function returns.
+ * @return The message loop exit code of the dialog.
+ */
+EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_OVERWRITE_DIALOG_CONTEXT Context);
+
+/**
+ * @brief The extract dialog context structure. The caller fills it with the
+ *        current values before calling K7ModernShowExtractDialog, and the
+ *        dialog writes the user-modified values back into it.
+ */
+typedef struct _K7_EXTRACT_DIALOG_CONTEXT
+{
+    // --- Input ---
+    // The archive path, appended to the dialog title after " : ".
+    WCHAR ArcPath[MAX_PATH];
+    // The initial extraction directory (may end with a sub path segment that
+    // is moved into the "file name" field when SplitDest is enabled).
+    WCHAR DirPath[MAX_PATH];
+    // The initial password (may be empty).
+    WCHAR Password[256];
+    // 0 = Full paths, 1 = No paths, 2 = Absolute paths.
+    UINT32 PathMode;
+    // 0 = Ask, 1 = Overwrite, 2 = Skip existing, 3 = Rename, 4 = Rename existing.
+    UINT32 OverwriteMode;
+    // If false, the dialog applies the remembered (registry) path/overwrite
+    // mode instead of the value above (mirrors PathMode_Force semantics).
+    BOOLEAN PathMode_Force;
+    BOOLEAN OverwriteMode_Force;
+    // Remembered (registry) defaults; the dialog uses them when the
+    // corresponding _Force flag is false. 0xFFFFFFFF means "no default".
+    UINT32 PathModeDefault;
+    UINT32 OverwriteModeDefault;
+    // CBoolPair semantics: Def = explicitly defined, Val = value.
+    // The first pair is the caller-provided value, the second pair is the
+    // remembered (registry) value; the effective value follows 7-Zip's
+    // GetBoolsVal rule: pair1.Def ? pair1.Val : (pair2.Def ? pair2.Val : pair1.Val).
+    BOOLEAN NtSecurityDef;
+    BOOLEAN NtSecurityVal;
+    BOOLEAN NtSecurityDef2;
+    BOOLEAN NtSecurityVal2;
+    BOOLEAN ElimDupDef;
+    BOOLEAN ElimDupVal;
+    BOOLEAN ElimDupDef2;
+    BOOLEAN ElimDupVal2;
+    BOOLEAN OpenFolderDef;
+    BOOLEAN OpenFolderVal;
+    BOOLEAN OpenFolderDef2;
+    BOOLEAN OpenFolderVal2;
+    BOOLEAN ShowPasswordDef;
+    BOOLEAN ShowPasswordVal;
+    BOOLEAN ShowPasswordDef2;
+    BOOLEAN ShowPasswordVal2;
+    BOOLEAN SplitDestDef;
+    BOOLEAN SplitDestVal;
+    BOOLEAN SplitDestDef2;
+    BOOLEAN SplitDestVal2;
+    // Per-invocation "delete archive after extraction" override.
+    BOOLEAN DeleteAfterExtract;
+    // Path history, most recent first (up to 16 entries).
+    WCHAR Paths[16][MAX_PATH];
+    UINT32 NumPaths;
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32 FontSizeDialog;
+
+    // --- Output ---
+    // True when the user pressed OK; false otherwise (cancel / X close).
+    BOOLEAN OK;
+    // The final extraction directory (path prefix + sub path when enabled).
+    WCHAR OutDirPath[MAX_PATH];
+    // The sub path moved into the "file name" field (SplitDest).
+    WCHAR OutPathName[256];
+    // True when the "file name" sub path was enabled.
+    BOOLEAN SplitDestEnable;
+} K7_EXTRACT_DIALOG_CONTEXT, *PK7_EXTRACT_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the extract dialog.
+ * @param ParentWindowHandle A handle to the owner window of the dialog to be
+ *                           created. If this parameter is nullptr, the dialog
+ *                           has no owner window.
+ * @param Context The extract dialog context. The caller fills it with the
+ *                current values before calling this function. The dialog
+ *                writes the user-modified values back into it. The caller
+ *                must keep it valid until this function returns.
+ * @return The message loop exit code of the dialog.
+ */
+EXTERN_C INT WINAPI K7ModernShowExtractDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_EXTRACT_DIALOG_CONTEXT Context);
+
+/**
  * @brief Show the settings dialog.
  * @param ParentWindowHandle A handle to the owner window of the dialog to be
  *                           created. If this parameter is nullptr, the dialog

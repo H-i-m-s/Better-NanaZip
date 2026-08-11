@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.ExtractPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="Transparent">
+
+    <Grid Padding="12,12,12,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left column -->
+            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                <TextBlock
+                    x:Name="ExtractToText"
+                    TextWrapping="Wrap"/>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox
+                        x:Name="PathCombo"
+                        Grid.Column="0"
+                        IsEditable="True"
+                        MinWidth="120"/>
+                    <Button
+                        x:Name="BrowseButton"
+                        Grid.Column="1"
+                        Margin="6,0,0,0"
+                        Content="..."
+                        Click="OnBrowseClicked"/>
+                </Grid>
+
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <CheckBox
+                        x:Name="NameEnableCheck"
+                        Grid.Column="0"
+                        VerticalAlignment="Center"
+                        Click="OnNameEnableClicked"/>
+                    <TextBox
+                        x:Name="NameBox"
+                        Grid.Column="1"
+                        Margin="4,0,0,0"
+                        VerticalAlignment="Center"/>
+                </Grid>
+
+                <TextBlock
+                    x:Name="PathModeText"
+                    Margin="0,10,0,0"
+                    TextWrapping="Wrap"/>
+                <ComboBox
+                    x:Name="PathModeCombo"
+                    Margin="0,4,0,0"
+                    MinWidth="120"/>
+
+                <CheckBox
+                    x:Name="ElimDupCheck"
+                    Margin="0,10,0,0"
+                    Click="OnElimDupClicked"/>
+
+                <TextBlock
+                    x:Name="OverwriteModeText"
+                    Margin="0,10,0,0"
+                    TextWrapping="Wrap"/>
+                <ComboBox
+                    x:Name="OverwriteModeCombo"
+                    Margin="0,4,0,0"
+                    MinWidth="120"/>
+            </StackPanel>
+
+            <!-- Right column -->
+            <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                <Border
+                    BorderBrush="#80808080"
+                    BorderThickness="1"
+                    CornerRadius="2"
+                    Padding="8">
+                    <StackPanel>
+                        <TextBlock
+                            x:Name="PasswordGroupText"/>
+                        <PasswordBox
+                            x:Name="PasswordBox"
+                            Margin="0,6,0,0"/>
+                        <CheckBox
+                            x:Name="ShowPasswordCheck"
+                            Margin="0,6,0,0"
+                            Click="OnShowPasswordClicked"/>
+                        <CheckBox
+                            x:Name="NtSecurityCheck"
+                            Margin="0,8,0,0"
+                            Click="OnNtSecurityClicked"/>
+                    </StackPanel>
+                </Border>
+
+                <CheckBox
+                    x:Name="OpenFolderCheck"
+                    Margin="0,10,0,0"
+                    Click="OnOpenFolderClicked"/>
+
+                <CheckBox
+                    x:Name="DeleteAfterCheck"
+                    Margin="0,6,0,0"
+                    Click="OnDeleteAfterClicked"/>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel
+            Grid.Row="1"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Margin="0,12,0,0">
+            <Button
+                x:Name="OkButton"
+                MinWidth="88"
+                Margin="0,0,6,0"
+                Click="OnOkClicked"/>
+            <Button
+                x:Name="CancelButton"
+                MinWidth="88"
+                Click="OnCancelClicked"/>
+        </StackPanel>
+    </Grid>
+</Page>

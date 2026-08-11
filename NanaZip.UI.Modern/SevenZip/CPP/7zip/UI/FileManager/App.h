@@ -6,6 +6,8 @@
 #include "../../../Windows/Control/CommandBar.h"
 #include "../../../Windows/Control/ImageList.h"
 
+#include "NanaZip.Modern.h"
+
 #include "AppState.h"
 #include "Panel.h"
 
@@ -24,6 +26,18 @@ const int kMenuCmdID_Plugin_Start = 1100;
 
 // Posted by the options page after font settings are saved.
 const UINT kApplyFontSettingsMessage = WM_APP + 1;
+
+// Ask-overwrite marshaling: the extraction callback runs on the worker
+// thread, while the XAML dialog must run on the main UI thread. The worker
+// posts this message to the main window and waits on the event; the main
+// window shows the XAML overwrite dialog and signals the event.
+const UINT kAskOverwriteMessage = WM_APP + 2;
+
+struct K7_ASK_OVERWRITE_INFO
+{
+  PK7_OVERWRITE_DIALOG_CONTEXT Context;
+  HANDLE Event;
+};
 
 enum
 {
