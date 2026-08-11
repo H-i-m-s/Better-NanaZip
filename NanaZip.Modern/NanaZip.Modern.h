@@ -269,4 +269,112 @@ EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(
     _In_ HWND ParentWindowHandle,
     _In_ HMENU MoreMenuHandle);
 
+/**
+ * @brief The callback invoked when the "Apply" button of the settings
+ *        dialog is clicked. It runs on the UI thread while the dialog is
+ *        open, so the caller may save the context and apply the settings
+ *        immediately without closing the dialog.
+ */
+typedef VOID (WINAPI *K7_SETTINGS_APPLY_CALLBACK)(
+    _In_ LPVOID ApplyContext);
+
+/**
+ * @brief The settings dialog context structure. The caller fills it with the
+ *        current values before calling K7ModernShowSettingsDialog, and the
+ *        dialog writes the user-modified values back into it.
+ */
+typedef struct _K7_SETTINGS_DIALOG_CONTEXT
+{
+    // --- Settings page ---
+    BOOLEAN ShowDots;
+    BOOLEAN ShowRealFileIcons;
+    BOOLEAN FullRow;
+    BOOLEAN ShowGrid;
+    BOOLEAN SingleClick;
+    BOOLEAN AlternativeSelection;
+    BOOLEAN ShowSystemMenu;
+    BOOLEAN LargePages;
+    BOOLEAN LargePagesSupported;
+    BOOLEAN ArcHistory;
+    BOOLEAN PathHistory;
+    BOOLEAN CopyHistory;
+    BOOLEAN FolderHistory;
+    BOOLEAN LowercaseHashes;
+    BOOLEAN SizeFormat;
+    UINT32 FontSizeAddressBar;
+    UINT32 FontSizeList;
+    UINT32 FontSizeStatusBar;
+    UINT32 FontSizeDialog;
+    UINT32 DefaultUiFontPt;
+
+    // --- Integration (menu) page ---
+    BOOLEAN ElimDup;
+    BOOLEAN ExtractOnOpen;
+    // 0..3, 0xFFFFFFFF means "Default" (write -1 to the registry).
+    UINT32 WriteZone;
+    BOOLEAN ContextFlags[13];
+    WCHAR ContextNames[13][192];
+    UINT32 ZoneSel;
+    WCHAR ZoneItems[4][64];
+
+    // --- Folders page ---
+    // 0 = system temp, 1 = current, 2 = specified
+    UINT32 WorkMode;
+    BOOLEAN ForRemovableOnly;
+    WCHAR WorkPath[MAX_PATH];
+
+    // --- Editor page ---
+    // 0 = viewer, 1 = editor, 2 = diff
+    WCHAR EditorPaths[3][MAX_PATH];
+
+    // --- Extract settings page ---
+    BOOLEAN DeleteAfterExtract;
+    BOOLEAN DeletePermanently;
+    BOOLEAN AutoQueryCloud;
+    BOOLEAN AutoMatchLocal;
+    BOOLEAN AutoShowPassword;
+    UINT32 MatchPriority;
+    // True when the user modified any API configuration field; the caller
+    // only saves the API config when this is set (lazy creation).
+    BOOLEAN DirtyApi;
+    WCHAR ApiUrl[256];
+    WCHAR ApiAppId[256];
+    WCHAR ApiAesKey[256];
+    WCHAR ApiSigningKey[256];
+    WCHAR ApiPackageName[256];
+    WCHAR ApiFingerprint[256];
+    WCHAR PasswordBook[4096];
+
+    // --- Window state ---
+    // Initial dialog rect in physical pixels. The caller fills it from the
+    // saved registry state; pass a zero rect ({0}) to center the dialog on
+    // the owner window. The dialog writes the final rect back here when it
+    // is closed (position + size remembered for the next open).
+    RECT WindowRect;
+
+    // --- Apply button ---
+    // Optional callback invoked when the "Apply" button is clicked. If it is
+    // null, the "Apply" button is hidden.
+    K7_SETTINGS_APPLY_CALLBACK ApplyCallback;
+    LPVOID ApplyContext;
+
+    // --- Result ---
+    BOOLEAN OK;
+} K7_SETTINGS_DIALOG_CONTEXT, *PK7_SETTINGS_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the settings dialog.
+ * @param ParentWindowHandle A handle to the owner window of the dialog to be
+ *                           created. If this parameter is nullptr, the dialog
+ *                           has no owner window.
+ * @param Context The settings dialog context. The caller fills it with the
+ *                current values before calling this function. The dialog
+ *                writes the user-modified values back into it. The caller
+ *                must keep it valid until this function returns.
+ * @return The message loop exit code of the dialog.
+ */
+EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_SETTINGS_DIALOG_CONTEXT Context);
+
 #endif // !NANAZIP_MODERN_EXPERIENCE

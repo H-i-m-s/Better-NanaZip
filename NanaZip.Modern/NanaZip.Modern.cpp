@@ -21,6 +21,7 @@
 #include "InformationPage.h"
 #include "ProgressPage.h"
 #include "CopyLocationPage.h"
+#include "SettingsPage.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -257,7 +258,8 @@ namespace
         _In_opt_ HWND WindowHandle,
         _In_ int Width,
         _In_ int Height,
-        _In_ HWND ParentWindowHandle)
+        _In_ HWND ParentWindowHandle,
+        _In_opt_ const RECT *InitialRect = nullptr)
     {
         if (!WindowHandle)
         {
@@ -269,38 +271,56 @@ namespace
         int ScaledWidth = ::MulDiv(Width, DpiValue, USER_DEFAULT_SCREEN_DPI);
         int ScaledHeight = ::MulDiv(Height, DpiValue, USER_DEFAULT_SCREEN_DPI);
 
-        RECT ParentRect = {};
-        if (ParentWindowHandle)
+        if (InitialRect &&
+            InitialRect->right > InitialRect->left &&
+            InitialRect->bottom > InitialRect->top)
         {
-            ::GetWindowRect(ParentWindowHandle, &ParentRect);
+            // The caller provided a remembered position and size; it is
+            // already in physical pixels, so no DPI scaling is applied.
+            ::SetWindowPos(
+                WindowHandle,
+                nullptr,
+                InitialRect->left,
+                InitialRect->top,
+                InitialRect->right - InitialRect->left,
+                InitialRect->bottom - InitialRect->top,
+                SWP_NOZORDER | SWP_NOACTIVATE);
         }
         else
         {
-            HMONITOR MonitorHandle = ::MonitorFromWindow(
-                WindowHandle,
-                MONITOR_DEFAULTTONEAREST);
-            if (MonitorHandle)
+            RECT ParentRect = {};
+            if (ParentWindowHandle)
             {
-                MONITORINFO MonitorInfo;
-                MonitorInfo.cbSize = sizeof(MONITORINFO);
-                if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+                ::GetWindowRect(ParentWindowHandle, &ParentRect);
+            }
+            else
+            {
+                HMONITOR MonitorHandle = ::MonitorFromWindow(
+                    WindowHandle,
+                    MONITOR_DEFAULTTONEAREST);
+                if (MonitorHandle)
                 {
-                    ParentRect = MonitorInfo.rcWork;
+                    MONITORINFO MonitorInfo;
+                    MonitorInfo.cbSize = sizeof(MONITORINFO);
+                    if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+                    {
+                        ParentRect = MonitorInfo.rcWork;
+                    }
                 }
             }
+
+            int ParentWidth = ParentRect.right - ParentRect.left;
+            int ParentHeight = ParentRect.bottom - ParentRect.top;
+
+            ::SetWindowPos(
+                WindowHandle,
+                nullptr,
+                ParentRect.left + ((ParentWidth - ScaledWidth) / 2),
+                ParentRect.top + ((ParentHeight - ScaledHeight) / 2),
+                ScaledWidth,
+                ScaledHeight,
+                SWP_NOZORDER | SWP_NOACTIVATE);
         }
-
-        int ParentWidth = ParentRect.right - ParentRect.left;
-        int ParentHeight = ParentRect.bottom - ParentRect.top;
-
-        ::SetWindowPos(
-            WindowHandle,
-            nullptr,
-            ParentRect.left + ((ParentWidth - ScaledWidth) / 2),
-            ParentRect.top + ((ParentHeight - ScaledHeight) / 2),
-            ScaledWidth,
-            ScaledHeight,
-            SWP_NOZORDER | SWP_NOACTIVATE);
 
         ::ShowWindow(WindowHandle, SW_SHOW);
         ::UpdateWindow(WindowHandle);
@@ -640,4 +660,103 @@ EXTERN_C LPCWSTR WINAPI K7ModernGetCopyLocationDialogPath(
         return nullptr;
     }
     return winrt::get_self<Implementation>(InstanceObject)->GetPath();
+}
+
+EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_SETTINGS_DIALOG_CONTEXT Context)
+{
+    if (!Context)
+    {
+        return -1;
+    }
+
+    HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
+    if (!WindowHandle)
+    {
+        return -1;
+    }
+
+    // The settings dialog is resizable so that the user can enlarge it when
+    // a larger dialog font size is selected. The default dialog style has no
+    // resize border, so add the thick frame and the maximize/minimize box.
+    {
+        LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+        Style |= WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
+        ::SetWindowLongPtrW(WindowHandle, GWL_STYLE, Style);
+    }
+
+    // Enforce a minimum window size so the dialog cannot be resized into a
+    // useless state (which matters when the user picks a huge font size).
+    if (!::SetWindowSubclass(
+        WindowHandle,
+        [](
+            _In_ HWND hWnd,
+            _In_ UINT uMsg,
+            _In_ WPARAM wParam,
+            _In_ LPARAM lParam,
+            _In_ UINT_PTR uIdSubclass,
+            _In_ DWORD_PTR dwRefData) -> LRESULT
+    {
+        UNREFERENCED_PARAMETER(uIdSubclass);
+        UNREFERENCED_PARAMETER(dwRefData);
+        if (uMsg == WM_GETMINMAXINFO)
+        {
+            MINMAXINFO *MinMaxInfo =
+                reinterpret_cast<MINMAXINFO *>(lParam);
+            UINT DpiValue = ::GetDpiForWindow(hWnd);
+            MinMaxInfo->ptMinTrackSize.x =
+                ::MulDiv(480, DpiValue, USER_DEFAULT_SCREEN_DPI);
+            MinMaxInfo->ptMinTrackSize.y =
+                ::MulDiv(420, DpiValue, USER_DEFAULT_SCREEN_DPI);
+            return 0;
+        }
+        return ::DefSubclassProc(
+            hWnd,
+            uMsg,
+            wParam,
+            lParam);
+    },
+        1,
+        0))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+
+    using Interface =
+        winrt::NanaZip::Modern::SettingsPage;
+    using Implementation =
+        winrt::NanaZip::Modern::implementation::SettingsPage;
+
+    Interface Window = winrt::make<Implementation>(
+        WindowHandle,
+        Context);
+
+    // Dedicated flow: K7ModernShowXamlDialog is not used here because it
+    // removes the SC_SIZE/SC_MAXIMIZE/SC_MINIMIZE system menu commands,
+    // which would break the resize and maximize features of this dialog.
+    ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
+
+    if (ParentWindowHandle)
+    {
+        ::EnableWindow(ParentWindowHandle, FALSE);
+    }
+
+    if (FAILED(::MileXamlSetXamlContentForContentWindow(
+        WindowHandle,
+        winrt::get_abi(Window))))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+
+    int Result = ::K7ModernShowXamlWindow(
+        WindowHandle,
+        540,
+        640,
+        ParentWindowHandle,
+        &Context->WindowRect);
+
+    return Result;
 }

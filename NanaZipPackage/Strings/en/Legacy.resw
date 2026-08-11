@@ -54,6 +54,9 @@
   <data name="Resource402" xml:space="preserve">
     <value>Cancel</value>
   </data>
+  <data name="Resource403" xml:space="preserve">
+    <value>Apply</value>
+  </data>
   <data name="Resource406" xml:space="preserve">
     <value>&amp;Yes</value>
   </data>
