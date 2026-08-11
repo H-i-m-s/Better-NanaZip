@@ -120,6 +120,39 @@ static void SaveOptionsDialogRect(const RECT &rc)
   ::RegCloseKey(key);
 }
 
+// Remember the last active tab of the options dialog (0..4) so the next
+// open restores the page the user was on.
+static UInt32 LoadOptionsDialogTab()
+{
+  UInt32 tab = 3; // default to the Settings page
+  HKEY key = nullptr;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, kOptionsDialogRegKey, 0,
+      KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
+    return tab;
+  DWORD v = 3;
+  DWORD size = sizeof(DWORD);
+  DWORD type = REG_DWORD;
+  if (::RegQueryValueExW(key, L"Tab", nullptr, &type,
+      (LPBYTE)&v, &size) == ERROR_SUCCESS && v <= 4)
+    tab = v;
+  ::RegCloseKey(key);
+  return tab;
+}
+
+static void SaveOptionsDialogTab(UInt32 tab)
+{
+  if (tab > 4)
+    return;
+  HKEY key = nullptr;
+  DWORD disp = 0;
+  if (::RegCreateKeyExW(HKEY_CURRENT_USER, kOptionsDialogRegKey, 0,
+      nullptr, 0, KEY_SET_VALUE, nullptr, &key, &disp) != ERROR_SUCCESS)
+    return;
+  DWORD v = tab;
+  ::RegSetValueExW(key, L"Tab", 0, REG_DWORD, (const BYTE *)&v, sizeof(v));
+  ::RegCloseKey(key);
+}
+
 // The "Apply" button saves the settings immediately without closing the
 // dialog. It runs on the UI thread while the dialog is open.
 static void SaveSettingsDialogContext(
@@ -474,6 +507,9 @@ void OptionsDialog(HWND hwndOwner, HINSTANCE /* hInstance */)
     // Restore the remembered dialog position and size (if any).
     LoadOptionsDialogRect(ctx.WindowRect);
 
+    // Restore the last active tab.
+    ctx.LastTab = LoadOptionsDialogTab();
+
     // "Apply" button support: save immediately without closing.
     CApplySettingsContext applyContext = { &ctx, hwndOwner };
     ctx.ApplyCallback = ApplySettingsCallback;
@@ -483,6 +519,9 @@ void OptionsDialog(HWND hwndOwner, HINSTANCE /* hInstance */)
 
     // Remember the final position and size for the next open.
     SaveOptionsDialogRect(ctx.WindowRect);
+
+    // Remember the last active tab for the next open.
+    SaveOptionsDialogTab(ctx.LastTab);
 
     if (ctx.OK)
     {

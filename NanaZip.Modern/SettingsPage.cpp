@@ -147,6 +147,11 @@ namespace winrt::NanaZip::Modern::implementation
 
     void SettingsPage::SwitchTab(int Index)
     {
+        if (this->m_Context)
+        {
+            this->m_Context->LastTab = (UINT32)Index;
+        }
+
         bool b0 = (Index == 0);
         bool b1 = (Index == 1);
         bool b2 = (Index == 2);
@@ -344,8 +349,14 @@ namespace winrt::NanaZip::Modern::implementation
         // Apply the dialog font size to this page (0 = follow system).
         ApplyDialogFont(this->m_Context->FontSizeDialog);
 
-        // Default to the Settings tab.
-        SwitchTab(3);
+        // Default to the tab the user was on last time (0..4, defensively
+        // clamped; 0xFF means unknown).
+        UINT32 InitialTab = this->m_Context->LastTab;
+        if (InitialTab > 4)
+        {
+            InitialTab = 3;
+        }
+        SwitchTab((int)InitialTab);
     }
 
     void SettingsPage::TabButtonClick(

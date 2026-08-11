@@ -351,6 +351,10 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     // the owner window. The dialog writes the final rect back here when it
     // is closed (position + size remembered for the next open).
     RECT WindowRect;
+    // Initial tab index (0..4). The caller fills it from the saved registry
+    // state; the dialog writes the last active tab back here when it closes
+    // so the next open restores the tab the user was on.
+    UINT32 LastTab;
 
     // --- Apply button ---
     // Optional callback invoked when the "Apply" button is clicked. If it is
