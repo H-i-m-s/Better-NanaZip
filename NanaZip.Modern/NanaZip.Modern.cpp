@@ -688,6 +688,9 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
 
     // Enforce a minimum window size so the dialog cannot be resized into a
     // useless state (which matters when the user picks a huge font size).
+    // Also snapshot the window rect when the dialog starts closing, while
+    // the window is still alive (the XAML Unloaded event may fire after the
+    // window is already destroyed, which would leave GetWindowRect empty).
     if (!::SetWindowSubclass(
         WindowHandle,
         [](
@@ -699,8 +702,15 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
             _In_ DWORD_PTR dwRefData) -> LRESULT
     {
         UNREFERENCED_PARAMETER(uIdSubclass);
-        UNREFERENCED_PARAMETER(dwRefData);
-        if (uMsg == WM_GETMINMAXINFO)
+        if (uMsg == WM_CLOSE)
+        {
+            if (dwRefData)
+            {
+                ::GetWindowRect(hWnd,
+                    reinterpret_cast<RECT *>(dwRefData));
+            }
+        }
+        else if (uMsg == WM_GETMINMAXINFO)
         {
             MINMAXINFO *MinMaxInfo =
                 reinterpret_cast<MINMAXINFO *>(lParam);
@@ -718,7 +728,7 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
             lParam);
     },
         1,
-        0))
+        reinterpret_cast<DWORD_PTR>(&Context->WindowRect)))
     {
         ::DestroyWindow(WindowHandle);
         return -1;

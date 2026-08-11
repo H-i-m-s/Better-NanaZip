@@ -1462,4 +1462,13 @@
   <data name="Resource7714" xml:space="preserve">
     <value>目錄連接點</value>
   </data>
+  <data name="Resource12200" xml:space="preserve">
+    <value>整合</value>
+  </data>
+  <data name="Resource12201" xml:space="preserve">
+    <value>開啟 Windows 設定應用程式以將檔案與 NanaZip 關聯</value>
+  </data>
+  <data name="Resource3434" xml:space="preserve">
+    <value>解壓後開啟（按住 Shift 跳過）</value>
+  </data>
 </root>

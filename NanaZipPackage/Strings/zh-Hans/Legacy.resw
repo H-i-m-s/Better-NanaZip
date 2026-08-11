@@ -1468,4 +1468,7 @@
   <data name="Resource12201" xml:space="preserve">
     <value>打开 Windows 设置应用将文件与 NanaZip 关联</value>
   </data>
+  <data name="Resource3434" xml:space="preserve">
+    <value>解压后打开（按住 Shift 跳过）</value>
+  </data>
 </root>
