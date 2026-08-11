@@ -24,6 +24,11 @@ namespace winrt::NanaZip::Modern::implementation
 
         void InitializeComponent();
 
+        // Applies the dialog font and measures the content so the caller
+        // can size the window before it is shown (avoids a visible resize
+        // after the dialog appears). Returns the desired client size in DIPs.
+        winrt::Windows::Foundation::Size PrepareForShow();
+
         void OnUnloaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -94,5 +99,6 @@ namespace winrt::NanaZip::Modern::implementation
         HWND m_WindowHandle;
         PK7_EXTRACT_DIALOG_CONTEXT m_Context;
         bool m_InitGuard;
+        bool m_OkClicked;
     };
 }

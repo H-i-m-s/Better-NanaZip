@@ -739,9 +739,54 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
 
     ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
 
-    if (ParentWindowHandle)
+    // The extract dialog adapts its size to the content, but the user should
+    // still be able to enlarge it (e.g. with a larger dialog font size), so
+    // give it a resize border and the maximize/minimize box.
     {
-        ::EnableWindow(ParentWindowHandle, FALSE);
+        LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+        Style |= WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
+        ::SetWindowLongPtrW(WindowHandle, GWL_STYLE, Style);
+    }
+
+    // Enforce a minimum window size so that dragging the border can never
+    // shrink the dialog below its measured content (which would clip the
+    // options). The XAML page writes MinTrackW/MinTrackH from its content
+    // during PrepareForShow; this subclass reads them in WM_GETMINMAXINFO.
+    if (!::SetWindowSubclass(
+        WindowHandle,
+        [](
+            _In_ HWND hWnd,
+            _In_ UINT uMsg,
+            _In_ WPARAM wParam,
+            _In_ LPARAM lParam,
+            _In_ UINT_PTR uIdSubclass,
+            _In_ DWORD_PTR dwRefData) -> LRESULT
+    {
+        UNREFERENCED_PARAMETER(wParam);
+        UNREFERENCED_PARAMETER(uIdSubclass);
+        if (uMsg == WM_GETMINMAXINFO)
+        {
+            const LONG *MinTrack = reinterpret_cast<const LONG *>(dwRefData);
+            if (MinTrack && MinTrack[0] > 0 && MinTrack[1] > 0)
+            {
+                MINMAXINFO *MinMaxInfo =
+                    reinterpret_cast<MINMAXINFO *>(lParam);
+                MinMaxInfo->ptMinTrackSize.x = MinTrack[0];
+                MinMaxInfo->ptMinTrackSize.y = MinTrack[1];
+                return 0;
+            }
+        }
+        return ::DefSubclassProc(
+            hWnd,
+            uMsg,
+            wParam,
+            lParam);
+    },
+        1,
+        reinterpret_cast<DWORD_PTR>(&Context->MinTrackW)))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
     }
 
     if (FAILED(::MileXamlSetXamlContentForContentWindow(
@@ -752,12 +797,108 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
         return -1;
     }
 
+    if (ParentWindowHandle)
+    {
+        ::EnableWindow(ParentWindowHandle, FALSE);
+    }
+
+    // Apply the dialog font and measure the content before the window is
+    // shown, so the initial size is final (no visible resize after show).
+    // Desired is the raw content size; the default window gets a comfortable
+    // margin so every line is fully visible on one row, while the minimum
+    // track size is smaller (the user may compress the dialog, letting long
+    // text wrap, without hiding the controls entirely).
+    winrt::Windows::Foundation::Size Desired(560, 460);
+    {
+        auto Self = winrt::get_self<Implementation>(Window);
+        Desired = Self->PrepareForShow();
+    }
+
+    const UINT Dpi = ::GetDpiForWindow(WindowHandle);
+    const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+
+    // Default size: content plus a comfortable margin, clamped to a sane
+    // range so the dialog never gets absurdly wide or narrow.
+    int ClientW = (int)((Desired.Width + 64.0f) * Scale + 0.5f);
+    int ClientH = (int)((Desired.Height + 40.0f) * Scale + 0.5f);
+    if (ClientW < 560) ClientW = 560;
+    if (ClientH < 460) ClientH = 460;
+
+    // Never exceed the work area (minus a small margin) even for very long
+    // paths, so the dialog cannot open off-screen; 1400 is a hard backstop.
+    RECT ParentRect = {};
+    if (ParentWindowHandle)
+    {
+        ::GetWindowRect(ParentWindowHandle, &ParentRect);
+    }
+    else
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle,
+            MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo;
+            MonitorInfo.cbSize = sizeof(MONITORINFO);
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                ParentRect = MonitorInfo.rcWork;
+            }
+        }
+    }
+    if (ParentRect.right > ParentRect.left)
+    {
+        const int WorkW = ParentRect.right - ParentRect.left - 48;
+        const int MaxClientW = (int)((float)WorkW / Scale + 0.5f);
+        if (ClientW > MaxClientW)
+        {
+            ClientW = MaxClientW;
+        }
+    }
+    if (ClientW > 1400) ClientW = 1400;
+    if (ClientH > 900) ClientH = 900;
+
+    // Minimum size: the width may shrink (text may wrap), but the height
+    // stays at the full content height so the buttons and the lower controls
+    // are never clipped when the user compresses the dialog vertically.
+    int MinClientW = (int)((Desired.Width - 48.0f) * Scale + 0.5f);
+    int MinClientH = (int)(Desired.Height * Scale + 0.5f);
+    if (MinClientW < 480) MinClientW = 480;
+    if (MinClientH < 400) MinClientH = 400;
+
+    RECT rc = { 0, 0, ClientW, ClientH };
+    {
+        const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+        const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+        ::AdjustWindowRectEx(&rc, (DWORD)Style, FALSE, (DWORD)ExStyle);
+    }
+
+    RECT rcMin = { 0, 0, MinClientW, MinClientH };
+    {
+        const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+        const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+        ::AdjustWindowRectEx(&rcMin, (DWORD)Style, FALSE, (DWORD)ExStyle);
+    }
+
+    Context->MinTrackW = rcMin.right - rcMin.left;
+    Context->MinTrackH = rcMin.bottom - rcMin.top;
+
+    // Center the dialog on the parent window (or the nearest monitor).
+    // ParentRect was already resolved above for the work-area limit.
+    const int WindowW = rc.right - rc.left;
+    const int WindowH = rc.bottom - rc.top;
+    const int PosX = ParentRect.left +
+        ((ParentRect.right - ParentRect.left - WindowW) / 2);
+    const int PosY = ParentRect.top +
+        ((ParentRect.bottom - ParentRect.top - WindowH) / 2);
+    RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
+
     int Result = ::K7ModernShowXamlWindow(
         WindowHandle,
-        500,
-        400,
+        ClientW,
+        ClientH,
         ParentWindowHandle,
-        nullptr);
+        &InitialRect);
 
     return Result;
 }

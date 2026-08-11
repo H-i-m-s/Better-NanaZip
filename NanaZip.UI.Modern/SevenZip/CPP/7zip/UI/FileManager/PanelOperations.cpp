@@ -860,16 +860,23 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     }
     else if (a->DeleteAfter && !okPaths.IsEmpty())
       SssDeleteBatchArchives(okPaths, a->DeletePermanently);
-    UString msg = L"已解压 ";
-    msg.Add_UInt32(done);
-    msg += L" 个归档";
-    if (failed > 0)
+    // Only report a summary when at least one archive was actually
+    // processed. If the run was cancelled or failed right away (e.g. the
+    // user opened the dialog and closed it without extracting anything),
+    // a "0 processed" popup would just be noise.
+    if (done > 0)
     {
-      msg += L"，";
-      msg.Add_UInt32(failed);
-      msg += a->OneByOne ? L" 个未完成" : L" 个失败";
+      UString msg = L"已解压 ";
+      msg.Add_UInt32(done);
+      msg += L" 个归档";
+      if (failed > 0)
+      {
+        msg += L"，";
+        msg.Add_UInt32(failed);
+        msg += a->OneByOne ? L" 个未完成" : L" 个失败";
+      }
+      MessageBoxW(0, msg, a->OneByOne ? L"逐个提取" : L"批量解压", MB_ICONINFORMATION);
     }
-    MessageBoxW(0, msg, a->OneByOne ? L"逐个提取" : L"批量解压", MB_ICONINFORMATION);
   }
 
   ::PostMessageW(a->PanelHwnd, kSssLoopDoneMessage, 0, 0);

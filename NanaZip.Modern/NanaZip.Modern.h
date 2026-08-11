@@ -483,6 +483,11 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // Dialog font size in points (0 = follow system), read from the registry
     // by the caller so the XAML page does not touch the registry.
     UINT32 FontSizeDialog;
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content (so dragging can never hide options)
+    // and read by the window subclass in WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
 
     // --- Output ---
     // True when the user pressed OK; false otherwise (cancel / X close).

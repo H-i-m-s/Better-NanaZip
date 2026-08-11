@@ -23,7 +23,8 @@ namespace winrt::NanaZip::Modern::implementation
         _In_ PK7_EXTRACT_DIALOG_CONTEXT Context) :
         m_WindowHandle(WindowHandle),
         m_Context(Context),
-        m_InitGuard(false)
+        m_InitGuard(false),
+        m_OkClicked(false)
     {
         this->Unloaded({ this, &ExtractPage::OnUnloaded });
         this->Loaded({ this, &ExtractPage::OnLoaded });
@@ -219,12 +220,15 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
 
+        this->m_InitGuard = false;
+    }
+
+    winrt::Windows::Foundation::Size ExtractPage::PrepareForShow()
+    {
         if (!this->m_Context)
         {
-            return;
+            return winrt::Windows::Foundation::Size(560, 460);
         }
-
-        this->m_InitGuard = true;
 
         PK7_EXTRACT_DIALOG_CONTEXT Context = this->m_Context;
 
@@ -356,7 +360,27 @@ namespace winrt::NanaZip::Modern::implementation
 
         ApplyDialogFont(Context->FontSizeDialog);
 
-        this->m_InitGuard = false;
+        // Measure the content with an infinite constraint so every control
+        // reports its natural size (including the longest combo item and the
+        // current dialog font size). The two columns are equal-width (1:1),
+        // so the dialog width must fit the wider column twice, otherwise the
+        // equal split would squeeze the wider column and clip its controls
+        // (e.g. the path combo) or wrap its text. The caller sizes the window
+        // from this before it is shown, so there is no visible resize after
+        // the dialog appears. The returned size is the content size without
+        // margin; the caller adds a comfortable margin for the default size
+        // and uses a smaller value for the minimum track size.
+        winrt::Windows::Foundation::Size Inf(
+            100000.0f, 100000.0f);
+        this->Measure(Inf);
+        winrt::Windows::Foundation::Size Desired = this->DesiredSize();
+
+        float LeftW = LeftColumnPanel().DesiredSize().Width;
+        float RightW = RightColumnPanel().DesiredSize().Width;
+        float Wide = LeftW > RightW ? LeftW : RightW;
+        // Column gap (12+12) plus the page padding (12+12).
+        Desired.Width = Wide * 2.0f + 48.0f;
+        return Desired;
     }
 
     void ExtractPage::OnUnloaded(
@@ -365,6 +389,15 @@ namespace winrt::NanaZip::Modern::implementation
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
+
+        // The window can also be closed with the X button or Alt+F4, which
+        // never passes through OnCancelClicked. Treat every close that was
+        // not confirmed by OK as a cancel, otherwise the caller would start
+        // extracting with a dialog the user never confirmed.
+        if (this->m_Context && !this->m_OkClicked)
+        {
+            this->m_Context->OK = FALSE;
+        }
     }
 
     static int CALLBACK BrowseCallbackProc(
@@ -611,6 +644,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
 
         Context->OK = TRUE;
+        this->m_OkClicked = true;
         ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
     }
 }
