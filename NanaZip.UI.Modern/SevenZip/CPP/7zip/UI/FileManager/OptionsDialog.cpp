@@ -122,6 +122,10 @@ static void SaveOptionsDialogRect(const RECT &rc)
 
 // The "Apply" button saves the settings immediately without closing the
 // dialog. It runs on the UI thread while the dialog is open.
+static void SaveSettingsDialogContext(
+    const K7_SETTINGS_DIALOG_CONTEXT &ctx,
+    HWND hwndOwner);
+
 struct CApplySettingsContext
 {
   K7_SETTINGS_DIALOG_CONTEXT *Ctx;

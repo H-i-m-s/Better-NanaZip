@@ -423,11 +423,6 @@
       BorderThickness="0,1,0,0">
       <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
         <Button
-          x:Name="ApplyButton"
-          Width="110"
-          Margin="4,0"
-          Click="ApplyButtonClick" />
-        <Button
           x:Name="OkButton"
           Width="110"
           Margin="4,0"
@@ -437,6 +432,11 @@
           Width="110"
           Margin="4,0"
           Click="CancelButtonClick" />
+        <Button
+          x:Name="ApplyButton"
+          Width="110"
+          Margin="4,0"
+          Click="ApplyButtonClick" />
       </StackPanel>
     </Grid>
   </Grid>

@@ -21,7 +21,7 @@
   <Identity
     Name="SSS.NanaZip.RemotePassword"
     Publisher="CN=SSS NanaZip Development"
-    Version="6.5.1800.48" />
+    Version="6.5.1800.49" />
 
   <Properties>
     <DisplayName>NanaZip</DisplayName>
