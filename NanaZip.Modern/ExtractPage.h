@@ -73,6 +73,19 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        void OnSizeChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e);
+
+        // Moves the path mode / overwrite mode combos to the next row when
+        // the dialog is too narrow to fit label + combo on one line.
+        void UpdateModeRowLayout();
+
+        // Recomputes the minimum track size from the current layout (the
+        // wrap state may change what the content needs) and writes it back
+        // to the context so the window subclass enforces it.
+        void RecalcMinTrack();
+
     private:
 
         winrt::hstring Res(

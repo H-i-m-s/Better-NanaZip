@@ -22,8 +22,11 @@
 
     <Grid Padding="12,12,12,12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
+            <!-- The content row shrinks when the user compresses the window;
+                 the button row stays at its natural height so OK/Cancel are
+                 never clipped. -->
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
@@ -47,6 +50,7 @@
                         Grid.Column="0"
                         IsEditable="True"
                         MinWidth="120"
+                        HorizontalAlignment="Stretch"
                         ItemTemplate="{StaticResource WrapComboItemTemplate}"/>
                     <Button
                         x:Name="BrowseButton"
@@ -75,39 +79,31 @@
                         VerticalAlignment="Center"/>
                 </Grid>
 
-                <Grid Margin="0,10,0,0">
+                <!-- Path mode: the label keeps one line; when the window is
+                     squeezed too narrow, the combo moves to the next row
+                     (handled in UpdateModeRowLayout). -->
+                <Grid x:Name="PathModeRow" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock
                         x:Name="PathModeText"
+                        Grid.Row="0"
                         Grid.Column="0"
-                        VerticalAlignment="Center"
-                        TextWrapping="Wrap"/>
+                        Margin="28,0,0,0"
+                        VerticalAlignment="Center"/>
                     <ComboBox
                         x:Name="PathModeCombo"
+                        Grid.Row="0"
                         Grid.Column="1"
                         Margin="6,0,0,0"
                         MinWidth="140"
-                        ItemTemplate="{StaticResource WrapComboItemTemplate}"/>
-                </Grid>
-
-                <Grid Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock
-                        x:Name="OverwriteModeText"
-                        Grid.Column="0"
-                        VerticalAlignment="Center"
-                        TextWrapping="Wrap"/>
-                    <ComboBox
-                        x:Name="OverwriteModeCombo"
-                        Grid.Column="1"
-                        Margin="6,0,0,0"
-                        MinWidth="160"
+                        HorizontalAlignment="Stretch"
                         ItemTemplate="{StaticResource WrapComboItemTemplate}"/>
                 </Grid>
 
@@ -116,6 +112,32 @@
                     Margin="0,10,0,0"
                     ContentTemplate="{StaticResource WrapCheckTextTemplate}"
                     Click="OnElimDupClicked"/>
+
+                <!-- Overwrite mode: same label/combo wrap behavior. -->
+                <Grid x:Name="OverwriteModeRow" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        x:Name="OverwriteModeText"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        Margin="28,0,0,0"
+                        VerticalAlignment="Center"/>
+                    <ComboBox
+                        x:Name="OverwriteModeCombo"
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        Margin="6,0,0,0"
+                        MinWidth="160"
+                        HorizontalAlignment="Stretch"
+                        ItemTemplate="{StaticResource WrapComboItemTemplate}"/>
+                </Grid>
             </StackPanel>
 
             <!-- Right column -->

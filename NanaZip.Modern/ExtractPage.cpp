@@ -28,6 +28,7 @@ namespace winrt::NanaZip::Modern::implementation
     {
         this->Unloaded({ this, &ExtractPage::OnUnloaded });
         this->Loaded({ this, &ExtractPage::OnLoaded });
+        this->SizeChanged({ this, &ExtractPage::OnSizeChanged });
     }
 
     void ExtractPage::InitializeComponent()
@@ -398,6 +399,113 @@ namespace winrt::NanaZip::Modern::implementation
         {
             this->m_Context->OK = FALSE;
         }
+    }
+
+    void ExtractPage::OnSizeChanged(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->UpdateModeRowLayout();
+    }
+
+    void ExtractPage::UpdateModeRowLayout()
+    {
+        if (!this->m_Context)
+        {
+            return;
+        }
+
+        // Content width available inside the page padding (12 left + 12
+        // right). The left column is half of it minus the column gap.
+        const double PageW = this->ActualWidth();
+        if (PageW <= 0.0)
+        {
+            return;
+        }
+        const double LeftColW = (PageW - 24.0 - 24.0) / 2.0;
+
+        // The labels are indented so their text lines up with the checkbox
+        // text ("eliminate duplication..."), not with the check box itself.
+        const double Indent = 28.0;
+        // Wrap with some slack so label + combo never look cramped.
+        const double Slack = 24.0;
+
+        const double PathNeed =
+            Indent + PathModeText().ActualWidth() + 6.0 + 140.0 + Slack;
+        const double OverNeed =
+            Indent + OverwriteModeText().ActualWidth() + 6.0 + 160.0 + Slack;
+
+        const bool PathWrap = PathNeed > LeftColW;
+        const bool OverWrap = OverNeed > LeftColW;
+
+        // Same row: label left, combo right. Wrapped: the combo sits below
+        // the label, indented to the label's text start, with vertical
+        // separation so it does not touch the label.
+        auto SetRowLayout =
+            [](
+                winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
+                bool Wrap)
+        {
+            winrt::Windows::UI::Xaml::Controls::Grid::SetRow(
+                Combo, Wrap ? 1 : 0);
+            winrt::Windows::UI::Xaml::Controls::Grid::SetColumn(
+                Combo, Wrap ? 0 : 1);
+            winrt::Windows::UI::Xaml::Controls::Grid::SetColumnSpan(
+                Combo, Wrap ? 2 : 1);
+            Combo.Margin(Wrap
+                ? winrt::Windows::UI::Xaml::Thickness(28.0, 8.0, 0.0, 0.0)
+                : winrt::Windows::UI::Xaml::Thickness(6.0, 0.0, 0.0, 0.0));
+        };
+
+        SetRowLayout(PathModeCombo(), PathWrap);
+        SetRowLayout(OverwriteModeCombo(), OverWrap);
+
+        // The wrap state changed what the layout needs; refresh the minimum
+        // track size so compressing further never clips the content.
+        this->RecalcMinTrack();
+    }
+
+    void ExtractPage::RecalcMinTrack()
+    {
+        if (!this->m_Context)
+        {
+            return;
+        }
+
+        const double PageW = this->ActualWidth();
+        if (PageW <= 0.0)
+        {
+            return;
+        }
+
+        // Measure with the current width so DesiredSize reflects the current
+        // wrap state; that is the minimum the content needs right now.
+        winrt::Windows::Foundation::Size Constraint(
+            (float)PageW, 100000.0f);
+        this->Measure(Constraint);
+        winrt::Windows::Foundation::Size Desired = this->DesiredSize();
+
+        const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
+        const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+
+        int MinClientW = (int)((Desired.Width + 32.0f) * Scale + 0.5f);
+        int MinClientH = (int)(Desired.Height * Scale + 0.5f);
+        if (MinClientW < 480) MinClientW = 480;
+        if (MinClientH < 400) MinClientH = 400;
+
+        RECT rc = { 0, 0, MinClientW, MinClientH };
+        {
+            const LONG_PTR Style = ::GetWindowLongPtrW(
+                this->m_WindowHandle, GWL_STYLE);
+            const LONG_PTR ExStyle = ::GetWindowLongPtrW(
+                this->m_WindowHandle, GWL_EXSTYLE);
+            ::AdjustWindowRectEx(&rc, (DWORD)Style, FALSE, (DWORD)ExStyle);
+        }
+
+        this->m_Context->MinTrackW = rc.right - rc.left;
+        this->m_Context->MinTrackH = rc.bottom - rc.top;
     }
 
     static int CALLBACK BrowseCallbackProc(
