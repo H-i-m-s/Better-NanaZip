@@ -12,6 +12,7 @@
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Core.h>
 
 #include <vector>
 #include <algorithm>
@@ -445,6 +446,28 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
+    // Recursively collects all visual children of a given type.
+    template <typename T>
+    static void FindVisualChildren(
+        winrt::Windows::UI::Xaml::DependencyObject const& Node,
+        std::vector<T>& Out)
+    {
+        const int Count =
+            winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+                GetChildrenCount(Node);
+        for (int i = 0; i < Count; i++)
+        {
+            auto Child =
+                winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+                    GetChild(Node, i);
+            if (auto Tried = Child.try_as<T>())
+            {
+                Out.push_back(Tried);
+            }
+            FindVisualChildren(Child, Out);
+        }
+    }
+
     void ExtractPage::OnPathComboDropDownOpened(
         winrt::IInspectable const& sender,
         winrt::IInspectable const& e)
@@ -453,6 +476,37 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(e);
         this->m_PathTextSnapshot =
             PathCombo().Text().c_str();
+
+        // Show the "x" on every history entry once the drop-down is open,
+        // but never on the first entry (the current path). Containers are
+        // generated asynchronously, so defer one dispatch.
+        this->Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+            [this]()
+        {
+            const uint32_t Count = PathCombo().Items().Size();
+            for (uint32_t i = 0; i < Count; i++)
+            {
+                auto Container = PathCombo().ContainerFromIndex((int)i);
+                if (!Container)
+                {
+                    continue;
+                }
+                std::vector<
+                    winrt::Windows::UI::Xaml::Controls::Button> Buttons;
+                FindVisualChildren(
+                    Container.as<
+                        winrt::Windows::UI::Xaml::DependencyObject>(),
+                    Buttons);
+                const auto Vis = (i == 0)
+                    ? winrt::Windows::UI::Xaml::Visibility::Collapsed
+                    : winrt::Windows::UI::Xaml::Visibility::Visible;
+                for (auto& B : Buttons)
+                {
+                    B.Visibility(Vis);
+                }
+            }
+        });
     }
 
     void ExtractPage::OnPathComboDropDownClosed(
@@ -468,6 +522,68 @@ namespace winrt::NanaZip::Modern::implementation
                 winrt::hstring(this->m_PathTextSnapshot));
         }
         this->m_PathTextSnapshot.clear();
+
+        // Hide every "x" again; this also covers the closed-state
+        // selection renderer which would otherwise show an "x" in the box.
+        std::vector<
+            winrt::Windows::UI::Xaml::Controls::Button> Buttons;
+        FindVisualChildren(PathCombo(), Buttons);
+        for (auto& B : Buttons)
+        {
+            B.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        }
+    }
+
+    void ExtractPage::OnDeleteHistoryPathClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(e);
+        auto Button = sender.as<
+            winrt::Windows::UI::Xaml::Controls::Button>();
+        auto Data = Button.DataContext();
+        if (!Data)
+        {
+            return;
+        }
+        std::wstring Path =
+            winrt::unbox_value<winrt::hstring>(Data).c_str();
+
+        // The first entry mirrors the current path in the box; it is not a
+        // history entry, so its "x" does nothing.
+        if (Path.empty() ||
+            Path == PathCombo().Text().c_str())
+        {
+            return;
+        }
+
+        // Remove the entry from the drop-down list.
+        const auto& Items = PathCombo().Items();
+        for (uint32_t i = 0; i < Items.Size(); i++)
+        {
+            auto Item = Items.GetAt(i);
+            if (Item)
+            {
+                auto Text = winrt::unbox_value_or<
+                    winrt::hstring>(Item, winrt::hstring());
+                if (Text == winrt::hstring(Path))
+                {
+                    Items.RemoveAt(i);
+                    break;
+                }
+            }
+        }
+
+        // Record it so the caller can persist the removal (even on cancel).
+        if (this->m_Context &&
+            this->m_Context->NumRemovedPaths < 16)
+        {
+            wcscpy_s(
+                this->m_Context->RemovedPaths[
+                    this->m_Context->NumRemovedPaths],
+                Path.c_str());
+            this->m_Context->NumRemovedPaths++;
+        }
     }
 
     // Lays a mode combo out on the same row as its label, or below it

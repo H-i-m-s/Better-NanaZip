@@ -2,12 +2,15 @@
 
 #include "StdAfx.h"
 
+#include <vector>
+
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
 
 #include "../../../Windows/FileDir.h"
 #include "../../../Windows/FileFind.h"
 #include "../../../Windows/FileName.h"
+#include "../../../Windows/FileIO.h"
 #include "../../../Windows/Thread.h"
 
 #include "../FileManager/ExtractCallback.h"
@@ -429,6 +432,98 @@ static void SssWriteBatchOk()
 }
 // **************** SSS Modification End ****************
 
+// **************** NanaZip Modification Start ****************
+// Extract history is stored in a plain file under the packaged app's
+// LocalState directory (next to the user's passwords.txt) instead of the
+// registry: the packaged (MSIX) environment isolates registry writes made
+// by the helper extraction process, so registry-based history never
+// survives. A file read/written with ordinary file APIs works everywhere.
+static FString GetExtractHistoryFilePath()
+{
+  FString result;
+  wchar_t envBuf[MAX_PATH];
+  const DWORD len = ::GetEnvironmentVariableW(
+      L"LOCALAPPDATA", envBuf, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH)
+    return result;
+  result = envBuf;
+  result += L"\\Packages\\SSS.NanaZip.RemotePassword_t9byekn60qs4j"
+      L"\\LocalState\\ExtractHistory.txt";
+  return result;
+}
+
+static void SaveExtractHistoryFile(const UStringVector &paths)
+{
+  FString path = GetExtractHistoryFilePath();
+  if (path.IsEmpty())
+    return;
+  // One path per line, CRLF, native UTF-16 (wchar_t) bytes.
+  size_t total = 1;
+  FOR_VECTOR (i, paths)
+    total += paths[i].Len() + 2;
+  std::vector<wchar_t> buf(total, 0);
+  size_t off = 0;
+  FOR_VECTOR (i, paths)
+  {
+    wcscpy_s(&buf[off], total - off, paths[i].Ptr());
+    off += paths[i].Len();
+    buf[off++] = L'\r';
+    buf[off++] = L'\n';
+  }
+  NWindows::NFile::NIO::COutFile file;
+  if (file.Create_ALWAYS(path))
+  {
+    UInt32 written = 0;
+    file.Write(buf.data(), (UInt32)(off * sizeof(wchar_t)), written);
+    file.Close();
+  }
+}
+
+static void LoadExtractHistoryFile(UStringVector &paths)
+{
+  FString path = GetExtractHistoryFilePath();
+  if (path.IsEmpty())
+    return;
+  NWindows::NFile::NIO::CInFile file;
+  if (!file.Open(path))
+    return;
+  UInt64 size64 = 0;
+  if (!file.GetLength(size64) || size64 == 0 || size64 > (1 << 20))
+    return;
+  std::vector<wchar_t> buf((size_t)(size64 / sizeof(wchar_t)) + 1, 0);
+  UInt32 read = 0;
+  file.Read(buf.data(), (UInt32)size64, read);
+  file.Close();
+  UString line;
+  const size_t count = read / sizeof(wchar_t);
+  for (size_t i = 0; i < count; i++)
+  {
+    const wchar_t ch = buf[i];
+    if (ch == L'\n')
+    {
+      if (!line.IsEmpty() && line.Back() == L'\r')
+        line.DeleteBack();
+      if (!line.IsEmpty())
+      {
+        paths.Add(line);
+        if (paths.Size() >= 16)
+          break;
+      }
+      line.Empty();
+    }
+    else if (ch != 0)
+      line += ch;
+  }
+  if (!line.IsEmpty() && paths.Size() < 16)
+  {
+    if (line.Back() == L'\r')
+      line.DeleteBack();
+    if (!line.IsEmpty())
+      paths.Add(line);
+  }
+}
+// **************** NanaZip Modification End ****************
+
 HRESULT ExtractGUI(
     // DECL_EXTERNAL_CODECS_LOC_VARS
     CCodecs *codecs,
@@ -489,6 +584,10 @@ HRESULT ExtractGUI(
         CExtractDialog dialog; // not created; state exchange only
         NExtract::CInfo xInfo;
         xInfo.Load();
+        // History lives in a file (registry is isolated in the packaged
+        // environment), so load it over whatever the registry had.
+        xInfo.Paths.Clear();
+        LoadExtractHistoryFile(xInfo.Paths);
 
         FString outputDirFullX;
         if (!MyGetFullPathName(outputDir, outputDirFullX))
@@ -573,6 +672,27 @@ HRESULT ExtractGUI(
         }
 
         ::K7ModernShowExtractDialog(hwndParent, &ctx);
+
+        // Apply history removals from the drop-down "x" buttons regardless
+        // of whether the dialog was confirmed or cancelled.
+        if (ctx.NumRemovedPaths > 0)
+        {
+          for (UINT32 i = 0; i < ctx.NumRemovedPaths && i < 16; i++)
+          {
+            UString rm = ctx.RemovedPaths[i];
+            FOR_VECTOR (j, xInfo.Paths)
+            {
+              if (xInfo.Paths[j] == rm)
+              {
+                xInfo.Paths.Delete(j);
+                break;
+              }
+            }
+          }
+          SaveExtractHistoryFile(xInfo.Paths);
+          xInfo.Save();
+        }
+
         if (!ctx.OK)
           return E_ABORT;
 
@@ -652,6 +772,9 @@ HRESULT ExtractGUI(
           }
           xInfo.Paths = merged;
         }
+        // Persist the history to the file (the registry path is isolated
+        // in the packaged environment; the file is what gets read back).
+        SaveExtractHistoryFile(xInfo.Paths);
         xInfo.Save();
 
         xamlDone = true;

@@ -109,6 +109,11 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::IInspectable const& e);
 
+        // Removes a history entry via the "x" in the path drop-down.
+        void OnDeleteHistoryPathClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
     private:
 
         winrt::hstring Res(

@@ -19,6 +19,29 @@
                 TextWrapping="Wrap"
                 MaxWidth="320"/>
         </DataTemplate>
+        <DataTemplate x:Key="PathComboItemTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="{Binding}"
+                    TextWrapping="Wrap"
+                    VerticalAlignment="Center"
+                    Margin="0,0,4,0"/>
+                <Button
+                    Grid.Column="1"
+                    Content="&#x2715;"
+                    Click="OnDeleteHistoryPathClicked"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="4"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"/>
+            </Grid>
+        </DataTemplate>
     </Page.Resources>
 
     <Grid Padding="12,12,12,12">
@@ -52,7 +75,7 @@
                         IsEditable="True"
                         MinWidth="120"
                         HorizontalAlignment="Stretch"
-                        ItemTemplate="{StaticResource WrapComboItemTemplate}"/>
+                        ItemTemplate="{StaticResource PathComboItemTemplate}"/>
                     <Button
                         x:Name="BrowseButton"
                         Grid.Column="1"

@@ -480,6 +480,10 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // Path history, most recent first (up to 16 entries).
     WCHAR Paths[16][MAX_PATH];
     UINT32 NumPaths;
+    // History entries the user removed with the "x" in the drop-down
+    // (written back by the caller regardless of OK/cancel).
+    WCHAR RemovedPaths[16][MAX_PATH];
+    UINT32 NumRemovedPaths;
     // Dialog font size in points (0 = follow system), read from the registry
     // by the caller so the XAML page does not touch the registry.
     UINT32 FontSizeDialog;
