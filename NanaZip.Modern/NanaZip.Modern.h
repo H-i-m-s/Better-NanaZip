@@ -585,6 +585,9 @@ typedef struct _K7_COMPRESS_DIALOG_CONTEXT
     UINT32 FontSizeDialog;
     LONG MinTrackW;
     LONG MinTrackH;
+    // Initial/final window rectangle in physical pixels. The Universal side
+    // persists this value so the dialog reopens at its last position and size.
+    RECT WindowRect;
     BOOLEAN OK;
 
     K7_COMPRESS_DIALOG_COMMAND_CALLBACK CommandCallback;

@@ -270,11 +270,20 @@ namespace winrt::NanaZip::Modern::implementation
         ReenterPasswordBox().Password(winrt::hstring(Context->PasswordConfirmation));
         UpdatePasswordControl();
 
-        MemoryValueText().Text(winrt::hstring(Context->MemoryValueText));
-        DecompressMemoryText().Text(winrt::hstring(Context->DecompressMemoryText));
-        DecompressMemoryText().Visibility(Context->DecompressMemoryVisible
-            ? winrt::Windows::UI::Xaml::Visibility::Visible
-            : winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        // One line, decompression usage first:
+        // "<decompress> / <compress usage> / <usage limit> / <RAM>"
+        {
+            std::wstring memLine = Context->DecompressMemoryText;
+            if (Context->MemoryValueText[0])
+            {
+                if (!memLine.empty())
+                {
+                    memLine += L" / ";
+                }
+                memLine += Context->MemoryValueText;
+            }
+            MemoryValueText().Text(winrt::hstring(memLine));
+        }
         HardwareThreadsText().Text(winrt::hstring(Context->HardwareThreadsText));
         ArchiveFolderText().Text(winrt::hstring(Context->ArchiveFolderText));
         OptionsSummaryText().Text(winrt::hstring(Context->OptionsSummaryText));
@@ -319,11 +328,20 @@ namespace winrt::NanaZip::Modern::implementation
         SolidText().Text(Res(4008, L"&Solid Block size:"));
         ThreadsText().Text(Res(4009, L"Number of CPU &threads:"));
         MemoryText().Text(Res(4017, L"Memory usage for Compressing:"));
-        DecompressMemoryText().Text(Res(4018, L"Memory usage for Decompressing:"));
         VolumeText().Text(Res(7302, L"Split to &volumes, bytes:"));
         ParametersText().Text(Res(4010, L"Parameters:"));
         UpdateModeText().Text(Res(4002, L"&Update mode:"));
-        PathModeText().Text(Res(3410, L"Path mode:"));
+        {
+            // The Chinese legacy string for 3410 has no trailing colon
+            // ("路径模式"), while the English fallback does ("Path mode:").
+            // Normalize to the same "label:" form as the other rows.
+            std::wstring pm = Res(3410, L"Path mode:").c_str();
+            if (!pm.empty() && pm.back() != L':' && pm.back() != L'：')
+            {
+                pm += L'：';
+            }
+            PathModeText().Text(winrt::hstring(pm));
+        }
         OptionsGroupText().Text(Res(4011, L"Options"));
         SfxCheck().Content(winrt::box_value(Res(4012, L"Create SF&X archive")));
         SharedCheck().Content(winrt::box_value(Res(4013, L"Compress shared files")));
@@ -407,6 +425,50 @@ namespace winrt::NanaZip::Modern::implementation
         LeftColumnPanel().Measure(Inf);
         RightColumnPanel().Measure(Inf);
         AlignLeftLabelsColumn();
+
+        // Unify the combo widths per column: every left-column combo gets
+        // the same MinWidth (the widest of the eight), and the two
+        // right-column combos get the same MinWidth (the widest of the two).
+        // With the label columns unified too, the combos share the same
+        // left edge and the same width, so the row of boxes is aligned.
+        {
+            double MaxComboW = 0.0;
+            for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                    FormatCombo(), LevelCombo(), MethodCombo(),
+                    DictionaryCombo(), OrderCombo(), SolidCombo(),
+                    ThreadsCombo(), MemoryCombo() })
+            {
+                MaxComboW = (std::max)(MaxComboW, (double)Combo.DesiredSize().Width);
+            }
+            if (MaxComboW > 0.0)
+            {
+                for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                        FormatCombo(), LevelCombo(), MethodCombo(),
+                        DictionaryCombo(), OrderCombo(), SolidCombo(),
+                        ThreadsCombo(), MemoryCombo() })
+                {
+                    Combo.MinWidth(MaxComboW);
+                }
+            }
+        }
+        {
+            double MaxComboW = 0.0;
+            for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                    UpdateModeCombo(), PathModeCombo() })
+            {
+                MaxComboW = (std::max)(MaxComboW, (double)Combo.DesiredSize().Width);
+            }
+            if (MaxComboW > 0.0)
+            {
+                for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                        UpdateModeCombo(), PathModeCombo() })
+                {
+                    Combo.MinWidth(MaxComboW);
+                }
+            }
+        }
+        AlignRightLabelsColumn();
+
         LeftColumnPanel().Measure(Inf);
         winrt::Windows::Foundation::Size Left =
             LeftColumnPanel().DesiredSize();
@@ -457,13 +519,16 @@ namespace winrt::NanaZip::Modern::implementation
             const auto Value = MemoryValueText();
             winrt::Windows::UI::Xaml::Controls::Grid::SetRow(
                 Value, LeftWrap ? 2 : 1);
+            // The memory detail is a continuation of the label row, so it
+            // always starts at the left edge of the label column, regardless
+            // of whether the combo is currently wrapped.
             winrt::Windows::UI::Xaml::Controls::Grid::SetColumn(
-                Value, LeftWrap ? 0 : 1);
+                Value, 0);
             winrt::Windows::UI::Xaml::Controls::Grid::SetColumnSpan(
-                Value, LeftWrap ? 2 : 1);
+                Value, 2);
             Value.Margin(LeftWrap
                 ? winrt::Windows::UI::Xaml::Thickness(0.0, 8.0, 0.0, 0.0)
-                : winrt::Windows::UI::Xaml::Thickness(6.0, 4.0, 0.0, 0.0));
+                : winrt::Windows::UI::Xaml::Thickness(0.0, 4.0, 0.0, 0.0));
         }
         SetWrapRowLayout(VolumeCombo(), LeftWrap, 0.0);
         SetWrapRowLayout(ParametersBox(), LeftWrap, 0.0);
@@ -518,24 +583,21 @@ namespace winrt::NanaZip::Modern::implementation
         this->m_RightWrapThresholdW =
             (double)this->DesiredSize().Width + 40.0;
 
-        // The compact height (everything side by side) is the smallest the
-        // window can be, so the vertical minimum lets the user actually
-        // drag the bottom edge up and down (the OK/Cancel row stays pinned
-        // and the content scrolls if it no longer fits).
+        // The content is hosted in a ScrollViewer and the button row is
+        // Auto-sized, so the vertical minimum must remain small enough for
+        // a real vertical drag. The dialog may become short; the content
+        // scrolls while OK/Cancel stay reachable.
         SetAllRows(false, false, false);
-        this->Measure(Constraint);
-        const float SideBySideH = this->DesiredSize().Height;
 
-        // The minimum window size is the wrapped layout plus a little
-        // slack, so the user can always squeeze the window far enough to
-        // reach the wrap transition.
+        // The minimum width is the fully wrapped layout plus a little slack,
+        // so the user can always reach the wrap transition.
         const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
         const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
 
         int MinClientW = (int)(((double)WrappedW + 32.0) * Scale + 0.5);
-        int MinClientH = (int)((double)SideBySideH * Scale + 0.5);
+        int MinClientH = (int)(168.0f * Scale + 0.5);
         if (MinClientW < 480) MinClientW = 480;
-        if (MinClientH < 400) MinClientH = 400;
+        if (MinClientH < 168) MinClientH = 168;
 
         RECT rc = { 0, 0, MinClientW, MinClientH };
         {
@@ -558,8 +620,7 @@ namespace winrt::NanaZip::Modern::implementation
         double MaxW = 0.0;
         for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
                 FormatText(), LevelText(), MethodText(), DictionaryText(),
-                OrderText(), SolidText(), ThreadsText(), MemoryText(),
-                VolumeText(), ParametersText() })
+                OrderText(), SolidText(), ThreadsText(), MemoryText() })
         {
             MaxW = (std::max)(MaxW, (double)Label.DesiredSize().Width);
         }
@@ -567,10 +628,20 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                FormatText(), LevelText(), MethodText(), DictionaryText(),
+                OrderText(), SolidText(), ThreadsText(), MemoryText() })
+        {
+            // Fix the label control itself as well as the Grid column. This
+            // prevents a later finite measure from restoring each row's
+            // natural Auto width and moving its combo independently.
+            Label.Width(MaxW);
+            Label.HorizontalAlignment(
+                winrt::Windows::UI::Xaml::HorizontalAlignment::Left);
+        }
         for (auto const& Row : std::vector<winrt::Windows::UI::Xaml::Controls::Grid>{
                 FormatRow(), LevelRow(), MethodRow(), DictionaryRow(),
-                OrderRow(), SolidRow(), ThreadsRow(), MemoryRow(),
-                VolumeRow(), ParametersRow() })
+                OrderRow(), SolidRow(), ThreadsRow(), MemoryRow() })
         {
             const auto Defs = Row.ColumnDefinitions();
             if (Defs.Size() < 1)
@@ -582,64 +653,34 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    void CompressPage::AdjustWindowHeightToContent()
+    void CompressPage::AlignRightLabelsColumn()
     {
-        if (!this->m_WindowHandle || !this->m_Context)
+        double MaxW = 0.0;
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                UpdateModeText(), PathModeText() })
+        {
+            MaxW = (std::max)(MaxW, (double)Label.DesiredSize().Width);
+        }
+        if (MaxW <= 0.0)
         {
             return;
         }
-        if (this->ActualWidth() <= 0.0)
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                UpdateModeText(), PathModeText() })
         {
-            return;
+            Label.Width(MaxW);
+            Label.HorizontalAlignment(
+                winrt::Windows::UI::Xaml::HorizontalAlignment::Left);
         }
-
-        // Measure the page under the current width: the height it wants is
-        // the natural height of the current (wrapped or side-by-side)
-        // layout, including the OK/Cancel row.
-        try
+        for (auto const& Row : std::vector<winrt::Windows::UI::Xaml::Controls::Grid>{
+                UpdateModeRow(), PathModeRow() })
         {
-            winrt::Windows::Foundation::Size Constraint(
-                (float)this->ActualWidth(), 100000.0f);
-            this->Measure(Constraint);
-            const float NeedH = this->DesiredSize().Height;
-
-            RECT rcClient = {};
-            ::GetClientRect(this->m_WindowHandle, &rcClient);
-            const int CurClientH = rcClient.bottom - rcClient.top;
-            const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
-            const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
-            const int TargetClientH = (int)(NeedH * Scale + 0.5f);
-            if (TargetClientH == CurClientH)
+            const auto Definitions = Row.ColumnDefinitions();
+            if (Definitions.Size() > 0)
             {
-                return;
+                Definitions.GetAt(0).Width(
+                    winrt::Windows::UI::Xaml::GridLength(MaxW));
             }
-
-            RECT rcWin = {};
-            ::GetWindowRect(this->m_WindowHandle, &rcWin);
-            const LONG_PTR Style = ::GetWindowLongPtrW(
-                this->m_WindowHandle, GWL_STYLE);
-            const LONG_PTR ExStyle = ::GetWindowLongPtrW(
-                this->m_WindowHandle, GWL_EXSTYLE);
-            RECT rcAdj = { 0, 0, rcClient.right - rcClient.left, TargetClientH };
-            ::AdjustWindowRectEx(&rcAdj, (DWORD)Style, FALSE, (DWORD)ExStyle);
-            const int NewW = rcAdj.right - rcAdj.left;
-            const int NewH = rcAdj.bottom - rcAdj.top;
-            const int CurWinH = rcWin.bottom - rcWin.top;
-            // Keep the bottom edge in place so the title bar never leaves the
-            // screen when the window grows taller on wrap.
-            const int NewY = rcWin.top - (NewH - CurWinH);
-            ::SetWindowPos(
-                this->m_WindowHandle,
-                nullptr,
-                rcWin.left,
-                NewY,
-                NewW,
-                NewH,
-                SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        catch (...)
-        {
-            // Height snapping is a refinement; never let it kill the dialog.
         }
     }
 
@@ -669,7 +710,8 @@ namespace winrt::NanaZip::Modern::implementation
 
         // Recompute the thresholds and the minimum size only on the first
         // layout and on wrap-state changes, so dragging stays smooth.
-        const bool StateChanged = this->m_FirstLayout ||
+        const bool FirstLayout = this->m_FirstLayout;
+        const bool StateChanged = FirstLayout ||
             LeftWrap != this->m_LeftWrapped ||
             EncWrap != this->m_EncryptionWrapped ||
             RightWrap != this->m_RightWrapped;
@@ -683,13 +725,8 @@ namespace winrt::NanaZip::Modern::implementation
         this->m_EncryptionWrapped = EncWrap;
         this->m_RightWrapped = RightWrap;
         SetAllRows(LeftWrap, EncWrap, RightWrap);
-
-        // Snap the window height to the new content height after the new
-        // layout is in place (bottom edge stays put).
-        if (StateChanged)
-        {
-            this->AdjustWindowHeightToContent();
-        }
+        AlignLeftLabelsColumn();
+        AlignRightLabelsColumn();
     }
 
     void CompressPage::OnSizeChanged(

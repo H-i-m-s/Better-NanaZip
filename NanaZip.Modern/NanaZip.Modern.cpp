@@ -971,17 +971,29 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
             _In_ DWORD_PTR dwRefData) -> LRESULT
     {
         UNREFERENCED_PARAMETER(uIdSubclass);
-        if (uMsg == WM_GETMINMAXINFO)
+        PK7_COMPRESS_DIALOG_CONTEXT Context =
+            reinterpret_cast<PK7_COMPRESS_DIALOG_CONTEXT>(dwRefData);
+        if (uMsg == WM_CLOSE)
         {
-            const LONG *MinTrack = reinterpret_cast<const LONG *>(dwRefData);
-            if (MinTrack && MinTrack[0] > 0 && MinTrack[1] > 0)
+            if (Context)
+            {
+                ::GetWindowRect(hWnd, &Context->WindowRect);
+            }
+        }
+        else if (uMsg == WM_GETMINMAXINFO)
+        {
+            // Preserve USER32's default max-track/work-area values, then
+            // override only the content-driven minimum size.
+            LRESULT Result = ::DefSubclassProc(
+                hWnd, uMsg, wParam, lParam);
+            if (Context && Context->MinTrackW > 0 && Context->MinTrackH > 0)
             {
                 MINMAXINFO *MinMaxInfo =
                     reinterpret_cast<MINMAXINFO *>(lParam);
-                MinMaxInfo->ptMinTrackSize.x = MinTrack[0];
-                MinMaxInfo->ptMinTrackSize.y = MinTrack[1];
-                return 0;
+                MinMaxInfo->ptMinTrackSize.x = Context->MinTrackW;
+                MinMaxInfo->ptMinTrackSize.y = Context->MinTrackH;
             }
+            return Result;
         }
         else if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
         {
@@ -991,7 +1003,7 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         return ::DefSubclassProc(hWnd, uMsg, wParam, lParam);
     },
         1,
-        reinterpret_cast<DWORD_PTR>(&Context->MinTrackW)))
+        reinterpret_cast<DWORD_PTR>(Context)))
     {
         ::DestroyWindow(WindowHandle);
         return -1;
@@ -1085,9 +1097,12 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     if (ClientH > 900) ClientH = 900;
 
     int MinClientW = (int)((Desired.Width - 48.0f) * Scale + 0.5f);
-    int MinClientH = (int)((Desired.Height - 40.0f) * Scale + 0.5f);
+    // The content is hosted in a ScrollViewer and the button row is Auto;
+    // allow the user to make the window substantially shorter while keeping
+    // OK/Cancel reachable.
+    int MinClientH = (int)(168.0f * Scale + 0.5f);
     if (MinClientW < 480) MinClientW = 480;
-    if (MinClientH < 400) MinClientH = 400;
+    if (MinClientH < 168) MinClientH = 168;
 
     RECT rc = { 0, 0, ClientW, ClientH };
     {
@@ -1096,15 +1111,24 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         ::AdjustWindowRectEx(&rc, (DWORD)Style, FALSE, (DWORD)ExStyle);
     }
 
-    RECT rcMin = { 0, 0, MinClientW, MinClientH };
+    // PrepareForShow/RecalcMinTrack has already calculated the minimum
+    // window size from the fully wrapped layout. Do not replace it here with
+    // the compact default measurement, or the resize gesture can be stopped
+    // before the rows get a chance to wrap.
+    if (Context->MinTrackW <= 0 || Context->MinTrackH <= 0)
     {
-        const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
-        const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
-        ::AdjustWindowRectEx(&rcMin, (DWORD)Style, FALSE, (DWORD)ExStyle);
+        RECT rcMin = { 0, 0, MinClientW, MinClientH };
+        const LONG_PTR Style = ::GetWindowLongPtrW(
+            WindowHandle, GWL_STYLE);
+        const LONG_PTR ExStyle = ::GetWindowLongPtrW(
+            WindowHandle, GWL_EXSTYLE);
+        ::AdjustWindowRectEx(
+            &rcMin, (DWORD)Style, FALSE, (DWORD)ExStyle);
+        Context->MinTrackW = rcMin.right - rcMin.left;
+        Context->MinTrackH = rcMin.bottom - rcMin.top;
     }
 
-    Context->MinTrackW = rcMin.right - rcMin.left;
-    Context->MinTrackH = rcMin.bottom - rcMin.top;
+    RECT rcMin = { 0, 0, Context->MinTrackW, Context->MinTrackH };
 
     const int WindowW = rc.right - rc.left;
     const int WindowH = rc.bottom - rc.top;
@@ -1113,6 +1137,69 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     const int PosY = ParentRect.top +
         ((ParentRect.bottom - ParentRect.top - WindowH) / 2);
     RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
+
+    // Restore the last size and position when it still intersects a monitor.
+    // A disconnected monitor or an undersized saved rectangle falls back to
+    // the centered default calculated above.
+    if (Context->WindowRect.right > Context->WindowRect.left &&
+        Context->WindowRect.bottom > Context->WindowRect.top &&
+        ::MonitorFromRect(&Context->WindowRect, MONITOR_DEFAULTTONULL))
+    {
+        InitialRect = Context->WindowRect;
+        const int MinWindowW = rcMin.right - rcMin.left;
+        const int MinWindowH = rcMin.bottom - rcMin.top;
+        if (InitialRect.right - InitialRect.left < MinWindowW)
+        {
+            InitialRect.right = InitialRect.left + MinWindowW;
+        }
+        if (InitialRect.bottom - InitialRect.top < MinWindowH)
+        {
+            InitialRect.bottom = InitialRect.top + MinWindowH;
+        }
+
+        HMONITOR Monitor = ::MonitorFromRect(
+            &InitialRect, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
+        if (Monitor && ::GetMonitorInfoW(Monitor, &MonitorInfo))
+        {
+            const int WorkWidth =
+                MonitorInfo.rcWork.right - MonitorInfo.rcWork.left;
+            const int WorkHeight =
+                MonitorInfo.rcWork.bottom - MonitorInfo.rcWork.top;
+            int SavedWidth = InitialRect.right - InitialRect.left;
+            int SavedHeight = InitialRect.bottom - InitialRect.top;
+            if (SavedWidth > WorkWidth)
+            {
+                SavedWidth = WorkWidth;
+            }
+            if (SavedHeight > WorkHeight)
+            {
+                SavedHeight = WorkHeight;
+            }
+            InitialRect.right = InitialRect.left + SavedWidth;
+            InitialRect.bottom = InitialRect.top + SavedHeight;
+            if (InitialRect.left < MonitorInfo.rcWork.left)
+            {
+                InitialRect.left = MonitorInfo.rcWork.left;
+                InitialRect.right = InitialRect.left + SavedWidth;
+            }
+            if (InitialRect.top < MonitorInfo.rcWork.top)
+            {
+                InitialRect.top = MonitorInfo.rcWork.top;
+                InitialRect.bottom = InitialRect.top + SavedHeight;
+            }
+            if (InitialRect.right > MonitorInfo.rcWork.right)
+            {
+                InitialRect.right = MonitorInfo.rcWork.right;
+                InitialRect.left = InitialRect.right - SavedWidth;
+            }
+            if (InitialRect.bottom > MonitorInfo.rcWork.bottom)
+            {
+                InitialRect.bottom = MonitorInfo.rcWork.bottom;
+                InitialRect.top = InitialRect.bottom - SavedHeight;
+            }
+        }
+    }
 
     int Result = ::K7ModernShowXamlWindow(
         WindowHandle,

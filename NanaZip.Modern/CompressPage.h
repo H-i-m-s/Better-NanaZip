@@ -211,11 +211,7 @@ namespace winrt::NanaZip::Modern::implementation
         // every combo starts at the same x position (measured after
         // Measure, applied before the final measure in PrepareForShow).
         void AlignLeftLabelsColumn();
-
-        // Resize the window height to match the current wrapped/side-by-side
-        // content height (bottom edge stays put), so the OK/Cancel row snaps
-        // back up when the user widens the window again.
-        void AdjustWindowHeightToContent();
+        void AlignRightLabelsColumn();
 
         // Refresh the whole dialog from m_Context with the init guard set.
         // Event callbacks must use this instead of ApplySnapshotToUi():

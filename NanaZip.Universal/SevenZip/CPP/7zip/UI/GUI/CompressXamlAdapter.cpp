@@ -671,6 +671,57 @@ static void LoadCompressHistoryFile(UStringVector &paths)
   }
 }
 
+static FString GetCompressDialogRectFilePath()
+{
+  FString result;
+  wchar_t envBuf[MAX_PATH];
+  const DWORD len = ::GetEnvironmentVariableW(
+      L"LOCALAPPDATA", envBuf, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH)
+    return result;
+  result = envBuf;
+  result += L"\\Packages\\SSS.NanaZip.RemotePassword_t9byekn60qs4j"
+      L"\\LocalState\\CompressDialogRect.bin";
+  return result;
+}
+
+static void LoadCompressDialogRect(RECT &rc)
+{
+  rc = {};
+  FString path = GetCompressDialogRectFilePath();
+  if (path.IsEmpty())
+    return;
+
+  NWindows::NFile::NIO::CInFile file;
+  if (!file.Open(path))
+    return;
+  UInt64 size = 0;
+  if (!file.GetLength(size) || size != sizeof(RECT))
+    return;
+  UInt32 read = 0;
+  file.Read(&rc, (UInt32)sizeof(RECT), read);
+  file.Close();
+  if (read != sizeof(RECT) || rc.right <= rc.left || rc.bottom <= rc.top)
+    rc = {};
+}
+
+static void SaveCompressDialogRect(const RECT &rc)
+{
+  if (rc.right <= rc.left || rc.bottom <= rc.top)
+    return;
+  FString path = GetCompressDialogRectFilePath();
+  if (path.IsEmpty())
+    return;
+
+  NWindows::NFile::NIO::COutFile file;
+  if (file.Create_ALWAYS(path))
+  {
+    UInt32 written = 0;
+    file.Write(&rc, (UInt32)sizeof(RECT), written);
+    file.Close();
+  }
+}
+
 // Temporary diagnostics for the dialog-startup crash investigation. The
 // steps are appended to %TEMP%\k7compress_diag.log so we can see where an
 // exception aborts the compression dialog. Remove once the crash is fixed.
@@ -728,6 +779,10 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
   ctx->FontSizeDialog = ReadFontSizeDialog();
   DiagLog(L"[U3] ctx allocated");
 
+  // Restore the last dialog rectangle before showing it. The Modern host
+  // validates it against the current monitor and centers when unavailable.
+  LoadCompressDialogRect(ctx->WindowRect);
+
   // Load the archive-path history into the context. The XAML page renders
   // the current path first, followed by these entries.
   {
@@ -757,6 +812,10 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
     // cancelling.
     return kXamlFailed;
   }
+
+  // Persist the final position and size regardless of whether the dialog
+  // was confirmed or cancelled.
+  SaveCompressDialogRect(ctx->WindowRect);
 
   // Apply history removals from the drop-down "x" buttons regardless of
   // whether the dialog was confirmed or cancelled.
