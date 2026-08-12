@@ -1034,7 +1034,9 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     const UINT Dpi = ::GetDpiForWindow(WindowHandle);
     const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
 
-    int ClientW = (int)((Desired.Width + 48.0f) * Scale + 0.5f);
+    // Default size: content plus a comfortable margin, so the dialog opens
+    // with every label/combo row on one line (never wrapped).
+    int ClientW = (int)((Desired.Width + 64.0f) * Scale + 0.5f);
     int ClientH = (int)((Desired.Height + 40.0f) * Scale + 0.5f);
     if (ClientW < 560) ClientW = 560;
     if (ClientH < 480) ClientH = 480;
@@ -1066,6 +1068,17 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         if (ClientW > MaxClientW)
         {
             ClientW = MaxClientW;
+        }
+        // Never let the dialog open taller than the screen work area (the
+        // content scrolls inside the page's ScrollViewer and the OK/Cancel
+        // row stays pinned, so the buttons are always reachable). This is
+        // what actually stopped the dialog from running off the screen on
+        // shorter displays.
+        const int WorkH = ParentRect.bottom - ParentRect.top - 48;
+        const int MaxClientH = (int)((float)WorkH / Scale + 0.5f);
+        if (ClientH > MaxClientH)
+        {
+            ClientH = MaxClientH;
         }
     }
     if (ClientW > 1400) ClientW = 1400;

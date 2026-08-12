@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -21,7 +21,7 @@
   <Identity
     Name="SSS.NanaZip.RemotePassword"
     Publisher="CN=SSS NanaZip Development"
-    Version="6.5.1800.80" />
+    Version="6.5.1800.83" />
 
   <Properties>
     <DisplayName>NanaZip</DisplayName>
@@ -42,7 +42,7 @@
   </Properties>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="6.5.1800.80" MaxVersionTested="10.0.26200.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="6.5.1800.83" MaxVersionTested="10.0.26200.0" />
   </Dependencies>
 
   <Resources>

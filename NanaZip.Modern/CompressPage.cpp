@@ -92,8 +92,10 @@ namespace winrt::NanaZip::Modern::implementation
         m_FirstLayout(true),
         m_LeftWrapped(false),
         m_EncryptionWrapped(false),
+        m_RightWrapped(false),
         m_LeftWrapThresholdW(0.0),
-        m_EncryptionWrapThresholdW(0.0)
+        m_EncryptionWrapThresholdW(0.0),
+        m_RightWrapThresholdW(0.0)
     {
         this->Unloaded({ this, &CompressPage::OnUnloaded });
         this->Loaded({ this, &CompressPage::OnLoaded });
@@ -390,6 +392,12 @@ namespace winrt::NanaZip::Modern::implementation
 
         ApplyDialogFont(this->m_Context->FontSizeDialog);
 
+        // The dialog opens in the side-by-side layout (every label and its
+        // combo on one row); wrapping only kicks in once the user squeezes
+        // the window past a threshold. Make that state explicit before
+        // measuring so the default height is the compact height.
+        SetAllRows(false, false, false);
+
         // Size the window for the side-by-side layout: measure both
         // columns independently (a Grid with two star columns only needs
         // max(left, right) per column, otherwise the wider column gets
@@ -433,7 +441,7 @@ namespace winrt::NanaZip::Modern::implementation
             : winrt::Windows::UI::Xaml::Thickness(6.0, 0.0, 0.0, 0.0));
     }
 
-    void CompressPage::SetAllRows(bool LeftWrap, bool EncWrap)
+    void CompressPage::SetAllRows(bool LeftWrap, bool EncWrap, bool RightWrap)
     {
         SetWrapRowLayout(FormatCombo(), LeftWrap, 0.0);
         SetWrapRowLayout(LevelCombo(), LeftWrap, 0.0);
@@ -459,6 +467,8 @@ namespace winrt::NanaZip::Modern::implementation
         }
         SetWrapRowLayout(VolumeCombo(), LeftWrap, 0.0);
         SetWrapRowLayout(ParametersBox(), LeftWrap, 0.0);
+        SetWrapRowLayout(UpdateModeCombo(), RightWrap, 0.0);
+        SetWrapRowLayout(PathModeCombo(), RightWrap, 0.0);
         SetWrapRowLayout(EncryptionMethodCombo(), EncWrap, 28.0);
     }
 
@@ -469,29 +479,52 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
 
-        // Measure the natural content sizes. The wrapped layout is the
-        // narrowest the dialog can shrink to, so the track size and the
-        // wrap thresholds come from these three measurements:
-        //   1. everything wrapped        -> the minimum size
-        //   2. left wrapped, encryption row still side by side
-        //                                   -> encryption wrap threshold
-        //   3. everything side by side   -> left column wrap threshold
-        winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+        const double PageW = this->ActualWidth();
+        if (PageW <= 0.0)
+        {
+            return;
+        }
 
-        SetAllRows(true, true);
-        this->Measure(Inf);
+        // Same measurement as the extract page: each wrap threshold is the
+        // width the corresponding wrapped layout needs under the current
+        // page width, plus a little slack, so the wrap is always reachable
+        // before the track size stops the drag.
+        winrt::Windows::Foundation::Size Constraint(
+            (float)PageW, 100000.0f);
+
+        // Everything wrapped -> the narrowest the dialog can shrink to.
+        SetAllRows(true, true, true);
+        this->Measure(Constraint);
         const float WrappedW = this->DesiredSize().Width;
-        const float WrappedH = this->DesiredSize().Height;
 
-        SetAllRows(true, false);
-        this->Measure(Inf);
+        // Left column wrapped (encryption and right column side by side)
+        // -> left column wrap threshold.
+        SetAllRows(true, false, false);
+        this->Measure(Constraint);
+        this->m_LeftWrapThresholdW =
+            (double)this->DesiredSize().Width + 40.0;
+
+        // Everything wrapped except the encryption-method row -> the
+        // encryption row wraps much later (independent threshold).
+        SetAllRows(true, true, false);
+        this->Measure(Constraint);
         this->m_EncryptionWrapThresholdW =
             (double)this->DesiredSize().Width + 40.0;
 
-        SetAllRows(false, false);
-        this->Measure(Inf);
-        this->m_LeftWrapThresholdW =
+        // Right column wrapped (left column and encryption side by side)
+        // -> right column (Update mode / Path mode) wrap threshold.
+        SetAllRows(false, false, true);
+        this->Measure(Constraint);
+        this->m_RightWrapThresholdW =
             (double)this->DesiredSize().Width + 40.0;
+
+        // The compact height (everything side by side) is the smallest the
+        // window can be, so the vertical minimum lets the user actually
+        // drag the bottom edge up and down (the OK/Cancel row stays pinned
+        // and the content scrolls if it no longer fits).
+        SetAllRows(false, false, false);
+        this->Measure(Constraint);
+        const float SideBySideH = this->DesiredSize().Height;
 
         // The minimum window size is the wrapped layout plus a little
         // slack, so the user can always squeeze the window far enough to
@@ -500,7 +533,7 @@ namespace winrt::NanaZip::Modern::implementation
         const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
 
         int MinClientW = (int)(((double)WrappedW + 32.0) * Scale + 0.5);
-        int MinClientH = (int)((double)WrappedH * Scale + 0.5);
+        int MinClientH = (int)((double)SideBySideH * Scale + 0.5);
         if (MinClientW < 480) MinClientW = 480;
         if (MinClientH < 400) MinClientH = 400;
 
@@ -623,15 +656,23 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
 
+        // Same comparison as the extract page: wrap once the page gets
+        // narrower than the wrapped layout's need (plus a little slack).
+        // On the first layout the thresholds are still 0, which keeps the
+        // dialog side by side; RecalcMinTrack fills them in and the wrap
+        // logic takes over from the first resize onward.
         const bool LeftWrap = PageW < this->m_LeftWrapThresholdW;
         const bool EncWrap =
             PageW < this->m_EncryptionWrapThresholdW;
+        const bool RightWrap =
+            PageW < this->m_RightWrapThresholdW;
 
         // Recompute the thresholds and the minimum size only on the first
         // layout and on wrap-state changes, so dragging stays smooth.
         const bool StateChanged = this->m_FirstLayout ||
             LeftWrap != this->m_LeftWrapped ||
-            EncWrap != this->m_EncryptionWrapped;
+            EncWrap != this->m_EncryptionWrapped ||
+            RightWrap != this->m_RightWrapped;
         if (StateChanged)
         {
             this->m_FirstLayout = false;
@@ -640,7 +681,8 @@ namespace winrt::NanaZip::Modern::implementation
 
         this->m_LeftWrapped = LeftWrap;
         this->m_EncryptionWrapped = EncWrap;
-        SetAllRows(LeftWrap, EncWrap);
+        this->m_RightWrapped = RightWrap;
+        SetAllRows(LeftWrap, EncWrap, RightWrap);
 
         // Snap the window height to the new content height after the new
         // layout is in place (bottom edge stays put).
@@ -669,23 +711,10 @@ namespace winrt::NanaZip::Modern::implementation
 
         // Esc must close the dialog even when the focus sits inside an
         // editable control (the control marks the key as handled, which
-        // would otherwise swallow the routed event). handledEventsToo=true
-        // catches it in the bubbling phase anyway. Registered here (after
-        // the XAML tree exists) rather than in the constructor, and
-        // guarded, so a registration failure can never abort startup.
-        try
-        {
-            this->AddHandler(
-                winrt::Windows::UI::Xaml::UIElement::KeyDownEvent(),
-                winrt::Windows::UI::Xaml::Input::KeyEventHandler{
-                    this, &CompressPage::OnPageKeyDown }
-                    .as<winrt::Windows::Foundation::IInspectable>(),
-                true);
-        }
-        catch (...)
-        {
-            // Non-fatal: the Win32 window subclass still handles Esc.
-        }
+        // would otherwise swallow the routed event). The XAML PreviewKeyDown
+        // attribute on the page intercepts Esc in the tunnelling phase,
+        // before the focused control can consume it, so Esc always closes
+        // the dialog and never clears the file name.
     }
 
     void CompressPage::OnUnloaded(

@@ -192,8 +192,9 @@ namespace winrt::NanaZip::Modern::implementation
 
         // Apply the wrap state of every label/control row: LeftWrap for the
         // left column rows (they wrap together), EncWrap for the
-        // encryption-method row (it wraps much later).
-        void SetAllRows(bool LeftWrap, bool EncWrap);
+        // encryption-method row (it wraps much later), RightWrap for the
+        // right column's Update mode / Path mode rows.
+        void SetAllRows(bool LeftWrap, bool EncWrap, bool RightWrap);
 
         // Recompute the wrap thresholds from the natural content sizes and
         // refresh Context->MinTrackW/H from the fully wrapped layout, so
@@ -232,8 +233,10 @@ namespace winrt::NanaZip::Modern::implementation
         bool m_FirstLayout;
         bool m_LeftWrapped;
         bool m_EncryptionWrapped;
+        bool m_RightWrapped;
         double m_LeftWrapThresholdW;
         double m_EncryptionWrapThresholdW;
+        double m_RightWrapThresholdW;
 
         // Text shown in the editable archive-path combo when its drop-down
         // opens; restored if the drop-down clears it.

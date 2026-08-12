@@ -6,6 +6,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
+    KeyDown="OnPageKeyDown"
+    PreviewKeyDown="OnPageKeyDown"
     Background="Transparent">
 
     <Page.Resources>
@@ -453,9 +455,9 @@
                         <StackPanel>
                             <TextBlock x:Name="EncryptionGroupText" TextWrapping="Wrap" />
                             <TextBlock x:Name="PasswordText" Margin="0,8,0,0" />
-                            <PasswordBox x:Name="PasswordBox" />
+                            <PasswordBox x:Name="PasswordBox" Margin="0,6,0,0" />
                             <TextBlock x:Name="ReenterPasswordText" Margin="0,8,0,0" />
-                            <PasswordBox x:Name="ReenterPasswordBox" />
+                            <PasswordBox x:Name="ReenterPasswordBox" Margin="0,6,0,0" />
                             <CheckBox
                                 x:Name="ShowPasswordCheck"
                                 Margin="0,6,0,0"
