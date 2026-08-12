@@ -578,8 +578,15 @@ HRESULT ExtractGUI(
       // registry persistence and the batch (Sss) state file handling stay
       // here, so the behavior matches the Win32 dialog exactly.
       #ifndef Z7_SFX
-      bool xamlDone = false;
-      if (K7ModernAvailable())
+      // XAML is now the only dialog path (the Win32 fallback was removed).
+      // If the XAML infrastructure is unavailable, tell the user instead
+      // of silently skipping the dialog.
+      if (!K7ModernAvailable())
+      {
+        ShowErrorMessage(L"Extract dialog (XAML) initialization failed.");
+        messageWasDisplayed = true;
+        return E_FAIL;
+      }
       {
         CExtractDialog dialog; // not created; state exchange only
         NExtract::CInfo xInfo;
@@ -671,7 +678,13 @@ HRESULT ExtractGUI(
           ctx.FontSizeDialog = pt;
         }
 
-        ::K7ModernShowExtractDialog(hwndParent, &ctx);
+        const int modernResult = ::K7ModernShowExtractDialog(hwndParent, &ctx);
+        if (modernResult == -1)
+        {
+          ShowErrorMessage(L"Extract dialog (XAML) initialization failed.");
+          messageWasDisplayed = true;
+          return E_FAIL;
+        }
 
         // Apply history removals from the drop-down "x" buttons regardless
         // of whether the dialog was confirmed or cancelled.
@@ -777,86 +790,6 @@ HRESULT ExtractGUI(
         SaveExtractHistoryFile(xInfo.Paths);
         xInfo.Save();
 
-        xamlDone = true;
-      }
-      if (!xamlDone)
-      {
-      #endif
-      // **************** SSS Modification End ****************
-
-      CExtractDialog dialog;
-      FString outputDirFull;
-      if (!MyGetFullPathName(outputDir, outputDirFull))
-      {
-        ShowErrorMessage(kIncorrectOutDir);
-        messageWasDisplayed = true;
-        return E_FAIL;
-      }
-      NName::NormalizeDirPathPrefix(outputDirFull);
-
-      dialog.DirPath = fs2us(outputDirFull);
-
-      dialog.OverwriteMode = options.OverwriteMode;
-      dialog.OverwriteMode_Force = options.OverwriteMode_Force;
-      dialog.PathMode = options.PathMode;
-      dialog.PathMode_Force = options.PathMode_Force;
-      dialog.ElimDup = options.ElimDup;
-      // **************** SSS Modification Start ****************
-      dialog.DeleteAfterExtract = deleteAfter;
-      // **************** SSS Modification End ****************
-      // **************** NanaZip Modification Start ****************
-      dialog.OpenFolder = options.OpenFolder;
-      // **************** NanaZip Modification End ****************
-
-      if (archivePathsFull.Size() == 1)
-        dialog.ArcPath = archivePathsFull[0];
-
-      #ifndef Z7_SFX
-      // dialog.AltStreams = options.NtOptions.AltStreams;
-      dialog.NtSecurity = options.NtOptions.NtSecurity;
-      if (extractCallback->PasswordIsDefined)
-        dialog.Password = extractCallback->Password;
-      #endif
-
-      // SSS: one-by-one loop - carry the previous dialog's choices over.
-      if (g_SssUseDlgState)
-        SssReadDlgStateFile(dialog);
-
-      if (dialog.Create(hwndParent) != IDOK)
-        return E_ABORT;
-
-      outputDir = us2fs(dialog.DirPath);
-
-      options.OverwriteMode = dialog.OverwriteMode;
-      options.PathMode = dialog.PathMode;
-      options.ElimDup = dialog.ElimDup;
-      // **************** NanaZip Modification Start ****************
-      options.OpenFolder = dialog.OpenFolder;
-      // **************** NanaZip Modification End ****************
-      // **************** SSS Modification Start ****************
-      deleteAfter = dialog.DeleteAfterExtract;
-      // **************** SSS Modification End ****************
-      
-      #ifndef Z7_SFX
-      // **************** 7-Zip ZS Modification Start ****************
-      OpnTrgFold = dialog.OpnTrgFold.Val;
-      // **************** 7-Zip ZS Modification End ****************
-      // options.NtOptions.AltStreams = dialog.AltStreams;
-      options.NtOptions.NtSecurity = dialog.NtSecurity;
-      extractCallback->Password = dialog.Password;
-      extractCallback->PasswordIsDefined = !dialog.Password.IsEmpty();
-      #endif
-
-      // SSS: one-by-one loop - remember this dialog's choices for the
-      // next archive, and record whether this archive should be deleted
-      // (the file manager deletes all marked archives together afterwards).
-      if (g_SssUseDlgState)
-      {
-        SssWriteDlgStateFile(dialog);
-        SssWriteDeleteMark(dialog.DeleteAfterExtract);
-      }
-      // **************** SSS Modification Start ****************
-      #ifndef Z7_SFX
       }
       #endif
       // **************** SSS Modification End ****************

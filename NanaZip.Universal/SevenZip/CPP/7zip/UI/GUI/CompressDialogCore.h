@@ -1,5 +1,5 @@
 ﻿// CompressDialogCore.h
-// 压缩对话框规则层：无 UI 依赖，Win32 壳（CCompressDialog）与 XAML 壳共用。
+// 压缩对话框规则层：无 UI 依赖，XAML 页面（CompressPage）是唯一界面。
 // 规则只在这里存在一份：格式/等级/方法/字典/固实/线程/内存联动、内存估算、校验提交。
 
 #ifndef ZIP7_INC_COMPRESS_DIALOG_CORE_H

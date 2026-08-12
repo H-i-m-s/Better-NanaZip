@@ -388,13 +388,13 @@ static HRESULT ShowDialog(
   #endif
   */
 
-  CCompressDialog dialog;
-  NCompressDialog::CInfo &di = dialog.Info;
-  dialog.ArcFormats = &codecs->Formats;
+  CCompressDialogCore core;
+  NCompressDialog::CInfo &di = core.Info;
+  core.ArcFormats = &codecs->Formats;
   {
     CObjectVector<CCodecInfoUser> userCodecs;
     codecs->Get_CodecsInfoUser_Vector(userCodecs);
-    dialog.SetMethods(userCodecs);
+    core.SetMethods(userCodecs);
   }
 
   if (options.MethodMode.Type_Defined)
@@ -415,9 +415,9 @@ static HRESULT ShowDialog(
         if (!oneFile || name.Len() < 4 || !StringsAreEqualNoCase_Ascii(name.RightPtr(4), ".swf"))
           continue;
     }
-    dialog.ArcIndices.Add(i);
+    core.ArcIndices.Add(i);
   }
-  if (dialog.ArcIndices.IsEmpty())
+  if (core.ArcIndices.IsEmpty())
   {
     ShowErrorMessage(L"No Update Engines");
     return E_FAIL;
@@ -425,7 +425,7 @@ static HRESULT ShowDialog(
 
   // di.ArchiveName = options.ArchivePath.GetFinalPath();
   di.ArcPath = options.ArchivePath.GetPathWithoutExt();
-  dialog.OriginalFileName = fs2us(fileInfo.Name);
+  core.OriginalFileName = fs2us(fileInfo.Name);
 
   di.PathMode = options.PathMode;
     
@@ -460,37 +460,23 @@ static HRESULT ShowDialog(
   ParseProperties(options.MethodMode.Properties, di);
 
   // **************** SSS Modification Start ****************
-  // XAML 压缩对话框优先；不可用或初始化失败时回退原 Win32 对话框。
-  // 规则在 CCompressDialogCore，两条路径共用同一份数据，行为一致。
-  bool xamlDone = false;
+  // XAML 压缩对话框是唯一路径（规则在 CCompressDialogCore）。
+  // 不可用或初始化失败时弹明确错误并返回，不再回退 Win32：
+  // 薄壳 Win32 界面从未被触发过、也无法验证，保留它只是维护死代码。
   #ifndef Z7_SFX
-  if (K7ModernAvailable())
   {
-    CCompressDialogCore coreX;
-    coreX.ArcFormats = dialog.ArcFormats;
-    coreX.ArcIndices = dialog.ArcIndices;
-    coreX.ExternalMethods = dialog.ExternalMethods;
-    coreX.Info = di;
-    coreX.OriginalFileName = dialog.OriginalFileName;
-    coreX.KeepName = di.KeepName;
-    const ECompressXamlResult xres = K7ShowCompressDialogXaml(hwndParent, coreX);
+    const ECompressXamlResult xres = K7ShowCompressDialogXaml(hwndParent, core);
     if (xres == kXamlCancelled)
       return E_ABORT;
-    if (xres == kXamlOk)
+    if (xres != kXamlOk)
     {
-      di = coreX.Info;
-      xamlDone = true;
+      // XAML 初始化失败：明确告知用户，不静默、不落 Win32。
+      ShowErrorMessage(L"Compress dialog (XAML) initialization failed.");
+      return E_FAIL;
     }
-    // kXamlNotAvailable / kXamlFailed fall through to the Win32 dialog.
+    // di 是 core.Info 的引用，XAML 提交后已是最新值。
   }
   #endif
-  if (!xamlDone)
-  {
-  // **************** SSS Modification End ****************
-  if (dialog.Create(hwndParent) != IDOK)
-    return E_ABORT;
-  // **************** SSS Modification Start ****************
-  }
   // **************** SSS Modification End ****************
 
   options.DeleteAfterCompressing = di.DeleteAfterCompressing;
