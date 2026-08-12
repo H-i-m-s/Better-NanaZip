@@ -2,13 +2,29 @@
 // 压缩对话框 XAML 适配器：Core（规则层）与 K7_COMPRESS_DIALOG_CONTEXT（快照）之间的桥。
 // 只做数据映射与命令转发，规则仍在 CCompressDialogCore。
 
+// IFileSaveDialog needs a Vista+ SDK level. 7-Zip's Common headers do not
+// set _WIN32_WINNT/NTDDI_VERSION, so the interface would be hidden; define
+// them before any Windows header in this translation unit.
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT _WIN32_WINNT_WIN10
+#endif
+#ifndef NTDDI_VERSION
+#define NTDDI_VERSION NTDDI_WIN10
+#endif
+
 #include "StdAfx.h"
 
 #include <memory>
+#include <vector>
 
+#include "../../../Common/MyCom.h"
 #include "../../../Common/StringConvert.h"
 
+#include <K7User.h>
+#include <shlobj.h>
+
 #include "../../../Windows/FileDir.h"
+#include "../../../Windows/FileIO.h"
 #include "../../../Windows/FileName.h"
 
 #include "../FileManager/BrowseDialog.h"
@@ -274,17 +290,85 @@ static void OnBrowseArchive(CCompressXamlHost *host)
     filterIndex = (int)filters.Size() - 1;
 
   const UString title = LangString(IDS_COMPRESS_SET_ARCHIVE_BROWSE);
-  CBrowseInfo bi;
-  bi.lpstrTitle = title;
-  bi.SaveMode = true;
-  bi.FilterIndex = filterIndex;
-  bi.hwndOwner = host->Parent;
-  bi.FilePath = path;
 
-  if (!bi.BrowseForFile(filters))
+  // Use the modern save dialog (IFileSaveDialog) instead of the legacy
+  // SHBrowseForFolder-based browse: the legacy one renders a white list
+  // even in dark mode, and the packaged 7zG process needs the dark-mode
+  // bypass so the system dialog follows the app theme.
+  K7UserDarkModeWorkaroundBypassScope DarkModeWorkaroundBypass;
+  CMyComPtr<IFileSaveDialog> Dialog;
+  HRESULT hr = ::CoCreateInstance(
+      CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
+      IID_IFileSaveDialog, (void **)&Dialog);
+  if (FAILED(hr))
+    return;
+
+  {
+    // Convert the format filters into COMDLG_FILTERSPEC (name + a
+    // "*.ext;*.ext" spec), keeping the strings alive in parallel vectors.
+    CObjectVector<UString> specNames;
+    CObjectVector<UString> specMasks;
+    FOR_VECTOR (i, filters)
+    {
+      UString masks;
+      FOR_VECTOR (k, filters[i].Masks)
+      {
+        if (k != 0)
+          masks += L";";
+        masks += filters[i].Masks[k];
+      }
+      specNames.Add(filters[i].Description);
+      specMasks.Add(masks);
+    }
+    if (specNames.Size() > 0)
+    {
+      std::vector<COMDLG_FILTERSPEC> specs;
+      specs.reserve(specNames.Size());
+      FOR_VECTOR (i, specNames)
+      {
+        COMDLG_FILTERSPEC spec;
+        spec.pszName = specNames[i].Ptr();
+        spec.pszSpec = specMasks[i].Ptr();
+        specs.push_back(spec);
+      }
+      Dialog->SetFileTypes((UINT)specs.size(), specs.data());
+      if (filterIndex >= 0 && filterIndex < (int)specs.size())
+        Dialog->SetFileTypeIndex((UINT)filterIndex + 1);
+    }
+  }
+
+  Dialog->SetTitle(title.Ptr());
+  if (!path.IsEmpty())
+    Dialog->SetFileName(path.Ptr());
+
+  {
+    DWORD opts = 0;
+    Dialog->GetOptions(&opts);
+    opts |= FOS_OVERWRITEPROMPT | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
+    Dialog->SetOptions(opts);
+  }
+
+  hr = Dialog->Show(host->Parent);
+  if (FAILED(hr))
     return; // user cancelled the browse; not an error
 
-  path = bi.FilePath;
+  {
+    CMyComPtr<IShellItem> item;
+    hr = Dialog->GetResult(&item);
+    if (FAILED(hr) || !item)
+      return;
+    LPWSTR pszPath = nullptr;
+    hr = item->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+    if (FAILED(hr) || !pszPath)
+      return;
+    path = pszPath;
+    ::CoTaskMemFree(pszPath);
+  }
+
+  UINT fileTypeIndex = 0;
+  Dialog->GetFileTypeIndex(&fileTypeIndex);
+  const int chosenFilterIndex = (fileTypeIndex == 0)
+      ? -1 : (int)fileTypeIndex - 1;
 
   if (isSFX)
   {
@@ -294,11 +378,11 @@ static void OnBrowseArchive(CCompressXamlHost *host)
     path += kExeExt;
   }
   else
-  if ((unsigned)bi.FilterIndex < numFormats)
+  if (chosenFilterIndex >= 0 && (unsigned)chosenFilterIndex < numFormats)
   {
     // archive format was confirmed. So we try to set format extension
     bool needAddExt = true;
-    const CArcInfoEx &ai = (*core.ArcFormats)[(unsigned)core.FormatItems[(unsigned)bi.FilterIndex].Value];
+    const CArcInfoEx &ai = (*core.ArcFormats)[(unsigned)core.FormatItems[(unsigned)chosenFilterIndex].Value];
     const int dotPos = GetExtDotPos(path);
     if (dotPos >= 0)
     {
@@ -318,10 +402,10 @@ static void OnBrowseArchive(CCompressXamlHost *host)
   core.SetArcPathFields(path, name, true);
 
   if (!isSFX)
-  if ((unsigned)bi.FilterIndex < numFormats)
-  if (bi.FilterIndex != filterIndex)
+  if (chosenFilterIndex >= 0 && (unsigned)chosenFilterIndex < numFormats)
+  if (chosenFilterIndex != filterIndex)
   {
-    core.OnFormatSelected((int)core.FormatItems[(unsigned)bi.FilterIndex].Value);
+    core.OnFormatSelected((int)core.FormatItems[(unsigned)chosenFilterIndex].Value);
     UpdateSnapshot(core, ctx);
     return;
   }
@@ -498,10 +582,122 @@ static UINT32 ReadFontSizeDialog()
   return pt;
 }
 
+// Archive-path history is stored in a plain file under the packaged app's
+// LocalState directory (same location as ExtractHistory.txt): the packaged
+// (MSIX) environment isolates registry writes made by the helper process, so
+// registry-based history never survives. This mirrors the extract dialog.
+static FString GetCompressHistoryFilePath()
+{
+  FString result;
+  wchar_t envBuf[MAX_PATH];
+  const DWORD len = ::GetEnvironmentVariableW(
+      L"LOCALAPPDATA", envBuf, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH)
+    return result;
+  result = envBuf;
+  result += L"\\Packages\\SSS.NanaZip.RemotePassword_t9byekn60qs4j"
+      L"\\LocalState\\CompressHistory.txt";
+  return result;
+}
+
+static void SaveCompressHistoryFile(const UStringVector &paths)
+{
+  FString path = GetCompressHistoryFilePath();
+  if (path.IsEmpty())
+    return;
+  // One path per line, CRLF, native UTF-16 (wchar_t) bytes.
+  size_t total = 1;
+  FOR_VECTOR (i, paths)
+    total += paths[i].Len() + 2;
+  std::vector<wchar_t> buf(total, 0);
+  size_t off = 0;
+  FOR_VECTOR (i, paths)
+  {
+    wcscpy_s(&buf[off], total - off, paths[i].Ptr());
+    off += paths[i].Len();
+    buf[off++] = L'\r';
+    buf[off++] = L'\n';
+  }
+  NWindows::NFile::NIO::COutFile file;
+  if (file.Create_ALWAYS(path))
+  {
+    UInt32 written = 0;
+    file.Write(buf.data(), (UInt32)(off * sizeof(wchar_t)), written);
+    file.Close();
+  }
+}
+
+static void LoadCompressHistoryFile(UStringVector &paths)
+{
+  FString path = GetCompressHistoryFilePath();
+  if (path.IsEmpty())
+    return;
+  NWindows::NFile::NIO::CInFile file;
+  if (!file.Open(path))
+    return;
+  UInt64 size64 = 0;
+  if (!file.GetLength(size64) || size64 == 0 || size64 > (1 << 20))
+    return;
+  std::vector<wchar_t> buf((size_t)(size64 / sizeof(wchar_t)) + 1, 0);
+  UInt32 read = 0;
+  file.Read(buf.data(), (UInt32)size64, read);
+  file.Close();
+  UString line;
+  const size_t count = read / sizeof(wchar_t);
+  for (size_t i = 0; i < count; i++)
+  {
+    const wchar_t ch = buf[i];
+    if (ch == L'\n')
+    {
+      if (!line.IsEmpty() && line.Back() == L'\r')
+        line.DeleteBack();
+      if (!line.IsEmpty())
+      {
+        paths.Add(line);
+        if (paths.Size() >= 16)
+          break;
+      }
+      line.Empty();
+    }
+    else if (ch != 0)
+      line += ch;
+  }
+  if (!line.IsEmpty() && paths.Size() < 16)
+  {
+    if (line.Back() == L'\r')
+      line.DeleteBack();
+    if (!line.IsEmpty())
+      paths.Add(line);
+  }
+}
+
+// Temporary diagnostics for the dialog-startup crash investigation. The
+// steps are appended to %TEMP%\k7compress_diag.log so we can see where an
+// exception aborts the compression dialog. Remove once the crash is fixed.
+static void DiagLog(const wchar_t *msg)
+{
+  wchar_t path[MAX_PATH];
+  const DWORD n = ::GetTempPathW(MAX_PATH, path);
+  if (n == 0 || n >= MAX_PATH)
+    return;
+  wcscat_s(path, L"k7compress_diag.log");
+  HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+      nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h != INVALID_HANDLE_VALUE)
+  {
+    DWORD written = 0;
+    ::WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)),
+        &written, nullptr);
+    ::WriteFile(h, L"\r\n", 4, &written, nullptr);
+    ::CloseHandle(h);
+  }
+}
+
 // Show the XAML compression dialog for one dialog session.
 // On success the caller reads core.Info for the committed result.
 ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCore &core)
 {
+  DiagLog(L"[U1] K7ShowCompressDialogXaml enter");
   if (!K7ModernAvailable())
     return kXamlNotAvailable;
 
@@ -514,6 +710,7 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
     core.StartDirPrefix = core.DirPrefix;
     core.SetArchiveName(fileName);
   }
+  DiagLog(L"[U2] core init done");
 
   // The context is ~1MB (12 option lists of 128 items plus the big text
   // buffers). It must live on the heap: on the default 1MB thread stack the
@@ -529,10 +726,29 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
   ctx->OptionsCallback = &CCompressOptionsThunk;
   ctx->CallbackContext = &host;
   ctx->FontSizeDialog = ReadFontSizeDialog();
+  DiagLog(L"[U3] ctx allocated");
+
+  // Load the archive-path history into the context. The XAML page renders
+  // the current path first, followed by these entries.
+  {
+    UStringVector history;
+    LoadCompressHistoryFile(history);
+    ctx->NumPaths = 0;
+    FOR_VECTOR (i, history)
+    {
+      if (i >= 16)
+        break;
+      wcscpy_s(ctx->Paths[i], history[i].Ptr());
+      ctx->NumPaths = (UInt32)(i + 1);
+    }
+    ctx->NumRemovedPaths = 0;
+  }
 
   UpdateSnapshot(core, ctx.get());
+  DiagLog(L"[U4] UpdateSnapshot done");
 
   const int ModernResult = ::K7ModernShowCompressDialog(hwndParent, ctx.get());
+  DiagLog(L"[U5] K7ModernShowCompressDialog returned");
   if (ModernResult == -1)
   {
     // The XAML dialog could not be shown (window creation, XAML content
@@ -542,8 +758,38 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
     return kXamlFailed;
   }
 
+  // Apply history removals from the drop-down "x" buttons regardless of
+  // whether the dialog was confirmed or cancelled.
+  if (ctx->NumRemovedPaths > 0)
+  {
+    UStringVector history;
+    LoadCompressHistoryFile(history);
+    for (UINT32 i = 0; i < ctx->NumRemovedPaths && i < 16; i++)
+    {
+      UString rm = ctx->RemovedPaths[i];
+      FOR_VECTOR (j, history)
+      {
+        if (history[j] == rm)
+        {
+          history.Delete(j);
+          break;
+        }
+      }
+    }
+    SaveCompressHistoryFile(history);
+  }
+
   if (!ctx->OK)
     return kXamlCancelled;
+
+  // On OK the page merged the current archive path into ctx->Paths (most
+  // recent first, deduplicated, capped at 16); persist it for next time.
+  {
+    UStringVector merged;
+    for (UINT32 i = 0; i < ctx->NumPaths; i++)
+      merged.Add(ctx->Paths[i]);
+    SaveCompressHistoryFile(merged);
+  }
 
   ApplyUserText(core, ctx.get());
   return kXamlOk;

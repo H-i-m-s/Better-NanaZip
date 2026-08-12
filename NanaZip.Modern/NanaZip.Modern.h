@@ -573,6 +573,14 @@ typedef struct _K7_COMPRESS_DIALOG_CONTEXT
     WCHAR Password[K7_COMPRESS_MAX_PASSWORD];
     WCHAR PasswordConfirmation[K7_COMPRESS_MAX_PASSWORD];
 
+    // --- Archive path history (most recent first, up to 16 entries) ---
+    WCHAR Paths[16][MAX_PATH];
+    UINT32 NumPaths;
+    // History entries the user removed with the "x" in the drop-down
+    // (written back by the caller regardless of OK/cancel).
+    WCHAR RemovedPaths[16][MAX_PATH];
+    UINT32 NumRemovedPaths;
+
     // --- Dialog behavior ---
     UINT32 FontSizeDialog;
     LONG MinTrackW;

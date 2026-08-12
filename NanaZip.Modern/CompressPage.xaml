@@ -6,7 +6,6 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    KeyDown="OnPageKeyDown"
     Background="Transparent">
 
     <Page.Resources>
@@ -15,6 +14,31 @@
                 Text="{Binding}"
                 TextWrapping="Wrap"
                 MaxWidth="360" />
+        </DataTemplate>
+        <!-- Archive path drop-down item: path text plus a delete "x" that
+             only appears while the drop-down is open (history removal). -->
+        <DataTemplate x:Key="PathComboItemTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="{Binding}"
+                    TextWrapping="Wrap"
+                    VerticalAlignment="Center"
+                    Margin="0,0,4,0" />
+                <Button
+                    Grid.Column="1"
+                    Content="&#x2715;"
+                    Click="OnDeleteHistoryPathClicked"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="4"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed" />
+            </Grid>
         </DataTemplate>
     </Page.Resources>
 
@@ -27,6 +51,7 @@
 
         <ScrollViewer
             Grid.Row="0"
+            Padding="0,0,14,0"
             HorizontalScrollBarVisibility="Disabled"
             VerticalScrollBarVisibility="Auto">
             <Grid>
@@ -36,7 +61,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0">
+                <StackPanel x:Name="LeftColumnPanel" Grid.Column="0">
                     <TextBlock x:Name="ArchiveFolderText" TextWrapping="Wrap" />
                     <Grid Margin="0,4,0,0">
                         <Grid.ColumnDefinitions>
@@ -47,7 +72,11 @@
                             x:Name="ArchivePathCombo"
                             Grid.Column="0"
                             IsEditable="True"
+                            MinWidth="140"
                             HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource PathComboItemTemplate}"
+                            DropDownOpened="OnArchivePathDropDownOpened"
+                            DropDownClosed="OnArchivePathDropDownClosed"
                             LostFocus="OnArchivePathChanged" />
                         <Button
                             x:Name="BrowseButton"
@@ -57,83 +86,266 @@
                             Click="OnBrowseClicked" />
                     </Grid>
 
-                    <TextBlock x:Name="FormatText" Margin="0,10,0,0" />
-                    <ComboBox
-                        x:Name="FormatCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnFormatChanged" />
+                    <!-- 格式行：标签 + 下拉同行；窗口压窄时下拉换到下一行顶格（与左列所有行同步） -->
+                    <Grid x:Name="FormatRow" Margin="0,10,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="FormatText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="FormatCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnFormatChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="LevelText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="LevelCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnLevelChanged" />
+                    <Grid x:Name="LevelRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="LevelText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="LevelCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnLevelChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="MethodText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="MethodCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnMethodChanged" />
+                    <Grid x:Name="MethodRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="MethodText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="MethodCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnMethodChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="DictionaryText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="DictionaryCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnDictionaryChanged" />
+                    <Grid x:Name="DictionaryRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="DictionaryText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="DictionaryCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnDictionaryChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="OrderText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="OrderCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnOrderChanged" />
+                    <Grid x:Name="OrderRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="OrderText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="OrderCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnOrderChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="SolidText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="SolidCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnSolidChanged" />
+                    <Grid x:Name="SolidRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="SolidText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="SolidCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnSolidChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="ThreadsText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="ThreadsCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnThreadsChanged" />
+                    <Grid x:Name="ThreadsRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="ThreadsText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="ThreadsCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnThreadsChanged" />
+                    </Grid>
                     <TextBlock x:Name="HardwareThreadsText" Opacity="0.8" TextWrapping="Wrap" />
 
-                    <TextBlock x:Name="MemoryText" Margin="0,8,0,0" />
-                    <Grid>
+                    <Grid x:Name="MemoryRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="MemoryText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
                         <ComboBox
                             x:Name="MemoryCombo"
-                            Grid.Column="0"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
                             ItemTemplate="{StaticResource WrapItemTemplate}"
                             SelectionChanged="OnMemoryChanged" />
                         <TextBlock
                             x:Name="MemoryValueText"
+                            Grid.Row="1"
                             Grid.Column="1"
-                            Margin="8,0,0,0"
-                            VerticalAlignment="Center"
+                            Margin="6,4,0,0"
                             TextWrapping="Wrap" />
                     </Grid>
                     <TextBlock x:Name="DecompressMemoryText" TextWrapping="Wrap" />
 
-                    <TextBlock x:Name="VolumeText" Margin="0,8,0,0" />
-                    <ComboBox
-                        x:Name="VolumeCombo"
-                        IsEditable="True"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        LostFocus="OnVolumeChanged" />
+                    <Grid x:Name="VolumeRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="VolumeText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="VolumeCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            IsEditable="True"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            LostFocus="OnVolumeChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="ParametersText" Margin="0,8,0,0" />
-                    <TextBox
-                        x:Name="ParametersBox"
-                        AcceptsReturn="True"
-                        TextWrapping="Wrap"
-                        MinHeight="36"
-                        TextChanged="OnParametersChanged" />
+                    <Grid x:Name="ParametersRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="ParametersText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <TextBox
+                            x:Name="ParametersBox"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            AcceptsReturn="True"
+                            TextWrapping="Wrap"
+                            MinHeight="36"
+                            TextChanged="OnParametersChanged" />
+                    </Grid>
 
                     <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
@@ -153,18 +365,56 @@
                     </Grid>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2">
-                    <TextBlock x:Name="UpdateModeText" TextWrapping="Wrap" />
-                    <ComboBox
-                        x:Name="UpdateModeCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnUpdateModeChanged" />
+                <StackPanel x:Name="RightColumnPanel" Grid.Column="2">
+                    <Grid x:Name="UpdateModeRow">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="UpdateModeText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="UpdateModeCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnUpdateModeChanged" />
+                    </Grid>
 
-                    <TextBlock x:Name="PathModeText" Margin="0,8,0,0" TextWrapping="Wrap" />
-                    <ComboBox
-                        x:Name="PathModeCombo"
-                        ItemTemplate="{StaticResource WrapItemTemplate}"
-                        SelectionChanged="OnPathModeChanged" />
+                    <Grid x:Name="PathModeRow" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            x:Name="PathModeText"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="PathModeCombo"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            MinWidth="140"
+                            HorizontalAlignment="Stretch"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnPathModeChanged" />
+                    </Grid>
 
                     <Border
                         x:Name="OptionsBorder"
@@ -211,11 +461,32 @@
                                 Margin="0,6,0,0"
                                 ContentTemplate="{StaticResource WrapItemTemplate}"
                                 Click="OnShowPasswordClicked" />
-                            <TextBlock x:Name="EncryptionMethodText" Margin="0,8,0,0" />
-                            <ComboBox
-                                x:Name="EncryptionMethodCombo"
-                                ItemTemplate="{StaticResource WrapItemTemplate}"
-                                SelectionChanged="OnEncryptionMethodChanged" />
+                            <!-- 加密算法行：标签与勾选框文本左对齐（Margin 28）；默认同行，窗口压得很窄时才换行 -->
+                            <Grid x:Name="EncryptionMethodRow" Margin="0,8,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock
+                                    x:Name="EncryptionMethodText"
+                                    Grid.Row="0"
+                                    Grid.Column="0"
+                                    Margin="28,0,0,0"
+                                    VerticalAlignment="Center" />
+                                <ComboBox
+                                    x:Name="EncryptionMethodCombo"
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Margin="6,0,0,0"
+                                    MinWidth="140"
+                                    HorizontalAlignment="Stretch"
+                                    ItemTemplate="{StaticResource WrapItemTemplate}"
+                                    SelectionChanged="OnEncryptionMethodChanged" />
+                            </Grid>
                             <CheckBox
                                 x:Name="EncryptHeadersCheck"
                                 Margin="0,6,0,0"

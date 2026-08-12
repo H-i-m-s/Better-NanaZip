@@ -2,6 +2,8 @@
 
 #include "CompressPage.g.h"
 
+#include <string>
+
 #include <Windows.h>
 
 #include "NanaZip.Modern.h"
@@ -10,6 +12,7 @@ namespace winrt
 {
     using Windows::Foundation::IInspectable;
     using Windows::UI::Xaml::RoutedEventArgs;
+    using Windows::UI::Xaml::SizeChangedEventArgs;
     using Windows::UI::Xaml::Controls::SelectionChangedEventArgs;
     using Windows::UI::Xaml::Controls::TextChangedEventArgs;
     using Windows::UI::Xaml::Input::KeyRoutedEventArgs;
@@ -36,6 +39,16 @@ namespace winrt::NanaZip::Modern::implementation
         void OnUnloaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
+
+        // Reacts to window resizing: the left column rows keep their label
+        // and combo side by side while the window is wide enough, then all
+        // switch together to the wrapped layout (combo below the label,
+        // flush left) once the window is squeezed past the threshold. The
+        // encryption-method row wraps only when the window gets very
+        // narrow, as the user asked.
+        void OnSizeChanged(
+            winrt::IInspectable const& sender,
+            winrt::SizeChangedEventArgs const& e);
 
         void OnFormatChanged(
             winrt::IInspectable const& sender,
@@ -82,6 +95,18 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::SelectionChangedEventArgs const& e);
 
         void OnArchivePathChanged(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
+        void OnArchivePathDropDownOpened(
+            winrt::IInspectable const& sender,
+            winrt::IInspectable const& e);
+
+        void OnArchivePathDropDownClosed(
+            winrt::IInspectable const& sender,
+            winrt::IInspectable const& e);
+
+        void OnDeleteHistoryPathClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
@@ -146,6 +171,10 @@ namespace winrt::NanaZip::Modern::implementation
             double FontSizePx);
 
         void UpdatePasswordControl();
+
+        // Fill the archive-path drop-down: the current path first, then the
+        // history (deduplicated, capped at 16), mirroring the extract page.
+        void FillArchivePathHistory();
         void ApplyOptionList(
             winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
             _In_ const K7_COMPRESS_OPTION_LIST& List);
@@ -161,6 +190,32 @@ namespace winrt::NanaZip::Modern::implementation
         // the fill does not look like user input.
         void ApplySnapshotToUi();
 
+        // Apply the wrap state of every label/control row: LeftWrap for the
+        // left column rows (they wrap together), EncWrap for the
+        // encryption-method row (it wraps much later).
+        void SetAllRows(bool LeftWrap, bool EncWrap);
+
+        // Recompute the wrap thresholds from the natural content sizes and
+        // refresh Context->MinTrackW/H from the fully wrapped layout, so
+        // the minimum window size never blocks the wrap transition. Called
+        // only on the first layout and on wrap-state changes, not on every
+        // resize tick.
+        void RecalcMinTrack();
+
+        // Decide the wrap states from the current page width and apply
+        // them; called from OnSizeChanged.
+        void UpdateRowLayouts();
+
+        // Unify the left column label column width to the widest label so
+        // every combo starts at the same x position (measured after
+        // Measure, applied before the final measure in PrepareForShow).
+        void AlignLeftLabelsColumn();
+
+        // Resize the window height to match the current wrapped/side-by-side
+        // content height (bottom edge stays put), so the OK/Cancel row snaps
+        // back up when the user widens the window again.
+        void AdjustWindowHeightToContent();
+
         // Refresh the whole dialog from m_Context with the init guard set.
         // Event callbacks must use this instead of ApplySnapshotToUi():
         // refilling ComboBox items clears and re-selects, which re-fires
@@ -172,5 +227,16 @@ namespace winrt::NanaZip::Modern::implementation
         PK7_COMPRESS_DIALOG_CONTEXT m_Context;
         bool m_InitGuard;
         bool m_OkClicked;
+
+        // Layout state for the wrap-on-shrink behavior.
+        bool m_FirstLayout;
+        bool m_LeftWrapped;
+        bool m_EncryptionWrapped;
+        double m_LeftWrapThresholdW;
+        double m_EncryptionWrapThresholdW;
+
+        // Text shown in the editable archive-path combo when its drop-down
+        // opens; restored if the drop-down clears it.
+        std::wstring m_PathTextSnapshot;
     };
 }

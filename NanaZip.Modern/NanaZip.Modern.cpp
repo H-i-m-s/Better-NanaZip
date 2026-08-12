@@ -912,6 +912,29 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
     return Result;
 }
 
+// Temporary diagnostics for the compression-dialog startup crash. Appends
+// to %TEMP%\k7compress_diag.log; remove once the crash is fixed.
+static void DiagLog(const wchar_t* msg)
+{
+    wchar_t path[MAX_PATH];
+    const DWORD n = ::GetTempPathW(MAX_PATH, path);
+    if (n == 0 || n >= MAX_PATH)
+    {
+        return;
+    }
+    wcscat_s(path, L"k7compress_diag.log");
+    HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        ::WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)),
+            &written, nullptr);
+        ::WriteFile(h, L"\r\n", 4, &written, nullptr);
+        ::CloseHandle(h);
+    }
+}
+
 EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_COMPRESS_DIALOG_CONTEXT Context)
@@ -921,11 +944,14 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         return -1;
     }
 
+    DiagLog(L"[M1] K7ModernShowCompressDialog enter");
+
     HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
     if (!WindowHandle)
     {
         return -1;
     }
+    DiagLog(L"[M2] CreateXamlDialog ok");
 
     // The compression dialog is resizable so the user can enlarge it when a
     // larger dialog font size is selected, and can compress it to let long
@@ -940,12 +966,8 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     // can never clip the controls. The page writes MinTrackW/MinTrackH.
     if (!::SetWindowSubclass(
         WindowHandle,
-        [](
-            _In_ HWND hWnd,
-            _In_ UINT uMsg,
-            _In_ WPARAM wParam,
-            _In_ LPARAM lParam,
-            _In_ UINT_PTR uIdSubclass,
+        [](_In_ HWND hWnd, _In_ UINT uMsg, _In_ WPARAM wParam,
+            _In_ LPARAM lParam, _In_ UINT_PTR uIdSubclass,
             _In_ DWORD_PTR dwRefData) -> LRESULT
     {
         UNREFERENCED_PARAMETER(uIdSubclass);
@@ -963,15 +985,10 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         }
         else if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
         {
-            // Esc closes the dialog like the X button (a cancel).
             ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
             return 0;
         }
-        return ::DefSubclassProc(
-            hWnd,
-            uMsg,
-            wParam,
-            lParam);
+        return ::DefSubclassProc(hWnd, uMsg, wParam, lParam);
     },
         1,
         reinterpret_cast<DWORD_PTR>(&Context->MinTrackW)))
@@ -979,6 +996,7 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         ::DestroyWindow(WindowHandle);
         return -1;
     }
+    DiagLog(L"[M3] subclass ok");
 
     using Interface =
         winrt::NanaZip::Modern::CompressPage;
@@ -988,6 +1006,7 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     Interface Window = winrt::make<Implementation>(
         WindowHandle,
         Context);
+    DiagLog(L"[M4] make ok");
 
     ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
 
@@ -998,6 +1017,7 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         ::DestroyWindow(WindowHandle);
         return -1;
     }
+    DiagLog(L"[M5] SetXamlContent ok");
 
     if (ParentWindowHandle)
     {
@@ -1009,6 +1029,7 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
         auto Self = winrt::get_self<Implementation>(Window);
         Desired = Self->PrepareForShow();
     }
+    DiagLog(L"[M6] PrepareForShow ok");
 
     const UINT Dpi = ::GetDpiForWindow(WindowHandle);
     const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
