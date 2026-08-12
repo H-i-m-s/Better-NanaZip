@@ -1,10 +1,15 @@
-// CompressXamlAdapter.cpp
+﻿// CompressXamlAdapter.cpp
 // 压缩对话框 XAML 适配器：Core（规则层）与 K7_COMPRESS_DIALOG_CONTEXT（快照）之间的桥。
 // 只做数据映射与命令转发，规则仍在 CCompressDialogCore。
 
 #include "StdAfx.h"
 
+#include <memory>
+
 #include "../../../Common/StringConvert.h"
+
+#include "../../../Windows/FileDir.h"
+#include "../../../Windows/FileName.h"
 
 #include "../FileManager/BrowseDialog.h"
 #include "../FileManager/LangUtils.h"
@@ -510,24 +515,36 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
     core.SetArchiveName(fileName);
   }
 
-  K7_COMPRESS_DIALOG_CONTEXT ctx = {};
+  // The context is ~1MB (12 option lists of 128 items plus the big text
+  // buffers). It must live on the heap: on the default 1MB thread stack the
+  // __chkstk probe in this function's prologue overflows (0xc00000fd) as
+  // soon as the dialog path is entered, which crashed 7zG instantly.
+  std::unique_ptr<K7_COMPRESS_DIALOG_CONTEXT> ctx(new K7_COMPRESS_DIALOG_CONTEXT());
   CCompressXamlHost host;
   host.Core = &core;
-  host.Context = &ctx;
+  host.Context = ctx.get();
   host.Parent = hwndParent;
 
-  ctx.CommandCallback = &CCompressCommandThunk;
-  ctx.OptionsCallback = &CCompressOptionsThunk;
-  ctx.CallbackContext = &host;
-  ctx.FontSizeDialog = ReadFontSizeDialog();
+  ctx->CommandCallback = &CCompressCommandThunk;
+  ctx->OptionsCallback = &CCompressOptionsThunk;
+  ctx->CallbackContext = &host;
+  ctx->FontSizeDialog = ReadFontSizeDialog();
 
-  UpdateSnapshot(core, &ctx);
+  UpdateSnapshot(core, ctx.get());
 
-  ::K7ModernShowCompressDialog(hwndParent, &ctx);
+  const int ModernResult = ::K7ModernShowCompressDialog(hwndParent, ctx.get());
+  if (ModernResult == -1)
+  {
+    // The XAML dialog could not be shown (window creation, XAML content
+    // loading or message loop failed). Treat it as a hard failure so the
+    // caller falls back to the original Win32 dialog instead of silently
+    // cancelling.
+    return kXamlFailed;
+  }
 
-  if (!ctx.OK)
+  if (!ctx->OK)
     return kXamlCancelled;
 
-  ApplyUserText(core, &ctx);
+  ApplyUserText(core, ctx.get());
   return kXamlOk;
 }

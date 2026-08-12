@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CompressPage.g.h"
 
@@ -83,7 +83,7 @@ namespace winrt::NanaZip::Modern::implementation
 
         void OnArchivePathChanged(
             winrt::IInspectable const& sender,
-            winrt::TextChangedEventArgs const& e);
+            winrt::RoutedEventArgs const& e);
 
         void OnParametersChanged(
             winrt::IInspectable const& sender,
@@ -91,7 +91,7 @@ namespace winrt::NanaZip::Modern::implementation
 
         void OnVolumeChanged(
             winrt::IInspectable const& sender,
-            winrt::TextChangedEventArgs const& e);
+            winrt::RoutedEventArgs const& e);
 
         void OnShowPasswordClicked(
             winrt::IInspectable const& sender,
@@ -160,6 +160,13 @@ namespace winrt::NanaZip::Modern::implementation
         // Fills the dialog from m_Context. The caller sets m_InitGuard so
         // the fill does not look like user input.
         void ApplySnapshotToUi();
+
+        // Refresh the whole dialog from m_Context with the init guard set.
+        // Event callbacks must use this instead of ApplySnapshotToUi():
+        // refilling ComboBox items clears and re-selects, which re-fires
+        // SelectionChanged; without the guard that recurses forever
+        // (stack overflow, 0xc00000fd).
+        void RefreshFromSnapshot();
 
         HWND m_WindowHandle;
         PK7_COMPRESS_DIALOG_CONTEXT m_Context;

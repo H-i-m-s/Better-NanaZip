@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "CompressPage.h"
 #if __has_include("CompressPage.g.cpp")
 #include "CompressPage.g.cpp"
@@ -17,6 +17,35 @@
 
 namespace winrt::NanaZip::Modern::implementation
 {
+    // Border has no IsEnabled (it is not a Control). Recursively apply
+    // IsEnabled to every Control inside a container subtree instead.
+    static void SetTreeEnabled(
+        winrt::Windows::UI::Xaml::UIElement const& Element,
+        bool Enabled)
+    {
+        if (auto Control =
+            Element.try_as<winrt::Windows::UI::Xaml::Controls::Control>())
+        {
+            Control.IsEnabled(Enabled);
+        }
+        if (auto Panel =
+            Element.try_as<winrt::Windows::UI::Xaml::Controls::Panel>())
+        {
+            for (auto const& Child : Panel.Children())
+            {
+                SetTreeEnabled(Child, Enabled);
+            }
+        }
+        if (auto Border =
+            Element.try_as<winrt::Windows::UI::Xaml::Controls::Border>())
+        {
+            if (auto Child = Border.Child())
+            {
+                SetTreeEnabled(Child, Enabled);
+            }
+        }
+    }
+
     CompressPage::CompressPage(
         _In_opt_ HWND WindowHandle,
         _In_ PK7_COMPRESS_DIALOG_CONTEXT Context) :
@@ -185,7 +214,9 @@ namespace winrt::NanaZip::Modern::implementation
         EncryptionBorder().Visibility(Context->EncryptionVisible
             ? winrt::Windows::UI::Xaml::Visibility::Visible
             : winrt::Windows::UI::Xaml::Visibility::Collapsed);
-        EncryptionBorder().IsEnabled(Context->EncryptionEnabled != FALSE);
+        SetTreeEnabled(
+            EncryptionBorder(),
+            Context->EncryptionEnabled != FALSE);
 
         EncryptHeadersCheck().IsChecked(BoxBool(Context->EncryptHeaders != FALSE));
         EncryptHeadersCheck().IsEnabled(Context->EncryptHeadersAllowed != FALSE);
@@ -222,6 +253,13 @@ namespace winrt::NanaZip::Modern::implementation
         ErrorTextBlock().Visibility(Context->ErrorText[0]
             ? winrt::Windows::UI::Xaml::Visibility::Visible
             : winrt::Windows::UI::Xaml::Visibility::Collapsed);
+    }
+
+    void CompressPage::RefreshFromSnapshot()
+    {
+        this->m_InitGuard = true;
+        ApplySnapshotToUi();
+        this->m_InitGuard = false;
     }
 
     void CompressPage::ApplyLabels()
@@ -388,7 +426,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_FORMAT,
             this->m_Context->Formats.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnLevelChanged(
@@ -409,7 +447,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_LEVEL,
             this->m_Context->Levels.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnMethodChanged(
@@ -431,7 +469,7 @@ namespace winrt::NanaZip::Modern::implementation
             K7_COMPRESS_COMMAND_METHOD,
             this->m_Context->Methods.Items[Sel].Value,
             this->m_Context->Methods.Items[Sel].SemanticText);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnDictionaryChanged(
@@ -452,7 +490,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_DICTIONARY,
             this->m_Context->Dictionaries.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnOrderChanged(
@@ -473,7 +511,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_ORDER,
             this->m_Context->Orders.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnSolidChanged(
@@ -494,7 +532,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_SOLID,
             this->m_Context->SolidBlocks.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnThreadsChanged(
@@ -515,7 +553,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_THREADS,
             this->m_Context->Threads.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnMemoryChanged(
@@ -537,7 +575,7 @@ namespace winrt::NanaZip::Modern::implementation
             K7_COMPRESS_COMMAND_MEMORY,
             this->m_Context->MemoryLimits.Items[Sel].Value,
             this->m_Context->MemoryLimits.Items[Sel].SemanticText);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnUpdateModeChanged(
@@ -558,7 +596,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_UPDATE_MODE,
             this->m_Context->UpdateModes.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnPathModeChanged(
@@ -579,7 +617,7 @@ namespace winrt::NanaZip::Modern::implementation
         SendCommand(
             K7_COMPRESS_COMMAND_PATH_MODE,
             this->m_Context->PathModes.Items[Sel].Value);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnEncryptionMethodChanged(
@@ -601,13 +639,14 @@ namespace winrt::NanaZip::Modern::implementation
             K7_COMPRESS_COMMAND_ENCRYPTION_METHOD,
             this->m_Context->EncryptionMethods.Items[Sel].Value,
             this->m_Context->EncryptionMethods.Items[Sel].SemanticText);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnArchivePathChanged(
         winrt::IInspectable const& sender,
-        winrt::TextChangedEventArgs const& e)
+        winrt::RoutedEventArgs const& e)
     {
+        UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
         if (this->m_InitGuard || !this->m_Context)
         {
@@ -625,6 +664,7 @@ namespace winrt::NanaZip::Modern::implementation
         winrt::IInspectable const& sender,
         winrt::TextChangedEventArgs const& e)
     {
+        UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
         if (this->m_InitGuard || !this->m_Context)
         {
@@ -640,8 +680,9 @@ namespace winrt::NanaZip::Modern::implementation
 
     void CompressPage::OnVolumeChanged(
         winrt::IInspectable const& sender,
-        winrt::TextChangedEventArgs const& e)
+        winrt::RoutedEventArgs const& e)
     {
+        UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
         if (this->m_InitGuard || !this->m_Context)
         {
@@ -682,7 +723,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
         this->m_Context->SfxMode = GetBool(SfxCheck().IsChecked()) ? TRUE : FALSE;
         SendCommand(K7_COMPRESS_COMMAND_SFX, this->m_Context->SfxMode);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnSharedClicked(
@@ -742,7 +783,7 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
         SendCommand(K7_COMPRESS_COMMAND_BROWSE_ARCHIVE, 0, this->m_Context->ArchivePath);
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnOptionsClicked(
@@ -759,7 +800,7 @@ namespace winrt::NanaZip::Modern::implementation
         {
             this->m_Context->OptionsCallback(this->m_Context->CallbackContext);
         }
-        ApplySnapshotToUi();
+        RefreshFromSnapshot();
     }
 
     void CompressPage::OnOkClicked(
@@ -792,9 +833,7 @@ namespace winrt::NanaZip::Modern::implementation
             if (!Accepted)
             {
                 // The callback wrote ErrorText; surface it and stay open.
-                this->m_InitGuard = true;
-                ApplySnapshotToUi();
-                this->m_InitGuard = false;
+                RefreshFromSnapshot();
                 return;
             }
         }

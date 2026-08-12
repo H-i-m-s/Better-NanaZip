@@ -1,4 +1,4 @@
-// CompressDialog.h
+﻿// CompressDialog.h
 
 #ifndef ZIP7_INC_COMPRESS_DIALOG_H
 #define ZIP7_INC_COMPRESS_DIALOG_H
@@ -109,6 +109,8 @@ private:
   void SetParams();
   void SaveOptionsInMem();
   bool IsSFX() { return Core.IsSfx(); }
+
+  bool IsShowPasswordChecked() const { return IsButtonCheckedBool(IDX_PASSWORD_SHOW); }
 
   virtual bool OnInit() Z7_override;
   virtual bool OnMessage(UINT message, WPARAM wParam, LPARAM lParam) Z7_override;

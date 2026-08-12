@@ -1,4 +1,4 @@
-// CompressDialogCore.cpp
+﻿// CompressDialogCore.cpp
 // 压缩对话框规则层实现。从 CompressDialog.cpp 逐函数迁移，行为与原版逐行等价。
 
 #include "StdAfx.h"
@@ -21,6 +21,7 @@
 #include "../FileManager/LangUtils.h"
 #include "../FileManager/PropertyName.h"
 #include "../FileManager/SplitUtils.h"
+#include "../FileManager/resourceGui.h"
 
 #include "CompressDialogCore.h"
 #include "CompressDialogRes.h"
@@ -401,7 +402,7 @@ static void AddSize_MB_id(UString &s, UInt64 size, UInt32 id)
   AddLangString(s, id);
 }
 
-static void SetErrorMessage_MemUsage(UString &s, UInt64 reqSize, UInt64 ramSize, UInt64 ramLimit, const UString &usageString)
+void SetErrorMessage_MemUsage(UString &s, UInt64 reqSize, UInt64 ramSize, UInt64 ramLimit, const UString &usageString)
 {
   AddLangString(s, IDS_MEM_OPERATION_BLOCKED);
   s.Add_LF();
@@ -961,12 +962,12 @@ void CCompressDialogCore::ComprMethodChanged()
 }
 
 
-bool CCompressDialogCore::IsZipFormat()
+bool CCompressDialogCore::IsZipFormat() const
 {
   return Get_ArcInfoEx().Is_Zip();
 }
 
-bool CCompressDialogCore::IsXzFormat()
+bool CCompressDialogCore::IsXzFormat() const
 {
   return Get_ArcInfoEx().Is_Xz();
 }
@@ -980,7 +981,7 @@ void CCompressDialogCore::CalcEncryptionMethod()
   const CArcInfoEx &ai = Get_ArcInfoEx();
   if (ai.Is_7z())
   {
-    AddComboItem(EncryptionMethodItems, "AES-256", 0);
+    AddComboItem(EncryptionMethodItems, L"AES-256", 0);
     EncryptionMethodIndex = 0;
     DefaultEncryptionMethodIndex = 0;
   }
@@ -996,11 +997,11 @@ void CCompressDialogCore::CalcEncryptionMethod()
     int sel = 0;
     // if (ZipCryptoIsAllowed)
     {
-      AddComboItem(EncryptionMethodItems, "ZipCrypto", 0);
+      AddComboItem(EncryptionMethodItems, L"ZipCrypto", 0);
       sel = (encryptionMethod.IsPrefixedBy_Ascii_NoCase("aes") ? 1 : 0);
       DefaultEncryptionMethodIndex = 0;
     }
-    AddComboItem(EncryptionMethodItems, "AES-256", 1);
+    AddComboItem(EncryptionMethodItems, L"AES-256", 1);
     EncryptionMethodIndex = sel;
   }
 }
@@ -1369,7 +1370,7 @@ static void AddOrderItem(CObjectVector<CCompressDialogCore::COptionItem> &items,
 {
   char s[32];
   ConvertUInt32ToString(size, s);
-  AddComboItem(items, s, size);
+  AddComboItem(items, GetUnicodeString(s), size);
 }
 
 static void AddOrderItem_Auto(CObjectVector<CCompressDialogCore::COptionItem> &items, UInt32 autoOrder)
@@ -2105,7 +2106,7 @@ UInt64 CCompressDialogCore::GetMemoryUsage_Threads_Dict_DecompMem(UInt32 numThre
 }
 
 
-unsigned CCompressDialogCore::GetStaticFormatIndex()
+unsigned CCompressDialogCore::GetStaticFormatIndex() const
 {
   const CArcInfoEx &ai = Get_ArcInfoEx();
   for (unsigned i = 0; i < Z7_ARRAY_SIZE(g_Formats); i++)
@@ -2300,16 +2301,16 @@ void CCompressDialogCore::SetArchiveName2(bool prevWasSFX)
 }
 
 
-void CCompressDialogCore::ArcPathChanged(const UString &path)
+bool CCompressDialogCore::ArcPathChanged(const UString &path)
 {
   const int dotPos = GetExtDotPos(path);
   if (dotPos < 0)
-    return;
+    return false;
   const UString ext = path.Ptr(dotPos + 1);
   {
     const CArcInfoEx &ai = Get_ArcInfoEx();
     if (ai.FindExtension(ext) >= 0)
-      return;
+      return false;
   }
 
   const unsigned count = (unsigned)FormatItems.Size();
@@ -2321,9 +2322,10 @@ void CCompressDialogCore::ArcPathChanged(const UString &path)
       FormatIndex = (int)FormatItems[i].Value;
       SaveOptionsInMem();
       FormatChanged(true); // isChanged
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 

@@ -991,17 +991,17 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
 
     ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
 
-    if (ParentWindowHandle)
-    {
-        ::EnableWindow(ParentWindowHandle, FALSE);
-    }
-
     if (FAILED(::MileXamlSetXamlContentForContentWindow(
         WindowHandle,
         winrt::get_abi(Window))))
     {
         ::DestroyWindow(WindowHandle);
         return -1;
+    }
+
+    if (ParentWindowHandle)
+    {
+        ::EnableWindow(ParentWindowHandle, FALSE);
     }
 
     winrt::Windows::Foundation::Size Desired(640, 560);

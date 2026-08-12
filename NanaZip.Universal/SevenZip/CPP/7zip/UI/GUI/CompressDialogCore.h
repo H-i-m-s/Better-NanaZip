@@ -1,4 +1,4 @@
-// CompressDialogCore.h
+﻿// CompressDialogCore.h
 // 压缩对话框规则层：无 UI 依赖，Win32 壳（CCompressDialog）与 XAML 壳共用。
 // 规则只在这里存在一份：格式/等级/方法/字典/固实/线程/内存联动、内存估算、校验提交。
 
@@ -447,8 +447,8 @@ public:
 
   // ---- 格式 / 注册表 ----
   unsigned GetFormatIndex() const { return (unsigned)FormatIndex; }
-  bool IsZipFormat();
-  bool IsXzFormat();
+  bool IsZipFormat() const;
+  bool IsXzFormat() const;
   unsigned GetStaticFormatIndex() const;
   const CArcInfoEx &Get_ArcInfoEx() const { return (*ArcFormats)[GetFormatIndex()]; }
   NCompression::CFormatOptions &Get_FormatOptions();

@@ -9,7 +9,8 @@ enum ECompressXamlResult
 {
   kXamlNotAvailable,
   kXamlCancelled,
-  kXamlOk
+  kXamlOk,
+  kXamlFailed
 };
 
 // Show the XAML compression dialog for one dialog session.

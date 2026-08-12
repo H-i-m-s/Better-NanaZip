@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Page
     x:Class="NanaZip.Modern.CompressPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -48,7 +48,7 @@
                             Grid.Column="0"
                             IsEditable="True"
                             HorizontalAlignment="Stretch"
-                            TextChanged="OnArchivePathChanged" />
+                            LostFocus="OnArchivePathChanged" />
                         <Button
                             x:Name="BrowseButton"
                             Grid.Column="1"
@@ -125,7 +125,7 @@
                         x:Name="VolumeCombo"
                         IsEditable="True"
                         ItemTemplate="{StaticResource WrapItemTemplate}"
-                        TextChanged="OnVolumeChanged" />
+                        LostFocus="OnVolumeChanged" />
 
                     <TextBlock x:Name="ParametersText" Margin="0,8,0,0" />
                     <TextBox

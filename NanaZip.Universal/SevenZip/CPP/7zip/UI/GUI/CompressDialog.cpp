@@ -1,4 +1,4 @@
-// CompressDialog.cpp
+﻿// CompressDialog.cpp
 // 压缩对话框 Win32 壳：负责控件显示、事件收集与浏览/确认交互。
 // 所有规则与状态在 CompressDialogCore，壳不复制任何规则。
 
@@ -18,6 +18,9 @@
 #include "CompressDialog.h"
 
 #include "CompressDialogRes.h"
+
+#include "../../../Windows/FileDir.h"
+#include "../Explorer/MyMessages.h"
 #include "ExtractRes.h"
 #include "resource2.h"
 

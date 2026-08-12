@@ -481,6 +481,7 @@ static HRESULT ShowDialog(
       di = coreX.Info;
       xamlDone = true;
     }
+    // kXamlNotAvailable / kXamlFailed fall through to the Win32 dialog.
   }
   #endif
   if (!xamlDone)
