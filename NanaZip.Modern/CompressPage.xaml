@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.CompressPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    KeyDown="OnPageKeyDown"
+    Background="Transparent">
+
+    <Page.Resources>
+        <DataTemplate x:Key="WrapItemTemplate">
+            <TextBlock
+                Text="{Binding}"
+                TextWrapping="Wrap"
+                MaxWidth="360" />
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="12,12,12,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer
+            Grid.Row="0"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock x:Name="ArchiveFolderText" TextWrapping="Wrap" />
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            x:Name="ArchivePathCombo"
+                            Grid.Column="0"
+                            IsEditable="True"
+                            HorizontalAlignment="Stretch"
+                            TextChanged="OnArchivePathChanged" />
+                        <Button
+                            x:Name="BrowseButton"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            Content="..."
+                            Click="OnBrowseClicked" />
+                    </Grid>
+
+                    <TextBlock x:Name="FormatText" Margin="0,10,0,0" />
+                    <ComboBox
+                        x:Name="FormatCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnFormatChanged" />
+
+                    <TextBlock x:Name="LevelText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="LevelCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnLevelChanged" />
+
+                    <TextBlock x:Name="MethodText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="MethodCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnMethodChanged" />
+
+                    <TextBlock x:Name="DictionaryText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="DictionaryCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnDictionaryChanged" />
+
+                    <TextBlock x:Name="OrderText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="OrderCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnOrderChanged" />
+
+                    <TextBlock x:Name="SolidText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="SolidCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnSolidChanged" />
+
+                    <TextBlock x:Name="ThreadsText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="ThreadsCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnThreadsChanged" />
+                    <TextBlock x:Name="HardwareThreadsText" Opacity="0.8" TextWrapping="Wrap" />
+
+                    <TextBlock x:Name="MemoryText" Margin="0,8,0,0" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            x:Name="MemoryCombo"
+                            Grid.Column="0"
+                            ItemTemplate="{StaticResource WrapItemTemplate}"
+                            SelectionChanged="OnMemoryChanged" />
+                        <TextBlock
+                            x:Name="MemoryValueText"
+                            Grid.Column="1"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            TextWrapping="Wrap" />
+                    </Grid>
+                    <TextBlock x:Name="DecompressMemoryText" TextWrapping="Wrap" />
+
+                    <TextBlock x:Name="VolumeText" Margin="0,8,0,0" />
+                    <ComboBox
+                        x:Name="VolumeCombo"
+                        IsEditable="True"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        TextChanged="OnVolumeChanged" />
+
+                    <TextBlock x:Name="ParametersText" Margin="0,8,0,0" />
+                    <TextBox
+                        x:Name="ParametersBox"
+                        AcceptsReturn="True"
+                        TextWrapping="Wrap"
+                        MinHeight="36"
+                        TextChanged="OnParametersChanged" />
+
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            x:Name="OptionsButton"
+                            Content="Options"
+                            Click="OnOptionsClicked" />
+                        <TextBlock
+                            x:Name="OptionsSummaryText"
+                            Grid.Column="1"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            TextWrapping="Wrap" />
+                    </Grid>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                    <TextBlock x:Name="UpdateModeText" TextWrapping="Wrap" />
+                    <ComboBox
+                        x:Name="UpdateModeCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnUpdateModeChanged" />
+
+                    <TextBlock x:Name="PathModeText" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <ComboBox
+                        x:Name="PathModeCombo"
+                        ItemTemplate="{StaticResource WrapItemTemplate}"
+                        SelectionChanged="OnPathModeChanged" />
+
+                    <Border
+                        x:Name="OptionsBorder"
+                        Margin="0,12,0,0"
+                        BorderBrush="#80808080"
+                        BorderThickness="1"
+                        CornerRadius="2"
+                        Padding="8">
+                        <StackPanel>
+                            <TextBlock x:Name="OptionsGroupText" TextWrapping="Wrap" />
+                            <CheckBox
+                                x:Name="SfxCheck"
+                                Margin="0,8,0,0"
+                                ContentTemplate="{StaticResource WrapItemTemplate}"
+                                Click="OnSfxClicked" />
+                            <CheckBox
+                                x:Name="SharedCheck"
+                                Margin="0,6,0,0"
+                                ContentTemplate="{StaticResource WrapItemTemplate}"
+                                Click="OnSharedClicked" />
+                            <CheckBox
+                                x:Name="DeleteCheck"
+                                Margin="0,6,0,0"
+                                ContentTemplate="{StaticResource WrapItemTemplate}"
+                                Click="OnDeleteClicked" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border
+                        x:Name="EncryptionBorder"
+                        Margin="0,12,0,0"
+                        BorderBrush="#80808080"
+                        BorderThickness="1"
+                        CornerRadius="2"
+                        Padding="8">
+                        <StackPanel>
+                            <TextBlock x:Name="EncryptionGroupText" TextWrapping="Wrap" />
+                            <TextBlock x:Name="PasswordText" Margin="0,8,0,0" />
+                            <PasswordBox x:Name="PasswordBox" />
+                            <TextBlock x:Name="ReenterPasswordText" Margin="0,8,0,0" />
+                            <PasswordBox x:Name="ReenterPasswordBox" />
+                            <CheckBox
+                                x:Name="ShowPasswordCheck"
+                                Margin="0,6,0,0"
+                                ContentTemplate="{StaticResource WrapItemTemplate}"
+                                Click="OnShowPasswordClicked" />
+                            <TextBlock x:Name="EncryptionMethodText" Margin="0,8,0,0" />
+                            <ComboBox
+                                x:Name="EncryptionMethodCombo"
+                                ItemTemplate="{StaticResource WrapItemTemplate}"
+                                SelectionChanged="OnEncryptionMethodChanged" />
+                            <CheckBox
+                                x:Name="EncryptHeadersCheck"
+                                Margin="0,6,0,0"
+                                ContentTemplate="{StaticResource WrapItemTemplate}"
+                                Click="OnEncryptHeadersClicked" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <TextBlock
+            x:Name="ErrorTextBlock"
+            Grid.Row="1"
+            Margin="0,8,0,0"
+            Foreground="#FFE06C75"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+
+        <StackPanel
+            Grid.Row="2"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            Margin="0,12,0,0">
+            <Button
+                x:Name="OkButton"
+                MinWidth="88"
+                Margin="0,0,8,0"
+                Content="OK"
+                Click="OnOkClicked" />
+            <Button
+                x:Name="CancelButton"
+                MinWidth="88"
+                Content="Cancel"
+                Click="OnCancelClicked" />
+        </StackPanel>
+    </Grid>
+</Page>

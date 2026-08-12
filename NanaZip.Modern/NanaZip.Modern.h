@@ -424,6 +424,176 @@ EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_OVERWRITE_DIALOG_CONTEXT Context);
 
+// -----------------------------------------------------------------------------
+// Compress dialog exchange types.
+//
+// These types intentionally contain only fixed-size Win32 ABI data. The
+// Universal side owns all 7-Zip state and dynamic rules; the Modern page only
+// renders the snapshot and sends semantic commands back through the callbacks.
+// -----------------------------------------------------------------------------
+
+#define K7_COMPRESS_MAX_OPTION_ITEMS 128
+#define K7_COMPRESS_MAX_DISPLAY_TEXT 192
+#define K7_COMPRESS_MAX_SEMANTIC_TEXT 128
+#define K7_COMPRESS_MAX_ARCHIVE_PATH 32768
+#define K7_COMPRESS_MAX_PARAMETERS 2048
+#define K7_COMPRESS_MAX_VOLUME_TEXT 512
+#define K7_COMPRESS_MAX_PASSWORD 256
+
+#define K7_COMPRESS_OPTION_AUTO      0x00000001u
+#define K7_COMPRESS_OPTION_DEFAULT   0x00000002u
+#define K7_COMPRESS_OPTION_DISABLED  0x00000004u
+
+#define K7_COMPRESS_COMMAND_FORMAT              1u
+#define K7_COMPRESS_COMMAND_LEVEL               2u
+#define K7_COMPRESS_COMMAND_METHOD              3u
+#define K7_COMPRESS_COMMAND_DICTIONARY          4u
+#define K7_COMPRESS_COMMAND_ORDER               5u
+#define K7_COMPRESS_COMMAND_SOLID               6u
+#define K7_COMPRESS_COMMAND_THREADS             7u
+#define K7_COMPRESS_COMMAND_MEMORY              8u
+#define K7_COMPRESS_COMMAND_UPDATE_MODE        9u
+#define K7_COMPRESS_COMMAND_PATH_MODE          10u
+#define K7_COMPRESS_COMMAND_ENCRYPTION_METHOD  11u
+#define K7_COMPRESS_COMMAND_ARCHIVE_PATH       12u
+#define K7_COMPRESS_COMMAND_PARAMETERS         13u
+#define K7_COMPRESS_COMMAND_VOLUME             14u
+#define K7_COMPRESS_COMMAND_SFX                15u
+#define K7_COMPRESS_COMMAND_SHARED             16u
+#define K7_COMPRESS_COMMAND_DELETE             17u
+#define K7_COMPRESS_COMMAND_ENCRYPT_HEADERS    18u
+#define K7_COMPRESS_COMMAND_SUBMIT             19u
+#define K7_COMPRESS_COMMAND_BROWSE_ARCHIVE     20u
+
+#define K7_COMPRESS_SUBMIT_OK       0
+#define K7_COMPRESS_SUBMIT_REJECTED 1
+
+/**
+ * @brief One semantic item in a compression dialog option list.
+ *
+ * Value carries numeric semantics such as a format index, level, dictionary
+ * size or thread count. SemanticText carries string semantics such as a
+ * method name or a normalized memory-use specification. The display text is
+ * never parsed back into a compression setting.
+ */
+typedef struct _K7_COMPRESS_OPTION_ITEM
+{
+    WCHAR DisplayText[K7_COMPRESS_MAX_DISPLAY_TEXT];
+    WCHAR SemanticText[K7_COMPRESS_MAX_SEMANTIC_TEXT];
+    INT64 Value;
+    UINT32 Flags;
+} K7_COMPRESS_OPTION_ITEM, *PK7_COMPRESS_OPTION_ITEM;
+
+typedef struct _K7_COMPRESS_OPTION_LIST
+{
+    K7_COMPRESS_OPTION_ITEM Items[K7_COMPRESS_MAX_OPTION_ITEMS];
+    UINT32 Count;
+    INT32 SelectedIndex;
+    BOOLEAN Visible;
+    BOOLEAN Enabled;
+} K7_COMPRESS_OPTION_LIST, *PK7_COMPRESS_OPTION_LIST;
+
+/**
+ * @brief Optional command callback owned by the Universal compression model.
+ *
+ * The callback may update the context snapshot in place. Returning FALSE
+ * rejects the command; ErrorText can then be shown by the page. The callback
+ * is invoked on the XAML UI thread while the dialog is open.
+ */
+typedef BOOLEAN (WINAPI *K7_COMPRESS_DIALOG_COMMAND_CALLBACK)(
+    _In_ LPVOID CallbackContext,
+    _In_ UINT32 Command,
+    _In_ INT64 Value,
+    _In_opt_ LPCWSTR SemanticText);
+
+typedef BOOLEAN (WINAPI *K7_COMPRESS_DIALOG_OPTIONS_CALLBACK)(
+    _In_ LPVOID CallbackContext);
+
+/**
+ * @brief The compression dialog context and current Universal-side snapshot.
+ *
+ * The caller fills the initial snapshot and callback pointers before calling
+ * K7ModernShowCompressDialog. The page writes final primitive fields back and
+ * sets OK only after the submit callback accepts the request.
+ */
+typedef struct _K7_COMPRESS_DIALOG_CONTEXT
+{
+    // --- Dynamic option snapshots ---
+    K7_COMPRESS_OPTION_LIST Formats;
+    K7_COMPRESS_OPTION_LIST Levels;
+    K7_COMPRESS_OPTION_LIST Methods;
+    K7_COMPRESS_OPTION_LIST Dictionaries;
+    K7_COMPRESS_OPTION_LIST Orders;
+    K7_COMPRESS_OPTION_LIST SolidBlocks;
+    K7_COMPRESS_OPTION_LIST Threads;
+    K7_COMPRESS_OPTION_LIST MemoryLimits;
+    K7_COMPRESS_OPTION_LIST UpdateModes;
+    K7_COMPRESS_OPTION_LIST PathModes;
+    K7_COMPRESS_OPTION_LIST EncryptionMethods;
+    K7_COMPRESS_OPTION_LIST Volumes;
+
+    // --- Current semantic values ---
+    INT32 FormatIndex;
+    INT64 Level;
+    INT64 Dictionary;
+    INT64 Order;
+    INT64 SolidBlock;
+    INT64 ThreadsValue;
+    INT64 MemoryLimit;
+    UINT32 UpdateMode;
+    UINT32 PathMode;
+    BOOLEAN SfxMode;
+    BOOLEAN OpenShareForWrite;
+    BOOLEAN DeleteAfterCompressing;
+    BOOLEAN EncryptHeaders;
+    BOOLEAN ShowPassword;
+    BOOLEAN EncryptHeadersAllowed;
+
+    // --- Capability and display state ---
+    BOOLEAN SfxVisible;
+    BOOLEAN SfxEnabled;
+    BOOLEAN EncryptionVisible;
+    BOOLEAN EncryptionEnabled;
+    BOOLEAN VolumeVisible;
+    BOOLEAN ParametersVisible;
+    BOOLEAN OptionsEnabled;
+    BOOLEAN MemoryVisible;
+    BOOLEAN DecompressMemoryVisible;
+    WCHAR ArchiveFolderText[256];
+    WCHAR HardwareThreadsText[256];
+    WCHAR MemoryValueText[256];
+    WCHAR DecompressMemoryText[256];
+    WCHAR OptionsSummaryText[1024];
+    WCHAR ErrorText[1024];
+
+    // --- Editable text ---
+    WCHAR ArchivePath[K7_COMPRESS_MAX_ARCHIVE_PATH];
+    WCHAR Parameters[K7_COMPRESS_MAX_PARAMETERS];
+    WCHAR VolumeText[K7_COMPRESS_MAX_VOLUME_TEXT];
+    WCHAR Password[K7_COMPRESS_MAX_PASSWORD];
+    WCHAR PasswordConfirmation[K7_COMPRESS_MAX_PASSWORD];
+
+    // --- Dialog behavior ---
+    UINT32 FontSizeDialog;
+    LONG MinTrackW;
+    LONG MinTrackH;
+    BOOLEAN OK;
+
+    K7_COMPRESS_DIALOG_COMMAND_CALLBACK CommandCallback;
+    K7_COMPRESS_DIALOG_OPTIONS_CALLBACK OptionsCallback;
+    LPVOID CallbackContext;
+} K7_COMPRESS_DIALOG_CONTEXT, *PK7_COMPRESS_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the main compression dialog.
+ * @param ParentWindowHandle The owner window, or nullptr.
+ * @param Context The caller-owned compression snapshot and result context.
+ * @return The XAML message-loop result, or -1 when Modern is unavailable.
+ */
+EXTERN_C INT WINAPI K7ModernShowCompressDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_COMPRESS_DIALOG_CONTEXT Context);
+
 /**
  * @brief The extract dialog context structure. The caller fills it with the
  *        current values before calling K7ModernShowExtractDialog, and the

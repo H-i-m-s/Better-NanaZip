@@ -20,6 +20,8 @@
 #include "../FileManager/resourceGui.h"
 
 #include "CompressDialog.h"
+#include "CompressXamlAdapter.h"
+#include "NanaZip.Modern.h"
 #include "UpdateGUI.h"
 
 #include "resource2.h"
@@ -457,8 +459,38 @@ static HRESULT ShowDialog(
 
   ParseProperties(options.MethodMode.Properties, di);
 
+  // **************** SSS Modification Start ****************
+  // XAML 压缩对话框优先；不可用或初始化失败时回退原 Win32 对话框。
+  // 规则在 CCompressDialogCore，两条路径共用同一份数据，行为一致。
+  bool xamlDone = false;
+  #ifndef Z7_SFX
+  if (K7ModernAvailable())
+  {
+    CCompressDialogCore coreX;
+    coreX.ArcFormats = dialog.ArcFormats;
+    coreX.ArcIndices = dialog.ArcIndices;
+    coreX.ExternalMethods = dialog.ExternalMethods;
+    coreX.Info = di;
+    coreX.OriginalFileName = dialog.OriginalFileName;
+    coreX.KeepName = di.KeepName;
+    const ECompressXamlResult xres = K7ShowCompressDialogXaml(hwndParent, coreX);
+    if (xres == kXamlCancelled)
+      return E_ABORT;
+    if (xres == kXamlOk)
+    {
+      di = coreX.Info;
+      xamlDone = true;
+    }
+  }
+  #endif
+  if (!xamlDone)
+  {
+  // **************** SSS Modification End ****************
   if (dialog.Create(hwndParent) != IDOK)
     return E_ABORT;
+  // **************** SSS Modification Start ****************
+  }
+  // **************** SSS Modification End ****************
 
   options.DeleteAfterCompressing = di.DeleteAfterCompressing;
 

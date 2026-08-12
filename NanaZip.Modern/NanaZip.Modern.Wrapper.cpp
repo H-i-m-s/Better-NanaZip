@@ -408,3 +408,29 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
 
     return -1;
 }
+
+EXTERN_C INT WINAPI K7ModernShowCompressDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_COMPRESS_DIALOG_CONTEXT Context)
+{
+    using ProcType = decltype(::K7ModernShowCompressDialog)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowCompressDialog");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(ParentWindowHandle, Context);
+    }
+
+    return -1;
+}
