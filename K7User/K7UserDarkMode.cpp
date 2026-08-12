@@ -152,6 +152,7 @@ namespace
         // Should always be available if ShouldAppsUseDarkMode is true.
 
         bool volatile ShouldAppsUseDarkMode = false;
+        UINT32 volatile DarkModeWorkaroundBypassDepth = 0;
         HHOOK volatile WindowsHookHandle = nullptr;
 
         // Fields for specific scenarios.
@@ -343,6 +344,15 @@ namespace
     {
         UNREFERENCED_PARAMETER(uIdSubclass);
         UNREFERENCED_PARAMETER(dwRefData);
+
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0)
+        {
+            return ::DefSubclassProc(
+                hWnd,
+                uMsg,
+                wParam,
+                lParam);
+        }
 
         switch (uMsg)
         {
@@ -789,6 +799,15 @@ namespace
             PCWPSTRUCT WndProcStruct =
                 reinterpret_cast<PCWPSTRUCT>(lParam);
 
+            if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0)
+            {
+                return ::CallNextHookEx(
+                    nullptr,
+                    nCode,
+                    wParam,
+                    lParam);
+            }
+
             switch (WndProcStruct->message)
             {
             case WM_CREATE:
@@ -1002,7 +1021,9 @@ namespace
     static DWORD WINAPI DetouredGetSysColor(
         _In_ int nIndex)
     {
-        if (!g_GlobalInitialized || !g_ThreadContext.ShouldAppsUseDarkMode)
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
         {
             return ::OriginalGetSysColor(nIndex);
         }
@@ -1023,7 +1044,9 @@ namespace
     static HBRUSH WINAPI DetouredGetSysColorBrush(
         _In_ int nIndex)
     {
-        if (!g_GlobalInitialized || !g_ThreadContext.ShouldAppsUseDarkMode)
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
         {
             return ::OriginalGetSysColorBrush(nIndex);
         }
@@ -1046,7 +1069,9 @@ namespace
         _In_ int iPropId,
         _Out_ COLORREF* pColor)
     {
-        if (!g_GlobalInitialized || !g_ThreadContext.ShouldAppsUseDarkMode)
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
         {
             return ::OriginalGetThemeColor(
                 hTheme,
@@ -1096,7 +1121,9 @@ namespace
         _In_ DWORD dwTextFlags2,
         _In_ LPCRECT pRect)
     {
-        if (!g_GlobalInitialized || !g_ThreadContext.ShouldAppsUseDarkMode)
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
         {
             return ::OriginalDrawThemeText(
                 hTheme,
@@ -1135,7 +1162,9 @@ namespace
         _In_ LPCRECT pRect,
         _In_opt_ LPCRECT pClipRect)
     {
-        if (!g_GlobalInitialized || !g_ThreadContext.ShouldAppsUseDarkMode)
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
         {
             return ::OriginalDrawThemeBackground(
                 hTheme,
@@ -1269,7 +1298,9 @@ namespace
         _In_ LPCRECT pRect,
         _In_opt_ const DTBGOPTS* pOptions)
     {
-        if (!g_GlobalInitialized || !g_ThreadContext.ShouldAppsUseDarkMode)
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
         {
             return ::OriginalDrawThemeBackgroundEx(
                 hTheme,
@@ -1339,8 +1370,16 @@ namespace
         _In_opt_ HWND hwnd,
         _In_ LPCWSTR pszClassList)
     {
+        if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0 ||
+            !g_GlobalInitialized ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
+        {
+            return ::OriginalOpenNcThemeData(hwnd, pszClassList);
+        }
+
         // Workaround for dark mode scrollbar
-        if (0 == std::wcscmp(pszClassList, L"ScrollBar"))
+        if (pszClassList &&
+            0 == std::wcscmp(pszClassList, L"ScrollBar"))
         {
             return ::OriginalOpenNcThemeData(nullptr, L"Explorer::ScrollBar");
         }
@@ -1468,6 +1507,22 @@ EXTERN_C MO_RESULT MOAPI K7UserInitializeDarkModeSupport()
     g_GlobalInitialized = true;
 
     return MO_RESULT_SUCCESS_OK;
+}
+
+EXTERN_C VOID WINAPI K7UserBeginDarkModeWorkaroundBypass()
+{
+    if (g_ThreadContext.DarkModeWorkaroundBypassDepth != static_cast<UINT32>(-1))
+    {
+        ++g_ThreadContext.DarkModeWorkaroundBypassDepth;
+    }
+}
+
+EXTERN_C VOID WINAPI K7UserEndDarkModeWorkaroundBypass()
+{
+    if (g_ThreadContext.DarkModeWorkaroundBypassDepth != 0)
+    {
+        --g_ThreadContext.DarkModeWorkaroundBypassDepth;
+    }
 }
 
 EXTERN_C MO_RESULT MOAPI K7UserUninitializeDarkModeSupport()

@@ -5,6 +5,7 @@
 #endif
 
 #include "NanaZip.Modern.h"
+#include <K7User.h>
 
 #include <shlobj.h>
 
@@ -721,6 +722,7 @@ namespace winrt::NanaZip::Modern::implementation
         // instead of the legacy SHBrowseForFolder dialog: the modern dialog
         // follows the system dark theme, while the legacy one renders a
         // white list even in dark mode.
+        K7UserDarkModeWorkaroundBypassScope DarkModeWorkaroundBypass;
         winrt::com_ptr<IFileOpenDialog> Dialog;
         HRESULT hr = ::CoCreateInstance(
             CLSID_FileOpenDialog,

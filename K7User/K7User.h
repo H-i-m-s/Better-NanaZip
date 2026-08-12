@@ -26,6 +26,43 @@
  */
 EXTERN_C MO_RESULT MOAPI K7UserInitializeDarkModeSupport();
 
+/**
+ * @brief Temporarily bypasses NanaZip's process-local dark mode workarounds
+ *        on the current thread.
+ * @remark This is intended for system-owned dialogs created in-process, such
+ *         as IFileDialog, so they can use the system's own theme colors and
+ *         window handling. Each call must be paired with
+ *         K7UserEndDarkModeWorkaroundBypass on the same thread.
+ */
+EXTERN_C VOID WINAPI K7UserBeginDarkModeWorkaroundBypass();
+
+/**
+ * @brief Restores NanaZip's process-local dark mode workarounds on the current
+ *        thread after K7UserBeginDarkModeWorkaroundBypass.
+ */
+EXTERN_C VOID WINAPI K7UserEndDarkModeWorkaroundBypass();
+
+#ifdef __cplusplus
+class K7UserDarkModeWorkaroundBypassScope final
+{
+public:
+    K7UserDarkModeWorkaroundBypassScope()
+    {
+        ::K7UserBeginDarkModeWorkaroundBypass();
+    }
+
+    ~K7UserDarkModeWorkaroundBypassScope()
+    {
+        ::K7UserEndDarkModeWorkaroundBypass();
+    }
+
+    K7UserDarkModeWorkaroundBypassScope(
+        K7UserDarkModeWorkaroundBypassScope const&) = delete;
+    K7UserDarkModeWorkaroundBypassScope& operator=(
+        K7UserDarkModeWorkaroundBypassScope const&) = delete;
+};
+#endif // __cplusplus
+
 #endif // !K7_USER_DARK_MODE
 
 #ifndef K7_USER_MODERN

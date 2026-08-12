@@ -1222,6 +1222,7 @@ void CPanel::AddToExistingArchive()
     CFolderLink &Link = _parentFolders.Back();
     const UString &ArchivePath = Link.VirtualPath;
 
+    K7UserDarkModeWorkaroundBypassScope DarkModeWorkaroundBypass;
     // MyBrowseForFile doesn't have multiselect, so use IFileOpenDialog directly
     CMyComPtr<IFileOpenDialog> FileDialog;
     if (FAILED(::CoCreateInstance(

@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "CopyLocationPage.h"
 #include "CopyLocationPage.g.cpp"
+#include <K7User.h>
 
 #include <Mile.Helpers.CppWinRT.h>
 
@@ -73,6 +74,7 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
 
+        K7UserDarkModeWorkaroundBypassScope DarkModeWorkaroundBypass;
         winrt::com_ptr<IFileDialog> FileDialog =
             winrt::try_create_instance<IFileDialog>(
                 CLSID_FileOpenDialog,

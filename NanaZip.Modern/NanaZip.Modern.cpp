@@ -11,6 +11,7 @@
 #include "pch.h"
 
 #include "NanaZip.Modern.h"
+#include <K7User.h>
 
 #include <Mile.Helpers.h>
 #include <Mile.Xaml.h>

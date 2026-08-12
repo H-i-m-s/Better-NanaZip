@@ -133,6 +133,7 @@ EXTERN_C PIDLIST_ABSOLUTE WINAPI K7UserModernSHBrowseForFolderW(
 {
     LPITEMIDLIST IDList = nullptr;
 
+    K7UserDarkModeWorkaroundBypassScope DarkModeWorkaroundBypass;
     IFileDialog* FileDialog = nullptr;
     if (SUCCEEDED(::CoCreateInstance(
         CLSID_FileOpenDialog,

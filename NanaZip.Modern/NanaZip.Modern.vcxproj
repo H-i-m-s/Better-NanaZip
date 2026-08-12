@@ -20,6 +20,7 @@
     <MileProjectLegalCopyright>© M2-Team and Contributors. All rights reserved.</MileProjectLegalCopyright>
     <MileProjectOriginalFilename>NanaZip.Modern.dll</MileProjectOriginalFilename>
     <MileProjectProductName>NanaZip</MileProjectProductName>
+    <K7UserDisableRedirector>true</K7UserDisableRedirector>
   </PropertyGroup>
   <Import Project="..\NanaZip.Project\NanaZip.Project.props" />
   <Import Sdk="Mile.Project.Configurations" Project="Mile.Project.Platform.x64.props" />
@@ -27,6 +28,13 @@
   <Import Sdk="Mile.Project.Configurations" Project="Mile.Project.Cpp.Default.props" />
   <Import Sdk="Mile.Project.Configurations" Project="Mile.Project.Cpp.props" />
   <Import Project="..\NanaZip.Project\NanaZip.Project.Runtime.props" />
+  <Import Project="..\K7User\K7User.props" />
+  <PropertyGroup>
+    <!-- Mile.Mobility.Portable.Types.h 被 K7User.h 引用；Mile.Project.Configurations
+         SDK 的包机制不处理 Mile.Mobility 的 include 路径，需手动补充（与 K7User.props
+         中 Mile.Mobility 版本 1.1.602 一致）。 -->
+    <IncludePath>$(UserProfile)\.nuget\packages\mile.mobility\1.1.602\Source\Native\;$(IncludePath)</IncludePath>
+  </PropertyGroup>
   <PropertyGroup>
     <RequiredBundles>Microsoft.VisualStudio.ComponentGroup.MSIX.Packaging</RequiredBundles>
   </PropertyGroup>
@@ -255,6 +263,9 @@
     </PackageReference>
     <PackageReference Include="Mile.Windows.UniCrt">
       <Version>1.2.410</Version>
+    </PackageReference>
+    <PackageReference Include="Mile.Mobility">
+      <Version>1.1.602</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
