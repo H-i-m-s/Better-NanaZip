@@ -3,7 +3,6 @@
 #include "StdAfx.h"
 
 #include "resource.h"
-#include "OverwriteDialogRes.h"
 
 #include "../../../Windows/FileName.h"
 #include "../../../Windows/PropVariantConv.h"

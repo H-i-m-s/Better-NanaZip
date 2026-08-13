@@ -16,6 +16,7 @@
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.Storage.Streams.h>
 
 namespace winrt::NanaZip::Modern::implementation
@@ -28,6 +29,7 @@ namespace winrt::NanaZip::Modern::implementation
     {
         this->Unloaded({ this, &OverwritePage::OnUnloaded });
         this->Loaded({ this, &OverwritePage::OnLoaded });
+        this->KeyDown({ this, &OverwritePage::OnPageKeyDown });
     }
 
     void OverwritePage::InitializeComponent()
@@ -109,6 +111,28 @@ namespace winrt::NanaZip::Modern::implementation
             s.insert(s.begin(), L'"');
             s += L'"';
         }
+    }
+
+    static winrt::hstring RemoveMnemonic(winrt::hstring const& Text)
+    {
+        std::wstring Result;
+        std::wstring Source(Text.c_str());
+        Result.reserve(Source.size());
+
+        for (size_t i = 0; i < Source.size(); i++)
+        {
+            if (Source[i] == L'&')
+            {
+                if (i + 1 < Source.size() && Source[i + 1] == L'&')
+                {
+                    Result += L'&';
+                    i++;
+                }
+                continue;
+            }
+            Result += Source[i];
+        }
+        return winrt::hstring(Result);
     }
 
     static std::wstring UInt64ToString(UINT64 Value)
@@ -349,12 +373,22 @@ namespace winrt::NanaZip::Modern::implementation
         LoadFileIcon(OldFileIcon(), Context->OldName);
         LoadFileIcon(NewFileIcon(), Context->NewName);
 
-        YesButton().Content(winrt::box_value(winrt::hstring(L"&Yes")));
-        NoButton().Content(winrt::box_value(winrt::hstring(L"&No")));
-        CancelButton().Content(winrt::box_value(winrt::hstring(L"&Cancel")));
-        YesToAllButton().Content(winrt::box_value(Res(440, L"Yes to &All")));
-        NoToAllButton().Content(winrt::box_value(Res(441, L"No to A&ll")));
-        AutoRenameButton().Content(winrt::box_value(Res(3505, L"A&uto Rename")));
+        ::SetWindowTextW(
+            this->m_WindowHandle,
+            Res(3500, L"Confirm File Replace").c_str());
+
+        YesButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(406, L"&Yes"))));
+        NoButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(407, L"&No"))));
+        CancelButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(402, L"&Cancel"))));
+        YesToAllButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(440, L"Yes to &All"))));
+        NoToAllButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(441, L"No to A&ll"))));
+        AutoRenameButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(3505, L"A&uto Rename"))));
 
         if (!Context->ShowExtraButtons)
         {
@@ -447,5 +481,18 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
         SetResult(K7_OVERWRITE_DIALOG_RESULT_CANCEL);
+    }
+
+    void OverwritePage::OnPageKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+
+        if (e.Key() == winrt::Windows::System::VirtualKey::Escape)
+        {
+            e.Handled(true);
+            SetResult(K7_OVERWRITE_DIALOG_RESULT_CANCEL);
+        }
     }
 }

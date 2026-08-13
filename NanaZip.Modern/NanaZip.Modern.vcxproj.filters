@@ -12,12 +12,14 @@
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="AddressBar.cpp" />
     <ClCompile Include="StatusBar.cpp" />
+    <ClCompile Include="OverwritePage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="NanaZip.Modern.h" />
     <ClInclude Include="AddressBar.h" />
     <ClInclude Include="StatusBar.h" />
+    <ClInclude Include="OverwritePage.h" />
     <ClInclude Include="ControlMacros.h" />
   </ItemGroup>
   <ItemGroup>
@@ -34,6 +36,7 @@
     <Page Include="InformationPage.xaml" />
     <Page Include="ProgressPage.xaml" />
     <Page Include="CopyLocationPage.xaml" />
+    <Page Include="OverwritePage.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Strings">
@@ -1047,5 +1050,6 @@
   <ItemGroup>
     <Midl Include="AddressBar.idl" />
     <Midl Include="StatusBar.idl" />
+    <Midl Include="OverwritePage.idl" />
   </ItemGroup>
 </Project>

@@ -675,6 +675,8 @@ EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
         return -1;
     }
 
+    Context->Result = K7_OVERWRITE_DIALOG_RESULT_CANCEL;
+
     HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
     if (!WindowHandle)
     {
@@ -701,6 +703,10 @@ EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
         WindowHandle,
         winrt::get_abi(Window))))
     {
+        if (ParentWindowHandle)
+        {
+            ::EnableWindow(ParentWindowHandle, TRUE);
+        }
         ::DestroyWindow(WindowHandle);
         return -1;
     }

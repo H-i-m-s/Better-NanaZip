@@ -9,7 +9,7 @@
 
 #include "App.h"
 #include "RegistryUtils.h"
-#include "OverwriteDialog.h"
+#include "NanaZip.Modern.h"
 
 #include "resource.h"
 
@@ -385,22 +385,31 @@ void CApp::VerCtrl(unsigned id)
         if (::MessageBoxW(panel.GetParent(), m, L"Version Control: File Revert", MB_OKCANCEL | MB_ICONQUESTION) != IDOK)
           return;
         */
-        COverwriteDialog dialog;
-        
-        dialog.OldFileInfo.SetTime(&fdi.Info.ftLastWriteTime);
-        dialog.OldFileInfo.SetSize(fdi.GetSize());
-        dialog.OldFileInfo.Name = fs2us(path);
-        
-        dialog.NewFileInfo.SetTime(&fdi2.Info.ftLastWriteTime);
-        dialog.NewFileInfo.SetSize(fdi2.GetSize());
-        dialog.NewFileInfo.Name = fs2us(path2);
+        K7_OVERWRITE_DIALOG_CONTEXT context = {};
+        context.ShowExtraButtons = FALSE;
+        context.DefaultIsNo = TRUE;
+        context.OldTimeDefined = TRUE;
+        context.OldTime = fdi.Info.ftLastWriteTime;
+        context.OldSizeDefined = TRUE;
+        context.OldSize = fdi.GetSize();
+        K7CopyOverwritePath(
+            context.OldName, _countof(context.OldName), fs2us(path));
+        context.NewTimeDefined = TRUE;
+        context.NewTime = fdi2.Info.ftLastWriteTime;
+        context.NewSizeDefined = TRUE;
+        context.NewSize = fdi2.GetSize();
+        K7CopyOverwritePath(
+            context.NewName, _countof(context.NewName), fs2us(path2));
+        context.Result = K7_OVERWRITE_DIALOG_RESULT_CANCEL;
 
-        dialog.ShowExtraButtons = false;
-        dialog.DefaultButton_is_NO = true;
-        
-        INT_PTR writeAnswer = dialog.Create(panel.GetParent());
-        
-        if (writeAnswer != IDYES)
+        if (!K7ModernAvailable() ||
+            ::K7ModernShowOverwriteDialog(panel.GetParent(), &context) < 0)
+        {
+          panel.MessageBox_Error(L"The XAML overwrite dialog is unavailable.");
+          return;
+        }
+
+        if (context.Result != K7_OVERWRITE_DIALOG_RESULT_YES)
           return;
       }
       

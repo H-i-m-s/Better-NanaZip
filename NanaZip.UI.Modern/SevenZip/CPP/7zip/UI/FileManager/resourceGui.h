@@ -1,6 +1,7 @@
 ﻿#define IDI_ICON  1
 
 #define IDS_MESSAGE_NO_ERRORS           3001
+#define IDS_FILE_SIZE                   3504
 
 #define IDS_PROGRESS_TESTING            3302
 #define IDS_OPENNING                    3303

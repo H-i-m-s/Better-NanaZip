@@ -10,6 +10,7 @@ namespace winrt
 {
     using Windows::Foundation::IInspectable;
     using Windows::UI::Xaml::RoutedEventArgs;
+    using Windows::UI::Xaml::Input::KeyRoutedEventArgs;
 }
 
 namespace winrt::NanaZip::Modern::implementation
@@ -55,6 +56,10 @@ namespace winrt::NanaZip::Modern::implementation
         void OnCancelClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
+
+        void OnPageKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::KeyRoutedEventArgs const& e);
 
     private:
 

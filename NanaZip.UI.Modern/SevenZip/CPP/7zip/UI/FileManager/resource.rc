@@ -122,6 +122,7 @@ IDB_PARENT_FOLDER      BITMAP  "../../../../../Assets/ParentFolder.bmp"
 STRINGTABLE
 BEGIN
   IDS_BOOKMARK   "Bookmark"
+  IDS_FILE_SIZE  "{0} bytes"
 
   IDS_OPTIONS    "Options"
 
@@ -217,7 +218,6 @@ END
 // **************** NanaZip Modification End ****************
 #include "MenuPage.rc"
 #include "MessagesDialog.rc"
-#include "OverwriteDialog.rc"
 #include "PasswordDialog.rc"
 #include "ProgressDialog2.rc"
 #include "PropertyName.rc"

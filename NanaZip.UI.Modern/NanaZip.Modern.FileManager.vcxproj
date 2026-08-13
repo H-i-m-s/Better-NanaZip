@@ -158,7 +158,6 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\NetFolder.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\OpenCallback.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\OptionsDialog.cpp" />
-    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\OverwriteDialog.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\Panel.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\PanelCopy.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\PanelCrc.cpp" />
@@ -347,7 +346,6 @@
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MyWindowsNew.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\NetFolder.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\OpenCallback.h" />
-    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\OverwriteDialog.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\Panel.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\PasswordDialog.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\PluginInterface.h" />

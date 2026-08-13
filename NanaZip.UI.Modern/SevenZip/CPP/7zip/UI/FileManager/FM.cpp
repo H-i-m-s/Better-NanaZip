@@ -6,6 +6,9 @@
 
 #include <Shlwapi.h>
 
+#include <mutex>
+#include <vector>
+
 #include "../../../../C/Alloc.h"
 #ifdef _WIN32
 #include "../../../../C/DllSecur.h"
@@ -73,6 +76,84 @@ HINSTANCE g_hInstance;
 #endif
 
 HWND g_HWND;
+
+namespace
+{
+  std::mutex g_OverwriteRequestsMutex;
+  std::vector<K7_ASK_OVERWRITE_INFO *> g_OverwriteRequests;
+}
+
+void K7OverwriteRequestRelease(
+    _In_ K7_ASK_OVERWRITE_INFO *Request)
+{
+  if (::InterlockedDecrement(&Request->References) == 0)
+  {
+    if (Request->Event)
+    {
+      ::CloseHandle(Request->Event);
+      Request->Event = nullptr;
+    }
+    delete Request;
+  }
+}
+
+void K7RegisterOverwriteRequest(
+    _In_ K7_ASK_OVERWRITE_INFO *Request)
+{
+  std::lock_guard<std::mutex> Lock(g_OverwriteRequestsMutex);
+  g_OverwriteRequests.push_back(Request);
+}
+
+bool K7UnregisterOverwriteRequest(
+    _In_ K7_ASK_OVERWRITE_INFO *Request)
+{
+  std::lock_guard<std::mutex> Lock(g_OverwriteRequestsMutex);
+  for (auto Iterator = g_OverwriteRequests.begin();
+      Iterator != g_OverwriteRequests.end(); ++Iterator)
+  {
+    if (*Iterator == Request)
+    {
+      g_OverwriteRequests.erase(Iterator);
+      return true;
+    }
+  }
+  return false;
+}
+
+void K7CancelPendingOverwriteRequests()
+{
+  std::vector<K7_ASK_OVERWRITE_INFO *> PendingRequests;
+  {
+    std::lock_guard<std::mutex> Lock(g_OverwriteRequestsMutex);
+    PendingRequests.swap(g_OverwriteRequests);
+  }
+
+  for (K7_ASK_OVERWRITE_INFO *Request : PendingRequests)
+  {
+    ::InterlockedExchange(&Request->Cancelled, 1);
+    ::SetEvent(Request->Event);
+  }
+}
+
+static void K7RemoveQueuedOverwriteMessages(
+    _In_ HWND WindowHandle)
+{
+  MSG Message = {};
+  while (::PeekMessageW(
+      &Message,
+      WindowHandle,
+      kAskOverwriteMessage,
+      kAskOverwriteMessage,
+      PM_REMOVE))
+  {
+    K7_ASK_OVERWRITE_INFO *Request =
+        reinterpret_cast<K7_ASK_OVERWRITE_INFO *>(Message.lParam);
+    if (Request)
+    {
+      K7OverwriteRequestRelease(Request);
+    }
+  }
+}
 
 static UString g_MainPath;
 static UString g_ArcFormat;
@@ -962,13 +1043,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
       // The extraction worker thread asks the main UI thread to show the
       // XAML overwrite dialog (XAML requires the UI thread).
-      const K7_ASK_OVERWRITE_INFO *Info =
-          reinterpret_cast<const K7_ASK_OVERWRITE_INFO *>(lParam);
-      if (Info && Info->Context && Info->Event)
+      K7_ASK_OVERWRITE_INFO *Request =
+          reinterpret_cast<K7_ASK_OVERWRITE_INFO *>(lParam);
+      if (!Request)
+        return 0;
+
+      // Keep the request registered while the modal XAML dialog is active.
+      // WM_DESTROY must be able to cancel an in-flight request as well as a
+      // message that is still queued.
+      if (!K7OverwriteRequestIsCancelled(Request))
       {
-        ::K7ModernShowOverwriteDialog(hWnd, Info->Context);
-        ::SetEvent(Info->Event);
+        try
+        {
+          if (::K7ModernShowOverwriteDialog(
+              hWnd,
+              &Request->Context) < 0)
+          {
+            ::InterlockedExchange(&Request->DialogFailed, 1);
+          }
+        }
+        catch (...)
+        {
+          ::InterlockedExchange(&Request->DialogFailed, 1);
+          Request->Context.Result = K7_OVERWRITE_DIALOG_RESULT_CANCEL;
+        }
       }
+
+      K7UnregisterOverwriteRequest(Request);
+      ::InterlockedExchange(
+          &Request->Result,
+          static_cast<LONG>(Request->Context.Result));
+      ::SetEvent(Request->Event);
+      K7OverwriteRequestRelease(Request);
       return 0;
     }
 
@@ -1108,6 +1214,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_DESTROY:
     {
+      // Stop new overwrite requests before waking the ones already queued.
+      g_HWND = nullptr;
+      K7CancelPendingOverwriteRequests();
+      K7RemoveQueuedOverwriteMessages(hWnd);
+
       // ::DragAcceptFiles(hWnd, FALSE);
       RevokeDragDrop(hWnd);
       g_App._dropTarget.Release();

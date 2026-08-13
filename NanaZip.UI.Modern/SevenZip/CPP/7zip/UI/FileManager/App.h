@@ -8,6 +8,8 @@
 
 #include "NanaZip.Modern.h"
 
+#include <cwchar>
+
 #include "AppState.h"
 #include "Panel.h"
 
@@ -28,16 +30,83 @@ const int kMenuCmdID_Plugin_Start = 1100;
 const UINT kApplyFontSettingsMessage = WM_APP + 1;
 
 // Ask-overwrite marshaling: the extraction callback runs on the worker
-// thread, while the XAML dialog must run on the main UI thread. The worker
-// posts this message to the main window and waits on the event; the main
-// window shows the XAML overwrite dialog and signals the event.
+// thread, while the XAML dialog must run on the main UI thread. The request is
+// heap allocated because the main window can be destroyed while the message is
+// still queued. Both the worker and the queued UI message own a reference.
 const UINT kAskOverwriteMessage = WM_APP + 2;
+// A blocked extraction must not survive an unresponsive UI thread forever.
+// The request remains alive through its UI reference after this timeout.
+const DWORD kAskOverwriteWaitTimeoutMs = 5 * 60 * 1000;
 
 struct K7_ASK_OVERWRITE_INFO
 {
-  PK7_OVERWRITE_DIALOG_CONTEXT Context;
+  K7_OVERWRITE_DIALOG_CONTEXT Context;
   HANDLE Event;
+  // Worker and queued UI message each own one reference.
+  LONG References;
+  LONG Cancelled;
+  LONG DialogFailed;
+  LONG Result;
 };
+
+void K7OverwriteRequestRelease(
+    _In_ K7_ASK_OVERWRITE_INFO *Request);
+
+void K7RegisterOverwriteRequest(
+    _In_ K7_ASK_OVERWRITE_INFO *Request);
+
+bool K7UnregisterOverwriteRequest(
+    _In_ K7_ASK_OVERWRITE_INFO *Request);
+
+void K7CancelPendingOverwriteRequests();
+
+inline bool K7OverwriteRequestIsCancelled(
+    _In_ K7_ASK_OVERWRITE_INFO const* Request)
+{
+  return ::InterlockedCompareExchange(
+      const_cast<LONG*>(&Request->Cancelled), 0, 0) != 0;
+}
+
+inline void K7CopyOverwritePath(
+    _Out_writes_(Capacity) LPWSTR Destination,
+    _In_ size_t Capacity,
+    _In_opt_ LPCWSTR Source)
+{
+  if (!Destination || Capacity == 0)
+    return;
+
+  if (!Source)
+  {
+    Destination[0] = L'\0';
+    return;
+  }
+
+  const size_t SourceLength = wcslen(Source);
+  if (SourceLength < Capacity)
+  {
+    wcscpy_s(Destination, Capacity, Source);
+    return;
+  }
+
+  if (Capacity <= 4)
+  {
+    Destination[0] = L'\0';
+    return;
+  }
+
+  // Keep both the beginning of the path and the file-name tail visible.
+  const size_t MarkerLength = 3;
+  const size_t Available = Capacity - 1 - MarkerLength;
+  const size_t PrefixLength = Available / 3;
+  const size_t TailLength = Available - PrefixLength;
+
+  wmemcpy(Destination, Source, PrefixLength);
+  wmemcpy(Destination + PrefixLength, L"...", MarkerLength);
+  wmemcpy(Destination + PrefixLength + MarkerLength,
+      Source + SourceLength - TailLength,
+      TailLength);
+  Destination[Capacity - 1] = L'\0';
+}
 
 enum
 {

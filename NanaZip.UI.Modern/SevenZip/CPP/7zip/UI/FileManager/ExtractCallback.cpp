@@ -27,13 +27,14 @@
 #include "ExtractCallback.h"
 #include "FormatUtils.h"
 #include "LangUtils.h"
-#include "OverwriteDialog.h"
 
 #include "App.h"
 #include "NanaZip.Modern.h"
 #ifndef _NO_CRYPTO
 #include "PasswordDialog.h"
 #endif
+
+#include <new>
 #include "PropertyName.h"
 
 using namespace NWindows;
@@ -204,7 +205,16 @@ STDMETHODIMP CExtractCallbackImp::AskOverwrite(
   // the main window (see kAskOverwriteMessage in App.h).
   if (K7ModernAvailable() && g_HWND)
   {
-    K7_OVERWRITE_DIALOG_CONTEXT ctx = {};
+    K7_ASK_OVERWRITE_INFO *Request = new (std::nothrow)
+        K7_ASK_OVERWRITE_INFO{};
+    if (!Request)
+      return E_OUTOFMEMORY;
+
+    K7_OVERWRITE_DIALOG_CONTEXT &ctx = Request->Context;
+    Request->References = 2;
+    Request->Cancelled = FALSE;
+    Request->DialogFailed = FALSE;
+    Request->Result = K7_OVERWRITE_DIALOG_RESULT_CANCEL;
 
     ctx.ShowExtraButtons = TRUE;
     ctx.DefaultIsNo = FALSE;
@@ -215,7 +225,7 @@ STDMETHODIMP CExtractCallbackImp::AskOverwrite(
     ctx.OldSizeDefined = existSize ? TRUE : FALSE;
     if (existSize)
       ctx.OldSize = *existSize;
-    wcscpy_s(ctx.OldName, existName ? existName : L"");
+    K7CopyOverwritePath(ctx.OldName, _countof(ctx.OldName), existName);
 
     ctx.NewTimeDefined = newTime ? TRUE : FALSE;
     if (newTime)
@@ -223,7 +233,7 @@ STDMETHODIMP CExtractCallbackImp::AskOverwrite(
     ctx.NewSizeDefined = newSize ? TRUE : FALSE;
     if (newSize)
       ctx.NewSize = *newSize;
-    wcscpy_s(ctx.NewName, newName ? newName : L"");
+    K7CopyOverwritePath(ctx.NewName, _countof(ctx.NewName), newName);
 
     // Dialog font size from the registry (mirrors the ExtractDialog font).
     {
@@ -242,61 +252,80 @@ STDMETHODIMP CExtractCallbackImp::AskOverwrite(
 
     ProgressDialog->WaitCreating();
 
-    HANDLE hEvent = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (hEvent)
+    Request->Event = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!Request->Event)
     {
-      K7_ASK_OVERWRITE_INFO info = { &ctx, hEvent };
-      ::PostMessageW(g_HWND, kAskOverwriteMessage, 0,
-          reinterpret_cast<LPARAM>(&info));
-      ::WaitForSingleObject(hEvent, INFINITE);
-      ::CloseHandle(hEvent);
-
-      switch (ctx.Result)
-      {
-        case K7_OVERWRITE_DIALOG_RESULT_CANCEL:
-          *answer = NOverwriteAnswer::kCancel; return E_ABORT;
-        case K7_OVERWRITE_DIALOG_RESULT_YES:
-          *answer = NOverwriteAnswer::kYes; break;
-        case K7_OVERWRITE_DIALOG_RESULT_NO:
-          *answer = NOverwriteAnswer::kNo; break;
-        case K7_OVERWRITE_DIALOG_RESULT_YES_TO_ALL:
-          *answer = NOverwriteAnswer::kYesToAll; break;
-        case K7_OVERWRITE_DIALOG_RESULT_NO_TO_ALL:
-          *answer = NOverwriteAnswer::kNoToAll; break;
-        case K7_OVERWRITE_DIALOG_RESULT_AUTO_RENAME:
-          *answer = NOverwriteAnswer::kAutoRename; break;
-        default:
-          return E_FAIL;
-      }
-      return S_OK;
+      K7OverwriteRequestRelease(Request);
+      K7OverwriteRequestRelease(Request);
+      return E_FAIL;
     }
-    // Fall through to the Win32 dialog if the event could not be created.
+
+    K7RegisterOverwriteRequest(Request);
+    if (!::PostMessageW(g_HWND, kAskOverwriteMessage, 0,
+        reinterpret_cast<LPARAM>(Request)))
+    {
+      K7UnregisterOverwriteRequest(Request);
+      // The queued-message reference is unused when PostMessage fails.
+      K7OverwriteRequestRelease(Request);
+      ::InterlockedExchange(&Request->Cancelled, 1);
+      ::SetEvent(Request->Event);
+    }
+
+    const DWORD WaitResult = ::WaitForSingleObject(
+        Request->Event,
+        kAskOverwriteWaitTimeoutMs);
+    if (WaitResult != WAIT_OBJECT_0)
+    {
+      ::InterlockedExchange(&Request->Cancelled, 1);
+      ::SetEvent(Request->Event);
+    }
+
+    const bool Cancelled = K7OverwriteRequestIsCancelled(Request);
+    const bool DialogFailed =
+        ::InterlockedCompareExchange(&Request->DialogFailed, 0, 0) != 0;
+    UINT32 Result = K7_OVERWRITE_DIALOG_RESULT_CANCEL;
+    if (!Cancelled && !DialogFailed && WaitResult == WAIT_OBJECT_0)
+    {
+      // FM.cpp publishes the completed dialog result atomically before it
+      // signals this event. The worker never reads Context.Result directly
+      // after cancellation or timeout.
+      Result = static_cast<UINT32>(::InterlockedCompareExchange(
+          &Request->Result, 0, 0));
+    }
+    // The final request reference closes the event. This keeps the handle
+    // valid while the UI message is still unwinding during shutdown.
+    K7OverwriteRequestRelease(Request);
+
+    if (DialogFailed)
+    {
+      AddError_Message(L"The XAML overwrite dialog is unavailable.");
+      return E_FAIL;
+    }
+
+    if (Cancelled || WaitResult != WAIT_OBJECT_0)
+      return E_ABORT;
+
+    switch (Result)
+    {
+      case K7_OVERWRITE_DIALOG_RESULT_CANCEL:
+        *answer = NOverwriteAnswer::kCancel; return E_ABORT;
+      case K7_OVERWRITE_DIALOG_RESULT_YES:
+        *answer = NOverwriteAnswer::kYes; break;
+      case K7_OVERWRITE_DIALOG_RESULT_NO:
+        *answer = NOverwriteAnswer::kNo; break;
+      case K7_OVERWRITE_DIALOG_RESULT_YES_TO_ALL:
+        *answer = NOverwriteAnswer::kYesToAll; break;
+      case K7_OVERWRITE_DIALOG_RESULT_NO_TO_ALL:
+        *answer = NOverwriteAnswer::kNoToAll; break;
+      case K7_OVERWRITE_DIALOG_RESULT_AUTO_RENAME:
+        *answer = NOverwriteAnswer::kAutoRename; break;
+      default:
+        return E_FAIL;
+    }
+    return S_OK;
   }
 
-  COverwriteDialog dialog;
-
-  dialog.OldFileInfo.SetTime(existTime);
-  dialog.OldFileInfo.SetSize(existSize);
-  dialog.OldFileInfo.Name = existName;
-
-  dialog.NewFileInfo.SetTime(newTime);
-  dialog.NewFileInfo.SetSize(newSize);
-  dialog.NewFileInfo.Name = newName;
-
-  ProgressDialog->WaitCreating();
-  INT_PTR writeAnswer = dialog.Create(*ProgressDialog);
-
-  switch (writeAnswer)
-  {
-    case IDCANCEL:        *answer = NOverwriteAnswer::kCancel; return E_ABORT;
-    case IDYES:           *answer = NOverwriteAnswer::kYes; break;
-    case IDNO:            *answer = NOverwriteAnswer::kNo; break;
-    case IDB_YES_TO_ALL:  *answer = NOverwriteAnswer::kYesToAll; break;
-    case IDB_NO_TO_ALL:   *answer = NOverwriteAnswer::kNoToAll; break;
-    case IDB_AUTO_RENAME: *answer = NOverwriteAnswer::kAutoRename; break;
-    default: return E_FAIL;
-  }
-  return S_OK;
+  return E_FAIL;
 }
 
 

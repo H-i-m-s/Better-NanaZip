@@ -12,7 +12,6 @@
 // **************** NanaZip Modification Start ****************
 //#include "../FileManager/ListViewDialog.h"
 // **************** NanaZip Modification End ****************
-#include "../FileManager/OverwriteDialogRes.h"
 #include "../FileManager/ProgressDialog2.h"
 #include "../FileManager/ProgressDialog2Res.h"
 #include "../FileManager/PropertyNameRes.h"

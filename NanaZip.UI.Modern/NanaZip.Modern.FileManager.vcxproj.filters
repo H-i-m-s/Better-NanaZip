@@ -197,9 +197,6 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\MessagesDialog.cpp">
       <Filter>SevenZip\Dialog</Filter>
     </ClCompile>
-    <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\OverwriteDialog.cpp">
-      <Filter>SevenZip\Dialog</Filter>
-    </ClCompile>
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\PasswordDialog.cpp">
       <Filter>SevenZip\Dialog</Filter>
     </ClCompile>
@@ -600,9 +597,6 @@
       <Filter>SevenZip\Dialog</Filter>
     </ClInclude>
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\MessagesDialog.h">
-      <Filter>SevenZip\Dialog</Filter>
-    </ClInclude>
-    <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\OverwriteDialog.h">
       <Filter>SevenZip\Dialog</Filter>
     </ClInclude>
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\PasswordDialog.h">
