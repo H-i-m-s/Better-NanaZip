@@ -32,6 +32,7 @@
 #include <winrt/Windows.ApplicationModel.Resources.Core.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 
+#include <algorithm>
 #include <mutex>
 #include <map>
 
@@ -711,14 +712,101 @@ EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
         return -1;
     }
 
-    int Result = ::K7ModernShowXamlWindow(
-        WindowHandle,
-        420,
-        260,
-        ParentWindowHandle,
-        nullptr);
+    // Measure the initialized page before showing it. This keeps the footer
+    // directly below the file information instead of forcing the page into a
+    // fixed rectangle with unrelated empty space.
+    using PageImplementation =
+        winrt::NanaZip::Modern::implementation::OverwritePage;
+    winrt::Windows::Foundation::Size Desired(420, 260);
+    {
+        auto Page = winrt::get_self<PageImplementation>(Window);
+        Desired = Page->PrepareForShow();
+    }
 
-    return Result;
+    const UINT Dpi = ::GetDpiForWindow(WindowHandle);
+    const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+    int ClientW = (int)(Desired.Width * Scale + 0.5f);
+    int ClientH = (int)(Desired.Height * Scale + 0.5f);
+    if (ClientW < (int)(360.0f * Scale))
+    {
+        ClientW = (int)(360.0f * Scale);
+    }
+    if (ClientH < (int)(180.0f * Scale))
+    {
+        ClientH = (int)(180.0f * Scale);
+    }
+
+    RECT WindowRect = { 0, 0, ClientW, ClientH };
+    const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+    const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+    ::AdjustWindowRectEx(
+        &WindowRect,
+        (DWORD)Style,
+        FALSE,
+        (DWORD)ExStyle);
+
+    RECT CenterRect = {};
+    if (ParentWindowHandle)
+    {
+        ::GetWindowRect(ParentWindowHandle, &CenterRect);
+    }
+    if (CenterRect.right <= CenterRect.left ||
+        CenterRect.bottom <= CenterRect.top)
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle,
+            MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo = {};
+            MonitorInfo.cbSize = sizeof(MonitorInfo);
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                CenterRect = MonitorInfo.rcWork;
+            }
+        }
+    }
+
+    if (CenterRect.right > CenterRect.left &&
+        CenterRect.bottom > CenterRect.top)
+    {
+        const int MaxClientW = (std::max)(
+            360,
+            (int)(CenterRect.right - CenterRect.left - 48));
+        const int MaxClientH = (std::max)(
+            180,
+            (int)(CenterRect.bottom - CenterRect.top - 48));
+        ClientW = (std::min)(ClientW, MaxClientW);
+        ClientH = (std::min)(ClientH, MaxClientH);
+    }
+
+    WindowRect = { 0, 0, ClientW, ClientH };
+    ::AdjustWindowRectEx(
+        &WindowRect,
+        (DWORD)Style,
+        FALSE,
+        (DWORD)ExStyle);
+
+    const int WindowW = WindowRect.right - WindowRect.left;
+    const int WindowH = WindowRect.bottom - WindowRect.top;
+    const int PosX = CenterRect.left +
+        ((CenterRect.right - CenterRect.left - WindowW) / 2);
+    const int PosY = CenterRect.top +
+        ((CenterRect.bottom - CenterRect.top - WindowH) / 2);
+    RECT InitialRect = {
+        PosX,
+        PosY,
+        PosX + WindowW,
+        PosY + WindowH };
+
+    // K7ModernShowXamlWindow expects client dimensions when it has no saved
+    // rectangle. InitialRect carries the already adjusted outer rectangle.
+    return ::K7ModernShowXamlWindow(
+        WindowHandle,
+        ClientW,
+        ClientH,
+        ParentWindowHandle,
+        &InitialRect);
 }
 
 EXTERN_C INT WINAPI K7ModernShowExtractDialog(

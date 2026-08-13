@@ -9,17 +9,24 @@
     mc:Ignorable="d"
     Background="Transparent">
 
-    <Grid Padding="12,10,12,12">
+    <Grid Padding="12,10,12,12" MinHeight="0">
         <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
+            <!-- Match the verified dialog pattern used by Extract and
+                 Compress: only the content row can scroll; the footer stays
+                 in an independent Auto row. -->
+            <RowDefinition Height="*" MinHeight="0"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <ScrollViewer
             Grid.Row="0"
+            MinHeight="0"
+            Padding="0,0,14,0"
             HorizontalScrollBarVisibility="Disabled"
             VerticalScrollBarVisibility="Auto">
-            <StackPanel>
+            <StackPanel
+                x:Name="ContentPanel"
+                Margin="0,0,0,8">
                 <TextBlock
                     x:Name="HeaderText"
                     Margin="0,0,0,10"
@@ -75,52 +82,81 @@
         </ScrollViewer>
 
         <Grid
+            x:Name="FooterPanel"
             Grid.Row="1"
-            Margin="0,12,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+            Background="{ThemeResource SystemControlBackgroundBaseLowBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefault}"
+            BorderThickness="0,1,0,0"
+            Padding="0,8,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <StackPanel
-                Grid.Column="1"
-                Orientation="Vertical">
-                <StackPanel
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,0,0,6">
-                    <Button
-                        x:Name="YesButton"
-                        Width="88"
-                        Margin="0,0,6,0"
-                        Click="OnYesClicked"/>
-                    <Button
-                        x:Name="YesToAllButton"
-                        Width="88"
-                        Margin="0,0,6,0"
-                        Click="OnYesToAllClicked"/>
-                    <Button
-                        x:Name="AutoRenameButton"
-                        Width="104"
-                        Click="OnAutoRenameClicked"/>
-                </StackPanel>
-                <StackPanel
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right">
-                    <Button
-                        x:Name="NoButton"
-                        Width="88"
-                        Margin="0,0,6,0"
-                        Click="OnNoClicked"/>
-                    <Button
-                        x:Name="NoToAllButton"
-                        Width="88"
-                        Margin="0,0,6,0"
-                        Click="OnNoToAllClicked"/>
-                    <Button
-                        x:Name="CancelButton"
-                        Width="104"
-                        Click="OnCancelClicked"/>
-                </StackPanel>
+                x:Name="ExtraButtonsRow"
+                Grid.Row="0"
+                MinHeight="36"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                Margin="0,0,0,6">
+                <Button
+                    x:Name="YesButton"
+                    MinWidth="88"
+                    MinHeight="36"
+                    Padding="12,4"
+                    Margin="0,0,6,0"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnYesClicked"/>
+                <Button
+                    x:Name="YesToAllButton"
+                    MinWidth="88"
+                    MinHeight="36"
+                    Padding="12,4"
+                    Margin="0,0,6,0"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnYesToAllClicked"/>
+                <Button
+                    x:Name="AutoRenameButton"
+                    MinWidth="104"
+                    MinHeight="36"
+                    Padding="12,4"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnAutoRenameClicked"/>
+            </StackPanel>
+            <StackPanel
+                Grid.Row="1"
+                MinHeight="36"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right">
+                <Button
+                    x:Name="NoButton"
+                    MinWidth="88"
+                    MinHeight="36"
+                    Padding="12,4"
+                    Margin="0,0,6,0"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnNoClicked"/>
+                <Button
+                    x:Name="NoToAllButton"
+                    MinWidth="88"
+                    MinHeight="36"
+                    Padding="12,4"
+                    Margin="0,0,6,0"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnNoToAllClicked"/>
+                <Button
+                    x:Name="CancelButton"
+                    MinWidth="104"
+                    MinHeight="36"
+                    Padding="12,4"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnCancelClicked"/>
             </StackPanel>
         </Grid>
     </Grid>

@@ -10,6 +10,7 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <stdlib.h>
+#include <algorithm>
 #include <vector>
 
 #include <winrt/Windows.UI.Xaml.h>
@@ -339,16 +340,11 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    void OverwritePage::OnLoaded(
-        winrt::IInspectable const& sender,
-        winrt::RoutedEventArgs const& e)
+    winrt::Windows::Foundation::Size OverwritePage::PrepareForShow()
     {
-        UNREFERENCED_PARAMETER(sender);
-        UNREFERENCED_PARAMETER(e);
-
         if (!this->m_Context)
         {
-            return;
+            return winrt::Windows::Foundation::Size(420, 260);
         }
 
         PK7_OVERWRITE_DIALOG_CONTEXT Context = this->m_Context;
@@ -390,17 +386,65 @@ namespace winrt::NanaZip::Modern::implementation
         AutoRenameButton().Content(winrt::box_value(
             RemoveMnemonic(Res(3505, L"A&uto Rename"))));
 
+        const auto Collapsed =
+            winrt::Windows::UI::Xaml::Visibility::Collapsed;
         if (!Context->ShowExtraButtons)
         {
-            YesToAllButton().Visibility(
-                winrt::Windows::UI::Xaml::Visibility::Collapsed);
-            NoToAllButton().Visibility(
-                winrt::Windows::UI::Xaml::Visibility::Collapsed);
-            AutoRenameButton().Visibility(
-                winrt::Windows::UI::Xaml::Visibility::Collapsed);
+            ExtraButtonsRow().Visibility(Collapsed);
+            YesToAllButton().Visibility(Collapsed);
+            NoToAllButton().Visibility(Collapsed);
+            AutoRenameButton().Visibility(Collapsed);
         }
 
         ApplyDialogFont(Context->FontSizeDialog);
+
+        // Measure the two layout regions independently after the font has
+        // been applied. Measuring the Page alone through a ScrollViewer can
+        // report the viewport instead of the natural content height, which
+        // is exactly what makes a larger dialog font overlap the footer.
+        const float MaxPageWidth = 720.0f;
+        const float PageHorizontalPadding = 24.0f;
+        winrt::Windows::Foundation::Size Infinite(100000.0f, 100000.0f);
+        ContentPanel().Measure(Infinite);
+        FooterPanel().Measure(Infinite);
+
+        winrt::Windows::Foundation::Size ContentSize =
+            ContentPanel().DesiredSize();
+        winrt::Windows::Foundation::Size FooterSize =
+            FooterPanel().DesiredSize();
+
+        float NaturalPageWidth = (std::max)(
+            ContentSize.Width + 14.0f,
+            FooterSize.Width) + PageHorizontalPadding;
+        float PageWidth = (std::min)(NaturalPageWidth, MaxPageWidth);
+        if (PageWidth < 360.0f)
+        {
+            PageWidth = 360.0f;
+        }
+
+        // Reserve scrollbar width while measuring so that large-font
+        // wrapping at runtime never exceeds the measured height. The
+        // vertical scrollbar steals ~17 px from the content width once it
+        // appears; if it does not appear, the content is slightly wider,
+        // which only adds slack instead of clipping.
+        const float ScrollbarReserve = 17.0f;
+        ContentPanel().Measure(winrt::Windows::Foundation::Size(
+            PageWidth - PageHorizontalPadding - 14.0f - ScrollbarReserve,
+            100000.0f));
+        ContentSize = ContentPanel().DesiredSize();
+
+        // The fixed 22 px page padding plus the 8 px bottom margin of the
+        // content panel leave no room at larger dialog fonts. Scale the
+        // slack with the font size so the footer never crowds the text.
+        double FontSizePx = (Context->FontSizeDialog == 0)
+            ? 0.0
+            : (double)Context->FontSizeDialog * 96.0 / 72.0;
+        const float Slack = 22.0f + 8.0f + (float)(FontSizePx * 0.5);
+
+        winrt::Windows::Foundation::Size Desired;
+        Desired.Width = PageWidth;
+        Desired.Height = ContentSize.Height + FooterSize.Height + Slack;
+        Desired.Height = (std::max)(Desired.Height, 180.0f);
 
         if (Context->DefaultIsNo)
         {
@@ -410,6 +454,16 @@ namespace winrt::NanaZip::Modern::implementation
         {
             YesButton().Focus(winrt::Windows::UI::Xaml::FocusState::Programmatic);
         }
+
+        return Desired;
+    }
+
+    void OverwritePage::OnLoaded(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
     }
 
     void OverwritePage::OnUnloaded(

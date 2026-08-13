@@ -25,6 +25,10 @@ namespace winrt::NanaZip::Modern::implementation
 
         void InitializeComponent();
 
+        // Initializes the visual tree and measures the natural content size
+        // before the host window is shown.
+        winrt::Windows::Foundation::Size PrepareForShow();
+
         void OnUnloaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
