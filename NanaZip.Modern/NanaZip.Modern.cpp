@@ -1305,6 +1305,29 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
     return Result;
 }
 
+// Temporary diagnostics for the settings-dialog Esc/input routing. Appends
+// to %TEMP%\sss_settings_diag.log; remove once the Esc issue is located.
+static void SettingsDiagLog(const wchar_t* msg)
+{
+    wchar_t path[MAX_PATH];
+    const DWORD n = ::GetTempPathW(MAX_PATH, path);
+    if (n == 0 || n >= MAX_PATH)
+    {
+        return;
+    }
+    wcscat_s(path, L"sss_settings_diag.log");
+    HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        ::WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)),
+            &written, nullptr);
+        ::WriteFile(h, L"\r\n", 4, &written, nullptr);
+        ::CloseHandle(h);
+    }
+}
+
 EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_SETTINGS_DIALOG_CONTEXT Context)
@@ -1313,6 +1336,8 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
     {
         return -1;
     }
+
+    SettingsDiagLog(L"[S1] K7ModernShowSettingsDialog enter");
 
     HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
     if (!WindowHandle)
@@ -1331,9 +1356,12 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
 
     // Enforce a minimum window size so the dialog cannot be resized into a
     // useless state (which matters when the user picks a huge font size).
-    // Also snapshot the window rect when the dialog starts closing, while
-    // the window is still alive (the XAML Unloaded event may fire after the
-    // window is already destroyed, which would leave GetWindowRect empty).
+    // The XAML page computes the minimum from its fully wrapped content;
+    // this subclass reads it in WM_GETMINMAXINFO and falls back to a fixed
+    // floor until the page has run. Also snapshot the window rect when the
+    // dialog starts closing, while the window is still alive (the XAML
+    // Unloaded event may fire after the window is already destroyed, which
+    // would leave GetWindowRect empty).
     if (!::SetWindowSubclass(
         WindowHandle,
         [](
@@ -1345,13 +1373,25 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
             _In_ DWORD_PTR dwRefData) -> LRESULT
     {
         UNREFERENCED_PARAMETER(uIdSubclass);
+        auto SettingsContext =
+            reinterpret_cast<PK7_SETTINGS_DIALOG_CONTEXT>(dwRefData);
         if (uMsg == WM_CLOSE)
         {
-            if (dwRefData)
+            if (SettingsContext)
             {
-                ::GetWindowRect(hWnd,
-                    reinterpret_cast<RECT *>(dwRefData));
+                ::GetWindowRect(hWnd, &SettingsContext->WindowRect);
             }
+            SettingsDiagLog(L"[S3] WM_CLOSE");
+        }
+        else if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
+        {
+            // Esc closes the dialog like the X button (a cancel). The
+            // Win32-level handler is the reliable path: the keyboard focus
+            // often sits on the Win32 host window, so the XAML page's own
+            // KeyDown/PreviewKeyDown never sees the key.
+            SettingsDiagLog(L"[S2] WM_KEYDOWN VK_ESCAPE");
+            ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
+            return 0;
         }
         else if (uMsg == WM_GETMINMAXINFO)
         {
@@ -1359,9 +1399,13 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
                 reinterpret_cast<MINMAXINFO *>(lParam);
             UINT DpiValue = ::GetDpiForWindow(hWnd);
             MinMaxInfo->ptMinTrackSize.x =
-                ::MulDiv(480, DpiValue, USER_DEFAULT_SCREEN_DPI);
+                (SettingsContext && SettingsContext->MinTrackW > 0)
+                ? SettingsContext->MinTrackW
+                : ::MulDiv(480, DpiValue, USER_DEFAULT_SCREEN_DPI);
             MinMaxInfo->ptMinTrackSize.y =
-                ::MulDiv(420, DpiValue, USER_DEFAULT_SCREEN_DPI);
+                (SettingsContext && SettingsContext->MinTrackH > 0)
+                ? SettingsContext->MinTrackH
+                : ::MulDiv(420, DpiValue, USER_DEFAULT_SCREEN_DPI);
             return 0;
         }
         return ::DefSubclassProc(
@@ -1371,7 +1415,7 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
             lParam);
     },
         1,
-        reinterpret_cast<DWORD_PTR>(&Context->WindowRect)))
+        reinterpret_cast<DWORD_PTR>(Context)))
     {
         ::DestroyWindow(WindowHandle);
         return -1;
@@ -1404,12 +1448,171 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
         return -1;
     }
 
+    // Measure the initialized page before showing it: the default size
+    // follows the current tab's content (labels, combos and dialog font
+    // already applied) instead of a hard-coded rectangle, so the dialog
+    // opens at the size its content actually needs.
+    winrt::Windows::Foundation::Size Desired(540, 640);
+    {
+        auto Page = winrt::get_self<Implementation>(Window);
+        Desired = Page->PrepareForShow();
+    }
+
+    const UINT Dpi = ::GetDpiForWindow(WindowHandle);
+    const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+    const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+    const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+
+    // Width follows the longest content row (the tab bar or the widest
+    // option row). The measured natural width already includes the tab
+    // bar's own left/right padding (12px), so no extra margin is added:
+    // the tab bar's left edge lands exactly at the dialog's left edge as
+    // designed.
+    int ClientW = (int)(Desired.Width * Scale + 0.5f);
+    if (ClientW < (int)(480.0f * Scale))
+    {
+        ClientW = (int)(480.0f * Scale);
+    }
+    if (ClientW > 1400) ClientW = 1400;
+
+    // Height: the smaller of "all tabs' content fully visible" and 75%
+    // of the screen height (the user requirement: the whole monitor
+    // including the taskbar area, not the work area): the dialog opens at
+    // the content height when it fits, and caps at 75% of the screen so
+    // it never dominates the display.
+    RECT ScreenRect = {};
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle, MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                ScreenRect = MonitorInfo.rcMonitor;
+            }
+        }
+    }
+    int ClientH = (int)(Desired.Height * Scale + 0.5f);
+    if (ScreenRect.bottom > ScreenRect.top)
+    {
+        const int MaxClientH =
+            (int)((double)(ScreenRect.bottom - ScreenRect.top) * 0.75 + 0.5);
+        ClientH = (std::min)(ClientH, MaxClientH);
+    }
+    if (ClientH < (int)(360.0f * Scale))
+    {
+        ClientH = (int)(360.0f * Scale);
+    }
+    if (ClientH > 1400) ClientH = 1400;
+
+    RECT WindowRect = { 0, 0, ClientW, ClientH };
+    ::AdjustWindowRectEx(
+        &WindowRect, (DWORD)Style, FALSE, (DWORD)ExStyle);
+    const int WindowW = WindowRect.right - WindowRect.left;
+    const int WindowH = WindowRect.bottom - WindowRect.top;
+
+    // Center the default position on the owner window (fall back to the
+    // nearest monitor's work area).
+    RECT CenterRect = {};
+    if (ParentWindowHandle)
+    {
+        ::GetWindowRect(ParentWindowHandle, &CenterRect);
+    }
+    if (CenterRect.right <= CenterRect.left ||
+        CenterRect.bottom <= CenterRect.top)
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle, MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo = {};
+            MonitorInfo.cbSize = sizeof(MonitorInfo);
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                CenterRect = MonitorInfo.rcWork;
+            }
+        }
+    }
+    const int PosX = CenterRect.left +
+        ((CenterRect.right - CenterRect.left - WindowW) / 2);
+    const int PosY = CenterRect.top +
+        ((CenterRect.bottom - CenterRect.top - WindowH) / 2);
+    RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
+
+    // Restore the last size and position when it still intersects a
+    // monitor. A disconnected monitor or an undersized saved rectangle
+    // falls back to the centered default calculated above.
+    if (Context->WindowRect.right > Context->WindowRect.left &&
+        Context->WindowRect.bottom > Context->WindowRect.top &&
+        ::MonitorFromRect(&Context->WindowRect, MONITOR_DEFAULTTONULL))
+    {
+        InitialRect = Context->WindowRect;
+        const int MinWindowW = (Context->MinTrackW > 0)
+            ? Context->MinTrackW
+            : ::MulDiv(480, Dpi, USER_DEFAULT_SCREEN_DPI);
+        const int MinWindowH = (Context->MinTrackH > 0)
+            ? Context->MinTrackH
+            : ::MulDiv(420, Dpi, USER_DEFAULT_SCREEN_DPI);
+        if (InitialRect.right - InitialRect.left < MinWindowW)
+        {
+            InitialRect.right = InitialRect.left + MinWindowW;
+        }
+        if (InitialRect.bottom - InitialRect.top < MinWindowH)
+        {
+            InitialRect.bottom = InitialRect.top + MinWindowH;
+        }
+
+        HMONITOR Monitor = ::MonitorFromRect(
+            &InitialRect, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
+        if (Monitor && ::GetMonitorInfoW(Monitor, &MonitorInfo))
+        {
+            const int WorkWidth =
+                MonitorInfo.rcWork.right - MonitorInfo.rcWork.left;
+            const int WorkHeight =
+                MonitorInfo.rcWork.bottom - MonitorInfo.rcWork.top;
+            int SavedWidth = InitialRect.right - InitialRect.left;
+            int SavedHeight = InitialRect.bottom - InitialRect.top;
+            if (SavedWidth > WorkWidth)
+            {
+                SavedWidth = WorkWidth;
+            }
+            if (SavedHeight > WorkHeight)
+            {
+                SavedHeight = WorkHeight;
+            }
+            InitialRect.right = InitialRect.left + SavedWidth;
+            InitialRect.bottom = InitialRect.top + SavedHeight;
+            if (InitialRect.left < MonitorInfo.rcWork.left)
+            {
+                InitialRect.left = MonitorInfo.rcWork.left;
+                InitialRect.right = InitialRect.left + SavedWidth;
+            }
+            if (InitialRect.top < MonitorInfo.rcWork.top)
+            {
+                InitialRect.top = MonitorInfo.rcWork.top;
+                InitialRect.bottom = InitialRect.top + SavedHeight;
+            }
+            if (InitialRect.right > MonitorInfo.rcWork.right)
+            {
+                InitialRect.right = MonitorInfo.rcWork.right;
+                InitialRect.left = InitialRect.right - SavedWidth;
+            }
+            if (InitialRect.bottom > MonitorInfo.rcWork.bottom)
+            {
+                InitialRect.bottom = MonitorInfo.rcWork.bottom;
+                InitialRect.top = InitialRect.bottom - SavedHeight;
+            }
+        }
+    }
+
     int Result = ::K7ModernShowXamlWindow(
         WindowHandle,
-        540,
-        640,
+        ClientW,
+        ClientH,
         ParentWindowHandle,
-        &Context->WindowRect);
+        &InitialRect);
 
     return Result;
 }

@@ -12,6 +12,8 @@ namespace winrt
     using Windows::UI::Xaml::RoutedEventArgs;
     using Windows::UI::Xaml::Controls::SelectionChangedEventArgs;
     using Windows::UI::Xaml::Controls::TextChangedEventArgs;
+    using Windows::UI::Xaml::Input::KeyRoutedEventArgs;
+    using Windows::UI::Xaml::SizeChangedEventArgs;
 }
 
 namespace winrt::NanaZip::Modern::implementation
@@ -25,6 +27,12 @@ namespace winrt::NanaZip::Modern::implementation
             _In_ PK7_SETTINGS_DIALOG_CONTEXT Context = nullptr);
 
         void InitializeComponent();
+
+        winrt::Windows::Foundation::Size PrepareForShow();
+
+        void OnPageKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::KeyRoutedEventArgs const& e);
 
         void TabButtonClick(
             winrt::IInspectable const& sender,
@@ -125,6 +133,10 @@ namespace winrt::NanaZip::Modern::implementation
 
     private:
 
+        void OnSizeChanged(
+            winrt::IInspectable const& sender,
+            winrt::SizeChangedEventArgs const& e);
+
         HWND m_WindowHandle;
         PK7_SETTINGS_DIALOG_CONTEXT m_Context;
         bool m_InitGuard;
@@ -141,5 +153,13 @@ namespace winrt::NanaZip::Modern::implementation
         void InitFontCombo(
             winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
             UINT32 Pt);
+
+        // Layout helpers: the label/control rows always stay on one line
+        // (the control follows its label); the label column widths are
+        // re-measured whenever the dialog font size changes, so a larger
+        // font widens the label column instead of covering the control.
+        void AlignLabels();
+        void RecalcMinTrack();
+        void RefreshAfterFontChange();
     };
 }

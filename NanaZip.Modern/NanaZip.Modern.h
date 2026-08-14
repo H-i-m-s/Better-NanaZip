@@ -346,6 +346,11 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     WCHAR PasswordBook[4096];
 
     // --- Window state ---
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content (so dragging can never hide options)
+    // and read by the window subclass in WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
     // Initial dialog rect in physical pixels. The caller fills it from the
     // saved registry state; pass a zero rect ({0}) to center the dialog on
     // the owner window. The dialog writes the final rect back here when it

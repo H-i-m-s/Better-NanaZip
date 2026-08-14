@@ -6,7 +6,9 @@
   xmlns:local="using:NanaZip.Modern"
   xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
   IsTextScaleFactorEnabled="False"
-  mc:Ignorable="d">
+  mc:Ignorable="d"
+  KeyDown="OnPageKeyDown"
+  PreviewKeyDown="OnPageKeyDown">
 
   <Grid>
     <Grid.RowDefinitions>
@@ -66,7 +68,7 @@
         <StackPanel Padding="16,12,16,12">
           <Button
             x:Name="MenuAssociateButton"
-            HorizontalAlignment="Stretch"
+            HorizontalAlignment="Left"
             HorizontalContentAlignment="Left"
             Click="MenuAssociateButtonClick" />
           <CheckBox
@@ -275,8 +277,8 @@
             FontWeight="SemiBold" />
           <Grid>
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="100" />
-              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
@@ -286,41 +288,47 @@
             </Grid.RowDefinitions>
             <TextBlock
               x:Name="FontAddressBarLabel"
+              Grid.Row="0"
+              Grid.Column="0"
               VerticalAlignment="Center" />
             <ComboBox
               x:Name="FontAddressBarCombo"
+              Grid.Row="0"
               Grid.Column="1"
-              Margin="0,2"
+              Margin="6,2,0,2"
               SelectionChanged="FontComboChanged" />
             <TextBlock
               x:Name="FontListLabel"
               Grid.Row="1"
+              Grid.Column="0"
               VerticalAlignment="Center" />
             <ComboBox
               x:Name="FontListCombo"
               Grid.Row="1"
               Grid.Column="1"
-              Margin="0,2"
+              Margin="6,2,0,2"
               SelectionChanged="FontComboChanged" />
             <TextBlock
               x:Name="FontStatusBarLabel"
               Grid.Row="2"
+              Grid.Column="0"
               VerticalAlignment="Center" />
             <ComboBox
               x:Name="FontStatusBarCombo"
               Grid.Row="2"
               Grid.Column="1"
-              Margin="0,2"
+              Margin="6,2,0,2"
               SelectionChanged="FontComboChanged" />
             <TextBlock
               x:Name="FontDialogLabel"
               Grid.Row="3"
+              Grid.Column="0"
               VerticalAlignment="Center" />
             <ComboBox
               x:Name="FontDialogCombo"
               Grid.Row="3"
               Grid.Column="1"
-              Margin="0,2"
+              Margin="6,2,0,2"
               SelectionChanged="FontDialogComboChanged" />
           </Grid>
         </StackPanel>
@@ -348,7 +356,7 @@
             Click="ExtractCheckBoxClick" />
           <Grid Margin="0,6,0,0">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="90" />
+              <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
@@ -359,18 +367,18 @@
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <TextBlock x:Name="ExtractApiUrlLabel" VerticalAlignment="Center" />
-            <TextBox x:Name="ExtractApiUrlBox" Grid.Column="1" Margin="0,2" TextChanged="ExtractApiTextChanged" />
-            <TextBlock x:Name="ExtractApiAppIdLabel" Grid.Row="1" VerticalAlignment="Center" />
-            <TextBox x:Name="ExtractApiAppIdBox" Grid.Row="1" Grid.Column="1" Margin="0,2" TextChanged="ExtractApiTextChanged" />
-            <TextBlock x:Name="ExtractApiAesKeyLabel" Grid.Row="2" VerticalAlignment="Center" />
-            <TextBox x:Name="ExtractApiAesKeyBox" Grid.Row="2" Grid.Column="1" Margin="0,2" TextChanged="ExtractApiTextChanged" />
-            <TextBlock x:Name="ExtractApiSigningKeyLabel" Grid.Row="3" VerticalAlignment="Center" />
-            <TextBox x:Name="ExtractApiSigningKeyBox" Grid.Row="3" Grid.Column="1" Margin="0,2" TextChanged="ExtractApiTextChanged" />
-            <TextBlock x:Name="ExtractApiPackageLabel" Grid.Row="4" VerticalAlignment="Center" />
-            <TextBox x:Name="ExtractApiPackageBox" Grid.Row="4" Grid.Column="1" Margin="0,2" TextChanged="ExtractApiTextChanged" />
-            <TextBlock x:Name="ExtractApiFingerprintLabel" Grid.Row="5" VerticalAlignment="Center" />
-            <TextBox x:Name="ExtractApiFingerprintBox" Grid.Row="5" Grid.Column="1" Margin="0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiUrlLabel" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiUrlBox" Grid.Row="0" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiAppIdLabel" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiAppIdBox" Grid.Row="1" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiAesKeyLabel" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiAesKeyBox" Grid.Row="2" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiSigningKeyLabel" Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiSigningKeyBox" Grid.Row="3" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiPackageLabel" Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiPackageBox" Grid.Row="4" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiFingerprintLabel" Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiFingerprintBox" Grid.Row="5" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
           </Grid>
           <CheckBox
             x:Name="ExtractAutoMatchLocalCheck"

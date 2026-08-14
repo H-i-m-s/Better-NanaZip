@@ -11,7 +11,31 @@
 
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+
+// Temporary diagnostics for the settings-dialog Esc/input routing. Appends
+// to %TEMP%\sss_settings_diag.log; remove once the Esc issue is located.
+static void SettingsPageDiagLog(const wchar_t* msg)
+{
+    wchar_t path[MAX_PATH];
+    const DWORD n = ::GetTempPathW(MAX_PATH, path);
+    if (n == 0 || n >= MAX_PATH)
+    {
+        return;
+    }
+    wcscat_s(path, L"sss_settings_diag.log");
+    HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        ::WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)),
+            &written, nullptr);
+        ::WriteFile(h, L"\r\n", 4, &written, nullptr);
+        ::CloseHandle(h);
+    }
+}
 
 namespace winrt::NanaZip::Modern::implementation
 {
@@ -27,6 +51,7 @@ namespace winrt::NanaZip::Modern::implementation
         // dialog font size once the visual tree is fully realized.
         this->Unloaded({ this, &SettingsPage::OnUnloaded });
         this->Loaded({ this, &SettingsPage::OnLoaded });
+        this->SizeChanged({ this, &SettingsPage::OnSizeChanged });
     }
 
     winrt::hstring SettingsPage::Res(
@@ -421,6 +446,24 @@ namespace winrt::NanaZip::Modern::implementation
         ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
     }
 
+    void SettingsPage::OnPageKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() == winrt::Windows::System::VirtualKey::Escape)
+        {
+            // Esc closes the dialog like the X button (a cancel). The page
+            // hooks both KeyDown and PreviewKeyDown: PreviewKeyDown
+            // intercepts Esc in the tunnelling phase before a focused
+            // editable control can consume it.
+            SettingsPageDiagLog(L"[S4] XAML OnPageKeyDown ESC");
+            e.Handled(true);
+            UpdateWindowRect();
+            ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        }
+    }
+
     void SettingsPage::OnUnloaded(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
@@ -445,6 +488,263 @@ namespace winrt::NanaZip::Modern::implementation
         {
             ApplyDialogFont(this->m_Context->FontSizeDialog);
         }
+    }
+
+    winrt::Windows::Foundation::Size SettingsPage::PrepareForShow()
+    {
+        if (!this->m_Context)
+        {
+            return winrt::Windows::Foundation::Size(540, 640);
+        }
+
+        // Unify the label column widths (font group and API group) and the
+        // font combo widths from the current font size.
+        AlignLabels();
+
+        // Compute the minimum track size from the measured content before
+        // the window is shown, so the host can grow a remembered narrow
+        // rectangle up to the real content width.
+        RecalcMinTrack();
+
+        // The default window width follows the wider of the tab bar and
+        // the "Open Windows Settings..." association button; every other
+        // row is known to be narrower than both. The natural widths
+        // already carry their symmetric paddings (12px on the tab bar,
+        // 16px on the content area), so no extra margin is added: the
+        // left edge spacing equals the right edge spacing.
+        winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+        TabBar().Measure(Inf);
+        const double TabBarW = TabBar().DesiredSize().Width;
+        MenuAssociateButton().Measure(Inf);
+        const double ButtonW = MenuAssociateButton().DesiredSize().Width;
+        const double MaxW = (std::max)(TabBarW, ButtonW);
+
+        // The default height follows the tallest tab content: temporarily
+        // reveal every tab and measure at the candidate width (the window
+        // is not shown yet, so this cannot flicker). The host caps this at
+        // 75% of the work area.
+        const winrt::Windows::UI::Xaml::Visibility Prev[5] = {
+            ContentMenu().Visibility(),
+            ContentFolders().Visibility(),
+            ContentEditor().Visibility(),
+            ContentSettings().Visibility(),
+            ContentExtract().Visibility() };
+        ContentMenu().Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+        ContentFolders().Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+        ContentEditor().Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+        ContentSettings().Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+        ContentExtract().Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+
+        this->Measure(winrt::Windows::Foundation::Size(
+            (float)MaxW, 100000.0f));
+        const double ContentH = this->DesiredSize().Height;
+
+        ContentMenu().Visibility(Prev[0]);
+        ContentFolders().Visibility(Prev[1]);
+        ContentEditor().Visibility(Prev[2]);
+        ContentSettings().Visibility(Prev[3]);
+        ContentExtract().Visibility(Prev[4]);
+
+        return winrt::Windows::Foundation::Size((float)MaxW, (float)ContentH);
+    }
+
+    void SettingsPage::OnSizeChanged(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+
+        // On the first layout the window is visible and ActualWidth is
+        // valid, so the page can compute its minimum track size from the
+        // measured content (the host reads it in WM_GETMINMAXINFO).
+        if (this->m_Context && this->m_Context->MinTrackW <= 0)
+        {
+            this->RecalcMinTrack();
+        }
+    }
+
+    void SettingsPage::AlignLabels()
+    {
+        // Clear the widths applied by a previous pass first: a TextBlock
+        // with an explicit Width measures back that width instead of its
+        // natural text width, which would freeze the label column at the
+        // old size when the dialog font grows (the wider text would then
+        // spill under the combo). Same for the combo MinWidth.
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                FontAddressBarLabel(), FontListLabel(),
+                FontStatusBarLabel(), FontDialogLabel() })
+        {
+            Label.ClearValue(
+                winrt::Windows::UI::Xaml::FrameworkElement::WidthProperty());
+        }
+        for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                FontAddressBarCombo(), FontListCombo(),
+                FontStatusBarCombo(), FontDialogCombo() })
+        {
+            Combo.ClearValue(
+                winrt::Windows::UI::Xaml::FrameworkElement::MinWidthProperty());
+        }
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                ExtractApiUrlLabel(), ExtractApiAppIdLabel(),
+                ExtractApiAesKeyLabel(), ExtractApiSigningKeyLabel(),
+                ExtractApiPackageLabel(), ExtractApiFingerprintLabel() })
+        {
+            Label.ClearValue(
+                winrt::Windows::UI::Xaml::FrameworkElement::WidthProperty());
+        }
+
+        // Font group: unify the label column to the widest label and the
+        // combo width to the widest combo, so every row shares the same
+        // left edge and the same combo width (measured after the dialog
+        // font has been applied).
+        double MaxLabelW = 0.0;
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                FontAddressBarLabel(), FontListLabel(),
+                FontStatusBarLabel(), FontDialogLabel() })
+        {
+            winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+            Label.Measure(Inf);
+            MaxLabelW = (std::max)(MaxLabelW, (double)Label.DesiredSize().Width);
+        }
+        if (MaxLabelW > 0.0)
+        {
+            for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                    FontAddressBarLabel(), FontListLabel(),
+                    FontStatusBarLabel(), FontDialogLabel() })
+            {
+                Label.Width(MaxLabelW);
+            }
+        }
+
+        double MaxComboW = 0.0;
+        for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                FontAddressBarCombo(), FontListCombo(),
+                FontStatusBarCombo(), FontDialogCombo() })
+        {
+            winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+            Combo.Measure(Inf);
+            MaxComboW = (std::max)(MaxComboW, (double)Combo.DesiredSize().Width);
+        }
+        if (MaxComboW > 0.0)
+        {
+            for (auto const& Combo : std::vector<winrt::Windows::UI::Xaml::Controls::ComboBox>{
+                    FontAddressBarCombo(), FontListCombo(),
+                    FontStatusBarCombo(), FontDialogCombo() })
+            {
+                Combo.MinWidth(MaxComboW);
+            }
+        }
+
+        // Extract API group: unify the label column to the widest label.
+        double MaxApiLabelW = 0.0;
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                ExtractApiUrlLabel(), ExtractApiAppIdLabel(),
+                ExtractApiAesKeyLabel(), ExtractApiSigningKeyLabel(),
+                ExtractApiPackageLabel(), ExtractApiFingerprintLabel() })
+        {
+            winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+            Label.Measure(Inf);
+            MaxApiLabelW = (std::max)(MaxApiLabelW, (double)Label.DesiredSize().Width);
+        }
+        if (MaxApiLabelW > 0.0)
+        {
+            for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                    ExtractApiUrlLabel(), ExtractApiAppIdLabel(),
+                    ExtractApiAesKeyLabel(), ExtractApiSigningKeyLabel(),
+                    ExtractApiPackageLabel(), ExtractApiFingerprintLabel() })
+            {
+                Label.Width(MaxApiLabelW);
+            }
+        }
+    }
+
+    void SettingsPage::RecalcMinTrack()
+    {
+        if (!this->m_Context || !this->m_WindowHandle)
+        {
+            return;
+        }
+
+        // The controls always stay on one line with their labels, so the
+        // smallest the dialog can shrink to is the side-by-side layout of
+        // the widest tab (the label columns already carry the current font
+        // size). Every tab is measured so the minimum fits all of them.
+        // The measure constraint is effectively unbounded: the current
+        // window width must not cap the result, otherwise a narrow window
+        // (or a font-size increase) could never grow the minimum back to
+        // the real content width.
+        // Same candidate as the default width: the wider of the tab bar
+        // and the association button. Every other row is narrower, so this
+        // is also the smallest the dialog may shrink to without clipping.
+        // The natural widths already carry their symmetric paddings; no
+        // extra margin is added.
+        winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+        TabBar().Measure(Inf);
+        const double TabBarW = TabBar().DesiredSize().Width;
+        MenuAssociateButton().Measure(Inf);
+        const double ButtonW = MenuAssociateButton().DesiredSize().Width;
+        const double MaxW = (std::max)(TabBarW, ButtonW);
+
+        const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
+        const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+
+        // The content mostly scrolls vertically (every tab sits in a
+        // ScrollViewer and the button row is Auto), so the vertical minimum
+        // stays at a fixed floor while the horizontal minimum follows the
+        // same width candidate as the default size (a larger font widens
+        // it, so dragging can never clip the tab bar or the button).
+        int MinClientW = (int)(MaxW * Scale + 0.5);
+        int MinClientH = (int)(420.0f * Scale + 0.5);
+        if (MinClientW < 480) MinClientW = 480;
+        if (MinClientH < 420) MinClientH = 420;
+
+        RECT rc = { 0, 0, MinClientW, MinClientH };
+        {
+            const LONG_PTR Style = ::GetWindowLongPtrW(
+                this->m_WindowHandle, GWL_STYLE);
+            const LONG_PTR ExStyle = ::GetWindowLongPtrW(
+                this->m_WindowHandle, GWL_EXSTYLE);
+            ::AdjustWindowRectEx(&rc, (DWORD)Style, FALSE, (DWORD)ExStyle);
+        }
+
+        this->m_Context->MinTrackW = rc.right - rc.left;
+        this->m_Context->MinTrackH = rc.bottom - rc.top;
+    }
+
+    void SettingsPage::RefreshAfterFontChange()
+    {
+        if (!this->m_Context || !this->m_WindowHandle)
+        {
+            return;
+        }
+
+        // A larger dialog font widens the tab bar and the association
+        // button; a smaller one narrows them. Re-align the columns,
+        // recompute the minimum track size from the same width candidate,
+        // then resize the window width to the new candidate (both wider
+        // and narrower) so the dialog always follows the text; the height
+        // is left untouched (the user may have dragged it).
+        AlignLabels();
+        RecalcMinTrack();
+
+        if (::IsZoomed(this->m_WindowHandle))
+        {
+            return;
+        }
+
+        RECT Current = {};
+        ::GetWindowRect(this->m_WindowHandle, &Current);
+        RECT rc = { 0, 0, this->m_Context->MinTrackW, this->m_Context->MinTrackH };
+        const int NeedW = rc.right - rc.left;
+        ::SetWindowPos(
+            this->m_WindowHandle,
+            nullptr,
+            Current.left,
+            Current.top,
+            NeedW,
+            Current.bottom - Current.top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     // ============ Settings page ============
@@ -540,6 +840,7 @@ namespace winrt::NanaZip::Modern::implementation
             kFontValues[Index] : 0;
         this->m_Context->FontSizeDialog = Pt;
         ApplyDialogFont(Pt);
+        RefreshAfterFontChange();
     }
 
     // ============ Integration (menu) page ============
