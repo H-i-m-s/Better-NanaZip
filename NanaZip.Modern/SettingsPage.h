@@ -161,5 +161,15 @@ namespace winrt::NanaZip::Modern::implementation
         void AlignLabels();
         void RecalcMinTrack();
         void RefreshAfterFontChange();
+
+        // Measures the actual vertical scrollbar width at runtime (the
+        // system "auto-hide scrollbars" setting changes it) and caches it
+        // for the width candidate: the association button needs the
+        // scrollbar width added so the scrollbar never covers its right
+        // edge.
+        void MeasureScrollBarWidth();
+
+        double m_ScrollBarW;
+        bool m_ScrollBarMeasured;
     };
 }

@@ -37,6 +37,154 @@ static void SettingsPageDiagLog(const wchar_t* msg)
     }
 }
 
+// Recursively collects all visual children of a given type.
+template <typename T>
+static void FindVisualChildren(
+    winrt::Windows::UI::Xaml::DependencyObject const& Node,
+    std::vector<T>& Out)
+{
+    const int Count =
+        winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+            GetChildrenCount(Node);
+    for (int i = 0; i < Count; i++)
+    {
+        auto Child =
+            winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+                GetChild(Node, i);
+        if (auto Tried = Child.try_as<T>())
+        {
+            Out.push_back(Tried);
+        }
+        FindVisualChildren(Child, Out);
+    }
+}
+
+// Finds a template element by its x:Name.
+static winrt::Windows::UI::Xaml::FrameworkElement FindNamedElement(
+    winrt::Windows::UI::Xaml::DependencyObject const& Node,
+    winrt::hstring const& Name)
+{
+    const int Count =
+        winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+            GetChildrenCount(Node);
+    for (int i = 0; i < Count; i++)
+    {
+        auto Child = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+            GetChild(Node, i);
+        if (auto Element =
+            Child.try_as<winrt::Windows::UI::Xaml::FrameworkElement>())
+        {
+            if (Element.Name() == Name)
+            {
+                return Element;
+            }
+        }
+        if (auto Found = FindNamedElement(Child, Name))
+        {
+            return Found;
+        }
+    }
+    return nullptr;
+}
+
+// Finds the first Grid whose column definition count matches (the
+// ComboBox template root has the text column plus the fixed arrow
+// column).
+static winrt::Windows::UI::Xaml::Controls::Grid FindTemplateGrid(
+    winrt::Windows::UI::Xaml::DependencyObject const& Node,
+    uint32_t ColumnCount)
+{
+    if (auto Grid = Node.try_as<winrt::Windows::UI::Xaml::Controls::Grid>())
+    {
+        if (Grid.ColumnDefinitions().Size() == ColumnCount)
+        {
+            return Grid;
+        }
+    }
+    const int Count =
+        winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+            GetChildrenCount(Node);
+    for (int i = 0; i < Count; i++)
+    {
+        if (auto Found = FindTemplateGrid(
+                winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+                    GetChild(Node, i),
+                ColumnCount))
+        {
+            return Found;
+        }
+    }
+    return nullptr;
+}
+
+// Finds the ComboBox drop arrow by its template name ("DropDownGlyph").
+// In the SunValley theme the arrow is a FontIcon/TextBlock style element
+// whose font size follows the dialog font, so its width grows with the
+// font size.
+static winrt::Windows::UI::Xaml::FrameworkElement FindDropDownGlyph(
+    winrt::Windows::UI::Xaml::DependencyObject const& Node)
+{
+    return FindNamedElement(Node, L"DropDownGlyph");
+}
+
+// Applies the arrow layout three-step to one combo and returns the
+// MinWidth it needs: text width + the enlarged arrow column width.
+// The arrow's DesiredSize already includes its 14px right margin, so
+// the new column width is simply the measured arrow width; sizing the
+// arrow element itself is NOT needed (a FontIcon wraps its glyph and
+// would center the glyph inside a widened box, which would detach the
+// arrow from the combo's right edge).
+static double ApplyComboArrowLayout(
+    winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo)
+{
+    winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+    Combo.Measure(Inf);
+
+    double ArrowW = 24.0;
+    if (auto Glyph = FindDropDownGlyph(Combo))
+    {
+        Glyph.Measure(Inf);
+        ArrowW = Glyph.DesiredSize().Width;
+    }
+    if (ArrowW <= 0.0)
+    {
+        ArrowW = 24.0;
+    }
+    const double NewColW = ArrowW;  // includes the arrow's right margin
+    if (auto Grid = FindTemplateGrid(Combo, 2))
+    {
+        Grid.ColumnDefinitions().GetAt(1).Width(
+            winrt::Windows::UI::Xaml::GridLength(NewColW));
+    }
+
+    double TextW = 0.0;
+    if (auto Presenter =
+        FindNamedElement(Combo, L"ContentPresenter"))
+    {
+        Presenter.Measure(Inf);
+        TextW = Presenter.DesiredSize().Width;
+    }
+    if (TextW <= 0.0)
+    {
+        // Fallback: combo width minus the template's original arrow
+        // column width.
+        TextW = Combo.DesiredSize().Width - 38.0;
+    }
+
+    const double Needed = TextW + NewColW;
+    Combo.MinWidth(Needed);
+
+    // Temporary diagnostics for the arrow-layout width tuning.
+    {
+        wchar_t buf[256];
+        swprintf_s(buf,
+            L"[Align] %s ArrowW=%.1f ColW=%.1f TextW=%.1f MinW=%.1f",
+            Combo.Name().c_str(), ArrowW, NewColW, TextW, Needed);
+        SettingsPageDiagLog(buf);
+    }
+    return Needed;
+}
+
 namespace winrt::NanaZip::Modern::implementation
 {
     SettingsPage::SettingsPage(
@@ -44,7 +192,9 @@ namespace winrt::NanaZip::Modern::implementation
         _In_ PK7_SETTINGS_DIALOG_CONTEXT Context) :
         m_WindowHandle(WindowHandle),
         m_Context(Context),
-        m_InitGuard(false)
+        m_InitGuard(false),
+        m_ScrollBarW(0.0),
+        m_ScrollBarMeasured(false)
     {
         // Remember the final window position and size when the dialog is
         // closed (including via the system close button), and apply the
@@ -284,10 +434,17 @@ namespace winrt::NanaZip::Modern::implementation
         MenuExtractOnOpenCheck().Content(winrt::box_value(Res(3434, L"Extract on open")));
         MenuExtractOnOpenCheck().IsChecked(BoxBool(this->m_Context->ExtractOnOpen != FALSE));
 
-        // Zone combo.
+        // Zone combo. Skip empty entries: the caller only fills
+        // ZoneItems[3] when the current zone is an explicit custom value,
+        // leaving the fourth slot empty (an empty entry would otherwise
+        // show a blank row in the drop-down).
         MenuZoneCombo().Items().Clear();
         for (unsigned i = 0; i < 4; i++)
         {
+            if (this->m_Context->ZoneItems[i][0] == L'\0')
+            {
+                continue;
+            }
             MenuZoneCombo().Items().Append(winrt::box_value(
                 winrt::hstring(this->m_Context->ZoneItems[i])));
         }
@@ -512,12 +669,26 @@ namespace winrt::NanaZip::Modern::implementation
         // already carry their symmetric paddings (12px on the tab bar,
         // 16px on the content area), so no extra margin is added: the
         // left edge spacing equals the right edge spacing.
+        // Scrollbar-width fallback before the window is shown (the live
+        // measurement runs on the first layout in OnSizeChanged).
+        if (this->m_ScrollBarW <= 0.0)
+        {
+            this->m_ScrollBarW = (double)::GetSystemMetrics(SM_CXVSCROLL);
+        }
+
         winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
         TabBar().Measure(Inf);
         const double TabBarW = TabBar().DesiredSize().Width;
         MenuAssociateButton().Measure(Inf);
         const double ButtonW = MenuAssociateButton().DesiredSize().Width;
-        const double MaxW = (std::max)(TabBarW, ButtonW);
+        // The tab bar sits outside the ScrollViewer, so it never meets
+        // the vertical scrollbar; the association button lives inside the
+        // content area, so its width gets the real scrollbar width added
+        // (the scrollbar would otherwise cover its right edge). The
+        // content area's left/right padding (16px each) is also counted
+        // so the button is never squeezed by the window border.
+        const double MaxW = (std::max)(
+            TabBarW, ButtonW + this->m_ScrollBarW + 32.0);
 
         // The default height follows the tallest tab content: temporarily
         // reveal every tab and measure at the candidate width (the window
@@ -555,10 +726,44 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
 
-        // On the first layout the window is visible and ActualWidth is
-        // valid, so the page can compute its minimum track size from the
-        // measured content (the host reads it in WM_GETMINMAXINFO).
-        if (this->m_Context && this->m_Context->MinTrackW <= 0)
+        if (!this->m_Context)
+        {
+            return;
+        }
+
+        if (!this->m_ScrollBarMeasured)
+        {
+            // First layout: the window is visible, so the real scrollbar
+            // width can be measured (the system auto-hide setting changes
+            // it) and the width candidate / minimum can be corrected.
+            this->m_ScrollBarMeasured = true;
+            this->MeasureScrollBarWidth();
+            this->RecalcMinTrack();
+
+            // Widen the window when the corrected candidate (button plus
+            // scrollbar) is wider than what the pre-show fallback sized.
+            if (this->m_WindowHandle)
+            {
+                RECT Current = {};
+                ::GetWindowRect(this->m_WindowHandle, &Current);
+                RECT rc = { 0, 0,
+                    this->m_Context->MinTrackW,
+                    this->m_Context->MinTrackH };
+                const int NeedW = rc.right - rc.left;
+                if (Current.right - Current.left < NeedW)
+                {
+                    ::SetWindowPos(
+                        this->m_WindowHandle,
+                        nullptr,
+                        Current.left,
+                        Current.top,
+                        NeedW,
+                        Current.bottom - Current.top,
+                        SWP_NOZORDER | SWP_NOACTIVATE);
+                }
+            }
+        }
+        else if (this->m_Context->MinTrackW <= 0)
         {
             this->RecalcMinTrack();
         }
@@ -622,9 +827,7 @@ namespace winrt::NanaZip::Modern::implementation
                 FontAddressBarCombo(), FontListCombo(),
                 FontStatusBarCombo(), FontDialogCombo() })
         {
-            winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
-            Combo.Measure(Inf);
-            MaxComboW = (std::max)(MaxComboW, (double)Combo.DesiredSize().Width);
+            MaxComboW = (std::max)(MaxComboW, ApplyComboArrowLayout(Combo));
         }
         if (MaxComboW > 0.0)
         {
@@ -635,6 +838,12 @@ namespace winrt::NanaZip::Modern::implementation
                 Combo.MinWidth(MaxComboW);
             }
         }
+
+        // The Zone and extract-match-priority combos get the same arrow
+        // layout treatment (enlarged arrow + dynamic arrow column + text
+        // width), each sized to its own content.
+        ApplyComboArrowLayout(MenuZoneCombo());
+        ApplyComboArrowLayout(ExtractMatchPriorityCombo());
 
         // Extract API group: unify the label column to the widest label.
         double MaxApiLabelW = 0.0;
@@ -659,6 +868,47 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
+    void SettingsPage::MeasureScrollBarWidth()
+    {
+        if (this->m_ScrollBarW > 0.0)
+        {
+            return;
+        }
+
+        // The system "auto-hide scrollbars" setting changes the actual
+        // scrollbar width, so measure it from a live ScrollBar instead of
+        // assuming a fixed value. Temporarily force the scrollbar visible
+        // (the settings tab is the default visible one) and read its
+        // width; restoring the visibility re-lays out cleanly.
+        auto Scroller = ContentSettings();
+        const auto PrevVisibility = Scroller.VerticalScrollBarVisibility();
+        Scroller.VerticalScrollBarVisibility(
+            winrt::Windows::UI::Xaml::Controls::ScrollBarVisibility::Visible);
+        Scroller.UpdateLayout();
+
+        std::vector<
+            winrt::Windows::UI::Xaml::Controls::Primitives::ScrollBar> Bars;
+        FindVisualChildren(Scroller, Bars);
+        for (auto const& Bar : Bars)
+        {
+            const double W = Bar.ActualWidth();
+            if (W > 0.0)
+            {
+                this->m_ScrollBarW = W;
+                break;
+            }
+        }
+
+        Scroller.VerticalScrollBarVisibility(PrevVisibility);
+
+        // Fallback: the classic system scrollbar width when the live
+        // measurement could not find a ScrollBar.
+        if (this->m_ScrollBarW <= 0.0)
+        {
+            this->m_ScrollBarW = (double)::GetSystemMetrics(SM_CXVSCROLL);
+        }
+    }
+
     void SettingsPage::RecalcMinTrack()
     {
         if (!this->m_Context || !this->m_WindowHandle)
@@ -679,12 +929,25 @@ namespace winrt::NanaZip::Modern::implementation
         // is also the smallest the dialog may shrink to without clipping.
         // The natural widths already carry their symmetric paddings; no
         // extra margin is added.
+        // Scrollbar-width fallback before the window is shown (the live
+        // measurement runs on the first layout in OnSizeChanged).
+        if (this->m_ScrollBarW <= 0.0)
+        {
+            this->m_ScrollBarW = (double)::GetSystemMetrics(SM_CXVSCROLL);
+        }
+
         winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
         TabBar().Measure(Inf);
         const double TabBarW = TabBar().DesiredSize().Width;
         MenuAssociateButton().Measure(Inf);
         const double ButtonW = MenuAssociateButton().DesiredSize().Width;
-        const double MaxW = (std::max)(TabBarW, ButtonW);
+        // Same candidate as the default width: the tab bar (outside the
+        // ScrollViewer, no scrollbar) or the association button plus the
+        // real scrollbar width and the content area's 16px left/right
+        // padding, so dragging the border can never squeeze the button
+        // text.
+        const double MaxW = (std::max)(
+            TabBarW, ButtonW + this->m_ScrollBarW + 32.0);
 
         const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
         const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
@@ -908,7 +1171,11 @@ namespace winrt::NanaZip::Modern::implementation
             SelectedIndex();
         if (Index >= 0 && Index < 4)
         {
-            this->m_Context->WriteZone = (UINT32)Index;
+            // The list index is stored in ZoneSel; the caller maps it
+            // back to the NZoneIdMode value on save (the visible order is
+            // "Yes/No/Office/custom", which no longer equals the enum
+            // values).
+            this->m_Context->ZoneSel = (UINT32)Index;
         }
     }
 

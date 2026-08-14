@@ -263,37 +263,45 @@ static void FillSettingsDialogContext(
     if (wz == (UInt32)(Int32)-1)
       wz = NExtract::NZoneIdMode::Default;
     unsigned zoneSel = 0;
+    // The visible order is "Yes / No / Office / custom": the index no
+    // longer equals the NZoneIdMode enum value, so val carries the real
+    // mode and the page stores only the list index in ZoneSel.
     for (unsigned i = 0; i <= 3; i++)
     {
       UString s;
-      unsigned val = i;
-      if (i == 3)
+      unsigned val = 0;
+      if (i == 0)
+      {
+        #define MY_IDYES  406
+        #define MY_IDNO   407
+        LoadLang_Spec(s, MY_IDYES, "Yes");
+        val = NExtract::NZoneIdMode::kAll;
+      }
+      else if (i == 1)
+      {
+        LoadLang_Spec(s, MY_IDNO, "No");
+        val = NExtract::NZoneIdMode::kNone;
+      }
+      else if (i == 2)
+      {
+        LangString(IDT_ZONE_FOR_OFFICE, s);
+        val = NExtract::NZoneIdMode::kOffice;
+      }
+      else
       {
         if (wz < 3)
           break;
         val = wz;
       }
-      else
-      {
-        #define MY_IDYES  406
-        #define MY_IDNO   407
-        if (i == 0)
-          LoadLang_Spec(s, MY_IDNO, "No");
-        else if (i == 1)
-          LoadLang_Spec(s, MY_IDYES, "Yes");
-        else
-          LangString(IDT_ZONE_FOR_OFFICE, s);
-      }
       if (s.IsEmpty())
         s.Add_UInt32(val);
-      if (i == NExtract::NZoneIdMode::Default)
+      if (val == NExtract::NZoneIdMode::Default)
         s.Insert(0, L"* ");
       wcsncpy_s(ctx.ZoneItems[i], s, _TRUNCATE);
       if (val == wz)
         zoneSel = i;
     }
     ctx.ZoneSel = zoneSel;
-    ctx.WriteZone = zoneSel;
   }
 
   for (unsigned i = 0; i < ARRAY_SIZE(kMenuItems); i++)
@@ -445,10 +453,16 @@ static void SaveSettingsDialogContext(
   ci.ExtractOnOpen.Def = true;
 
   {
-    UInt32 zoneIndex = ctx.WriteZone;
-    if (zoneIndex > NExtract::NZoneIdMode::kOffice ||
-        zoneIndex == NExtract::NZoneIdMode::Default)
-      zoneIndex = (UInt32)(Int32)-1;
+    // The list order is "Yes / No / Office / custom" (index 0..3); map
+    // the selected index back to the NZoneIdMode value on save. Index 3
+    // (custom) keeps the -1 default like the original logic.
+    UInt32 zoneIndex = (UInt32)(Int32)-1;
+    if (ctx.ZoneSel == 0)
+      zoneIndex = NExtract::NZoneIdMode::kAll;
+    else if (ctx.ZoneSel == 1)
+      zoneIndex = NExtract::NZoneIdMode::kNone;
+    else if (ctx.ZoneSel == 2)
+      zoneIndex = NExtract::NZoneIdMode::kOffice;
     ci.WriteZone = zoneIndex;
   }
 

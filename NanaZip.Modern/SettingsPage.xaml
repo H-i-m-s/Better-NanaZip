@@ -77,17 +77,18 @@
             Click="MenuCheckBoxClick" />
           <Grid Margin="0,12,0,0">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="160" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock
               x:Name="MenuZoneLabel"
               VerticalAlignment="Center"
-              TextWrapping="Wrap" />
+              TextWrapping="NoWrap" />
             <ComboBox
               x:Name="MenuZoneCombo"
               Grid.Column="1"
-              HorizontalAlignment="Stretch"
+              Margin="6,0,0,0"
+              VerticalAlignment="Center"
               SelectionChanged="MenuZoneComboChanged" />
           </Grid>
           <TextBlock
@@ -386,8 +387,8 @@
             Click="ExtractCheckBoxClick" />
           <Grid Margin="0,6,0,0">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="180" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock
               x:Name="ExtractMatchPriorityLabel"
@@ -395,7 +396,8 @@
             <ComboBox
               x:Name="ExtractMatchPriorityCombo"
               Grid.Column="1"
-              HorizontalAlignment="Stretch"
+              Margin="6,0,0,0"
+              VerticalAlignment="Center"
               SelectionChanged="ExtractMatchPriorityChanged" />
           </Grid>
           <CheckBox
