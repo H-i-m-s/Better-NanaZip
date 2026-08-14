@@ -743,8 +743,10 @@ static void FillCompressOptionsContext(
     CopyText(ctx->PreserveATimeText, 96, s);
     LangString(IDT_COMPRESS_TIME_PREC, s);
     CopyText(ctx->PrecLabelText, 96, s);
-    wcscpy_s(ctx->OkText, L"OK");
-    wcscpy_s(ctx->CancelText, L"Cancel");
+    // The original Win32 dialog hard-codes English OK/Cancel; NanaZip is
+    // localized, so use the localized button texts directly.
+    wcscpy_s(ctx->OkText, L"确定");
+    wcscpy_s(ctx->CancelText, L"取消");
   }
 
   ctx->FontSizePt = ReadFontSizeDialog();

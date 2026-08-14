@@ -28,6 +28,17 @@ namespace winrt::NanaZip::Modern::implementation
 
         winrt::Windows::Foundation::Size PrepareForShow();
 
+        // Re-measure the populated page and return the content-driven size
+        // without re-filling anything (idempotent, safe to call again after
+        // the first OnLoaded).
+        winrt::Windows::Foundation::Size RefreshSize();
+
+        // After the window is shown: negative when the content is taller
+        // than the ScrollViewer viewport (a scrollbar would appear). The
+        // host grows the window by that delta so the dialog always opens
+        // fully visible without scrolling.
+        double GetScrollDelta();
+
         void OnPageKeyDown(
             winrt::IInspectable const& sender,
             winrt::KeyRoutedEventArgs const& e);
@@ -35,6 +46,10 @@ namespace winrt::NanaZip::Modern::implementation
         void OnLoaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
+
+        void OnSizeChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e);
 
         void OnNtfsClicked(
             winrt::IInspectable const& sender,

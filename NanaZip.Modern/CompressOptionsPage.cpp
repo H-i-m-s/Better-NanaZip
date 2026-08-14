@@ -170,7 +170,7 @@ namespace winrt::NanaZip::Modern::implementation
         const wchar_t* GroupTime =
             C->GroupTimeText[0] ? C->GroupTimeText : L"Time";
         NtfsGroupText().Text(winrt::hstring(GroupNtfs));
-        TimeGroupText().Text(winrt::hstring(GroupTime));
+        TimeInfoText().Text(winrt::hstring(GroupTime));
 
         // NTFS group.
         NtSymLinksText().Text(winrt::hstring(C->NtSymLinksText));
@@ -221,11 +221,23 @@ namespace winrt::NanaZip::Modern::implementation
                      : winrt::Windows::UI::Xaml::Visibility::Collapsed;
         PrecRow().Visibility(PrecVis);
         PrecSetCheck().IsChecked(C->TimePrecSet);
-        const bool SetIsSupported = C->TimePrecSet || (C->PrecCount > 1);
+        // The set box is shown whenever there is at least one precision
+        // entry (7-Zip hides it for a single entry, which leaves the combo
+        // permanently disabled with no way to unlock it; that is
+        // confusing, so any entry count keeps the override available).
+        const bool SetIsSupported = C->TimePrecSet || (C->PrecCount > 0);
         PrecSetCheck().Visibility(
             SetIsSupported ? winrt::Windows::UI::Xaml::Visibility::Visible
                            : winrt::Windows::UI::Xaml::Visibility::Collapsed);
-        PrecCombo().IsEnabled(C->TimePrecSet && (C->PrecCount > 1));
+        PrecCombo().IsEnabled(C->TimePrecSet);
+        CompressOptionsDiagLog(L"[P7] PrecCount/TimePrecSet/SetIsSupported:");
+        {
+            wchar_t buf[128];
+            swprintf_s(buf, L"[P7b] PrecCount=%u TimePrecSet=%d SetIsSupported=%d",
+                C->PrecCount, C->TimePrecSet ? 1 : 0,
+                SetIsSupported ? 1 : 0);
+            CompressOptionsDiagLog(buf);
+        }
 
         // Select the current precision; fall back to the default entry.
         int Sel = -1;
@@ -270,9 +282,9 @@ namespace winrt::NanaZip::Modern::implementation
 
         // Buttons.
         OkButton().Content(winrt::box_value(winrt::hstring(
-            C->OkText[0] ? C->OkText : L"OK")));
+            C->OkText[0] ? C->OkText : L"确定")));
         CancelButton().Content(winrt::box_value(winrt::hstring(
-            C->CancelText[0] ? C->CancelText : L"Cancel")));
+            C->CancelText[0] ? C->CancelText : L"取消")));
         CompressOptionsDiagLog(L"[P5] FillFromContext exit");
     }
 
@@ -348,15 +360,55 @@ namespace winrt::NanaZip::Modern::implementation
         FillFromContext();
         m_Filled = true;
 
-        // The content drives the default window size: measure the fully
-        // laid-out page at infinite width and height (the host caps the
-        // height at 75% of the screen; the ScrollViewer handles the rest).
-        this->Measure(winrt::Windows::Foundation::Size(100000.0f, 100000.0f));
-        const winrt::Windows::Foundation::Size Desired = this->DesiredSize();
+        // Two-pass measurement, the same pattern the settings page and the
+        // compress page use: pass 1 measures the natural width at infinite
+        // width, pass 2 measures the height at that final width so text
+        // wrapping (if any) is counted exactly as it will render in the
+        // shown window. Do NOT call UpdateLayout() here - the page's parent
+        // is not sized yet (the window is not shown), so UpdateLayout
+        // re-measures with a 0x0 constraint and zeroes DesiredSize out.
+        winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+        this->Measure(Inf);
+        double W = this->DesiredSize().Width;
+        this->Measure(winrt::Windows::Foundation::Size((float)W, 100000.0f));
+        double H = this->DesiredSize().Height;
         CompressOptionsDiagLog(L"[P6] PrepareForShow measured");
+        {
+            wchar_t buf[128];
+            swprintf_s(buf, L"[P8] DesiredW=%.0f DesiredH=%.0f", W, H);
+            CompressOptionsDiagLog(buf);
+        }
 
-        double W = Desired.Width;
-        double H = Desired.Height;
+        if (W < 380.0)
+        {
+            W = 380.0;
+        }
+        if (H < 320.0)
+        {
+            H = 320.0;
+        }
+        return winrt::Windows::Foundation::Size((float)W, (float)H);
+    }
+
+    winrt::Windows::Foundation::Size CompressOptionsPage::RefreshSize()
+    {
+        if (!m_Context)
+        {
+            return winrt::Windows::Foundation::Size(420, 480);
+        }
+
+        ApplyDialogFont(m_Context->FontSizePt);
+        winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+        this->Measure(Inf);
+        double W = this->DesiredSize().Width;
+        this->Measure(winrt::Windows::Foundation::Size((float)W, 100000.0f));
+        double H = this->DesiredSize().Height;
+        {
+            wchar_t buf[128];
+            swprintf_s(buf, L"[P9] RefreshSize DesiredW=%.0f DesiredH=%.0f", W, H);
+            CompressOptionsDiagLog(buf);
+        }
+
         if (W < 380.0)
         {
             W = 380.0;
@@ -390,7 +442,65 @@ namespace winrt::NanaZip::Modern::implementation
         {
             m_Filled = true;
             FillFromContext();
+            // The controls are populated now; ask the host to re-measure the
+            // real content height before the window is shown (the first
+            // Measure can run before the visual tree is fully laid out).
+            if (m_WindowHandle)
+            {
+                ::PostMessageW(
+                    m_WindowHandle,
+                    K7_COMPRESS_OPTIONS_REFIT_MESSAGE,
+                    0,
+                    0);
+            }
         }
+        else
+        {
+            // Second Loaded (the window is visible now, layout complete):
+            // tell the host to compensate the last pixel of difference
+            // between the measured height and the real rendered height, so
+            // the ScrollViewer never shows a scrollbar for a fully visible
+            // dialog.
+            if (m_WindowHandle)
+            {
+                ::PostMessageW(
+                    m_WindowHandle,
+                    K7_COMPRESS_OPTIONS_REFIT2_MESSAGE,
+                    0,
+                    0);
+            }
+        }
+    }
+
+    void CompressOptionsPage::OnSizeChanged(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+
+        if (m_Context)
+        {
+            wchar_t buf[128];
+            swprintf_s(buf,
+                L"[P10] ScrollerH=%.0f ContentH=%.0f delta=%.0f",
+                ContentScroller().ActualHeight(),
+                ContentPanel().ActualHeight(),
+                ContentScroller().ActualHeight() - ContentPanel().ActualHeight());
+            CompressOptionsDiagLog(buf);
+        }
+    }
+
+    double CompressOptionsPage::GetScrollDelta()
+    {
+        if (!m_Context)
+        {
+            return 0.0;
+        }
+        // Window is visible: Actual values reflect the real layout.
+        // Negative = content taller than the viewport (would scroll).
+        return ContentScroller().ActualHeight() -
+            ContentPanel().ActualHeight();
     }
 
     void CompressOptionsPage::OnPageKeyDown(
@@ -433,7 +543,10 @@ namespace winrt::NanaZip::Modern::implementation
         }
         const auto SetChecked = PrecSetCheck().IsChecked();
         const bool isSet = SetChecked && SetChecked.Value();
-        PrecCombo().IsEnabled(isSet && (m_Context->PrecCount > 1));
+        // Checking the override enables the combo no matter how many
+        // precision entries exist (7-Zip's count > 1 gate left the combo
+        // permanently disabled for a single entry).
+        PrecCombo().IsEnabled(isSet);
         // A changed precision changes the allowed time boxes for zip.
         ApplyTimeMAC();
     }

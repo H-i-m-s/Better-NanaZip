@@ -477,6 +477,18 @@ EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
 // Win32 message level (see CompressPage::OnOptionsClicked).
 #define K7_COMPRESS_OPTIONS_OPEN_MESSAGE (WM_APP + 0x4D)
 
+// Win32 message posted by the options page's first OnLoaded after it has
+// populated the controls, so the host can re-measure the real content
+// height before the window is shown (the first Measure can run before the
+// visual tree is complete). The host consumes this synchronously before
+// ShowWindow; no window bounce.
+#define K7_COMPRESS_OPTIONS_REFIT_MESSAGE (WM_APP + 0x4E)
+
+// Win32 message posted by the options page's second OnLoaded (the window
+// is visible, layout complete) so the host can grow the window by the real
+// viewport/content delta and eliminate the last pixel of scrollbar.
+#define K7_COMPRESS_OPTIONS_REFIT2_MESSAGE (WM_APP + 0x4F)
+
 #define K7_COMPRESS_SUBMIT_OK       0
 #define K7_COMPRESS_SUBMIT_REJECTED 1
 

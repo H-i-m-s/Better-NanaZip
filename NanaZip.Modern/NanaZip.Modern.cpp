@@ -34,6 +34,7 @@
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 
 #include <algorithm>
+#include <cmath>
 #include <mutex>
 #include <map>
 
@@ -1504,11 +1505,11 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
     }
     if (ClientW > 1400) ClientW = 1400;
 
-    // Height: the smaller of "all tabs' content fully visible" and 75%
-    // of the screen height (the user requirement: the whole monitor
-    // including the taskbar area, not the work area): the dialog opens at
-    // the content height when it fits, and caps at 75% of the screen so
-    // it never dominates the display.
+    // Content-driven height: exact fit. ceil() so the client area always
+    // covers the measured content by construction (a floor/round can leave
+    // the viewport half a pixel shorter than the content, which makes the
+    // ScrollViewer show a scrollbar). 95% of the screen is only an extreme
+    // font-size guard.
     RECT ScreenRect = {};
     {
         HMONITOR MonitorHandle = ::MonitorFromWindow(
@@ -1522,9 +1523,11 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
             }
         }
     }
-    int ClientH = (int)(Desired.Height * Scale + 0.5f);
+    int ClientH = (int)::ceil(Desired.Height * Scale);
     if (ScreenRect.bottom > ScreenRect.top)
     {
+        // Settings dialog rule (user-approved): content-driven height,
+        // capped at 75% of the screen.
         const int MaxClientH =
             (int)((double)(ScreenRect.bottom - ScreenRect.top) * 0.75 + 0.5);
         ClientH = (std::min)(ClientH, MaxClientH);
@@ -1684,6 +1687,51 @@ EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
                 ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
                 return 0;
             }
+            if (uMsg == K7_COMPRESS_OPTIONS_REFIT2_MESSAGE)
+            {
+                // The window is visible and laid out; compensate the last
+                // pixel of measured-vs-rendered height so the dialog never
+                // opens with a scrollbar for fully visible content.
+                winrt::DesktopWindowXamlSource XamlSource =
+                    ::K7ModernGetDesktopWindowXamlSource(hWnd);
+                if (XamlSource)
+                {
+                    if (auto Page = XamlSource.Content().try_as<
+                        winrt::NanaZip::Modern::CompressOptionsPage>())
+                    {
+                        auto Impl = winrt::get_self<
+                            winrt::NanaZip::Modern::implementation::
+                                CompressOptionsPage>(Page);
+                        const double Delta = Impl->GetScrollDelta();
+                        if (Delta < 0.0)
+                        {
+                            const UINT Dpi =
+                                ::GetDpiForWindow(hWnd);
+                            const double Scale =
+                                (double)Dpi / (double)USER_DEFAULT_SCREEN_DPI;
+                            const int Add =
+                                (int)::ceil(-Delta * Scale);
+                            RECT rc = {};
+                            ::GetWindowRect(hWnd, &rc);
+                            // Keep the bottom edge, grow upward.
+                            ::SetWindowPos(
+                                hWnd,
+                                nullptr,
+                                rc.left,
+                                rc.top - Add,
+                                rc.right - rc.left,
+                                rc.bottom - rc.top + Add,
+                                SWP_NOZORDER | SWP_NOACTIVATE);
+                            wchar_t buf[128];
+                            swprintf_s(buf,
+                                L"[O11] SelfHeal delta=%.1f add=%d",
+                                Delta, Add);
+                            SettingsDiagLog(buf);
+                        }
+                    }
+                }
+                return 0;
+            }
             return ::DefSubclassProc(hWnd, uMsg, wParam, lParam);
         },
         1,
@@ -1735,7 +1783,6 @@ EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
         Desired = Page->PrepareForShow();
     }
     SettingsDiagLog(L"[O6] PrepareForShow OK");
-
     const UINT Dpi = ::GetDpiForWindow(WindowHandle);
     const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
     const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
@@ -1761,11 +1808,16 @@ EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
             }
         }
     }
-    int ClientH = (int)(Desired.Height * Scale + 0.5f);
+    int ClientH = (int)::ceil(Desired.Height * Scale);
+    // Content-driven height: exact fit (see the comment above). The 95%
+    // screen cap only guards against an extreme font size pushing the
+    // window past the screen bottom.
+    const int MaxClientH =
+        (ScreenRect.bottom > ScreenRect.top)
+        ? (int)((double)(ScreenRect.bottom - ScreenRect.top) * 0.95 + 0.5)
+        : 0;
     if (ScreenRect.bottom > ScreenRect.top)
     {
-        const int MaxClientH =
-            (int)((double)(ScreenRect.bottom - ScreenRect.top) * 0.75 + 0.5);
         ClientH = (std::min)(ClientH, MaxClientH);
     }
     if (ClientH < (int)(320.0f * Scale))
@@ -1774,6 +1826,60 @@ EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
     }
     if (ClientH > 1400) ClientH = 1400;
 
+    {
+        wchar_t buf[160];
+        swprintf_s(buf,
+            L"[O9] DesiredH=%.0f ScreenH=%d Max75=%d ClientH=%d",
+            Desired.Height,
+            (ScreenRect.bottom > ScreenRect.top)
+                ? (ScreenRect.bottom - ScreenRect.top) : 0,
+            MaxClientH,
+            ClientH);
+        SettingsDiagLog(buf);
+    }
+
+    // The page's first OnLoaded posts a refit request once the controls are
+    // populated; consume it here, before ShowWindow, so the window is sized
+    // from the real content height even if the first Measure ran before the
+    // visual tree was complete. The window is not visible yet, so the resize
+    // cannot bounce.
+    MSG RefitMsg;
+    while (::PeekMessageW(
+        &RefitMsg,
+        WindowHandle,
+        K7_COMPRESS_OPTIONS_REFIT_MESSAGE,
+        K7_COMPRESS_OPTIONS_REFIT_MESSAGE,
+        PM_REMOVE))
+    {
+        winrt::Windows::Foundation::Size RefitDesired(420, 480);
+        {
+            auto Page = winrt::get_self<Implementation>(Window);
+            RefitDesired = Page->RefreshSize();
+        }
+        ClientW = (int)(RefitDesired.Width * Scale + 0.5f);
+        if (ClientW < (int)(380.0f * Scale))
+        {
+            ClientW = (int)(380.0f * Scale);
+        }
+        if (ClientW > 1400) ClientW = 1400;
+        ClientH = (int)::ceil(RefitDesired.Height * Scale);
+        if (ScreenRect.bottom > ScreenRect.top)
+        {
+            ClientH = (std::min)(ClientH, MaxClientH);
+        }
+        if (ClientH < (int)(320.0f * Scale))
+        {
+            ClientH = (int)(320.0f * Scale);
+        }
+        if (ClientH > 1400) ClientH = 1400;
+        {
+            wchar_t buf[160];
+            swprintf_s(buf,
+                L"[O10] Refit ClientW=%d ClientH=%d (DesiredH=%.0f)",
+                ClientW, ClientH, RefitDesired.Height);
+            SettingsDiagLog(buf);
+        }
+    }
     RECT WindowRect = { 0, 0, ClientW, ClientH };
     ::AdjustWindowRectEx(
         &WindowRect, (DWORD)Style, FALSE, (DWORD)ExStyle);
