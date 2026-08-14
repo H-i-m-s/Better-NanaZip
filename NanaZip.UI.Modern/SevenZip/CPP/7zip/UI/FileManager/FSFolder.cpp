@@ -723,6 +723,22 @@ static UString GetFileTypeDesc(const FString &name, bool isDir)
   if (*extPtr == 0)
     return UString();
   UString ext = fs2us(extPtr);
+  // 7-Zip learned this the hard way (see the comment at SysIconUtils.cpp:
+  // "GetRealIconIndex is too slow for big number of split extensions:
+  // .001, .002, .003"): a directory full of split volumes has hundreds of
+  // distinct numeric extensions. The shell has no registered description
+  // for them anyway, so skip the lookup and show the extension itself.
+  {
+    unsigned i2;
+    for (i2 = 0; i2 < ext.Len(); i2++)
+    {
+      const wchar_t c = ext[i2];
+      if (c < L'0' || c > L'9')
+        break;
+    }
+    if (i2 != 0 && i2 == ext.Len())
+      return ext;
+  }
   for (unsigned i = 0; i < g_TypeDescCache.Size(); i++)
     if (MyStringCompareNoCase(g_TypeDescCache[i].Ext, ext) == 0)
       return g_TypeDescCache[i].Desc;
