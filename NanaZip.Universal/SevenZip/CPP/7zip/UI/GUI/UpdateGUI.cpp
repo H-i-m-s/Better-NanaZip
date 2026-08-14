@@ -19,7 +19,7 @@
 #include "../FileManager/StringUtils.h"
 #include "../FileManager/resourceGui.h"
 
-#include "CompressDialog.h"
+#include "CompressDialogCore.h"
 #include "CompressXamlAdapter.h"
 #include "NanaZip.Modern.h"
 #include "UpdateGUI.h"

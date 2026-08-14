@@ -32,6 +32,11 @@ namespace winrt::NanaZip::Modern::implementation
 
         winrt::Windows::Foundation::Size PrepareForShow();
 
+        // Invoked by the host window subclass after the options child
+        // dialog closes (the options callback runs at the Win32 message
+        // level, so this page cannot refresh itself synchronously).
+        void OnOptionsClosed();
+
         void OnLoaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);

@@ -29,12 +29,12 @@
 
 #include "../FileManager/BrowseDialog.h"
 #include "../FileManager/LangUtils.h"
+#include "../FileManager/PropertyName.h"
 #include "../FileManager/SplitUtils.h"
 
 #include "NanaZip.Modern.h"
 
 #include "CompressDialogCore.h"
-#include "CompressDialog.h"
 
 #include "CompressXamlAdapter.h"
 
@@ -556,14 +556,241 @@ static BOOLEAN WINAPI CCompressCommandThunk(
   return TRUE;
 }
 
+static const unsigned kTimePrec_Win = 0;
+static const unsigned kTimePrec_Unix = 1;
+static const unsigned kTimePrec_DOS = 2;
+
+static void AddTimeOption(
+    UString &s, UInt32 val, const UString &unit, const char *sys = NULL)
+{
+  s.Add_UInt32(val);
+  s.Add_Space();
+  s += unit;
+  if (sys)
+  {
+    s += " : ";
+    s += sys;
+  }
+}
+
+static void AddPrecText(
+    UString &s, unsigned prec, const UString &sec, const UString &ns)
+{
+  if (prec == kTimePrec_Win) AddTimeOption(s, 100, ns, "Windows");
+  else if (prec == kTimePrec_Unix) AddTimeOption(s, 1, sec, "Unix");
+  else if (prec == kTimePrec_DOS) AddTimeOption(s, 2, sec, "DOS");
+  else if (prec == k_PropVar_TimePrec_1ns) AddTimeOption(s, 1, ns, "Linux");
+  else if (prec == k_PropVar_TimePrec_Base) AddTimeOption(s, 1, sec);
+  else if (prec >= k_PropVar_TimePrec_Base)
+  {
+    UInt32 d = 1;
+    for (unsigned i = prec; i < k_PropVar_TimePrec_Base + 9; i++)
+      d *= 10;
+    AddTimeOption(s, d, ns);
+  }
+  else
+    s.Add_UInt32(prec);
+}
+
+// Fills the compression-options dialog snapshot from the core: the same
+// data the Win32 COptionsDialog read in OnInit/SetPrec/SetTimeMAC. The
+// interactive zip/tar rules (precision change hides C/A time) run in the
+// XAML page; the snapshot carries the format flags it needs.
+static UINT32 ReadFontSizeDialog();
+static void FillCompressOptionsContext(
+    CCompressXamlHost *host,
+    PK7_COMPRESS_OPTIONS_DIALOG_CONTEXT ctx)
+{
+  if (!host || !host->Core)
+    return;
+
+  CCompressDialogCore &core = *host->Core;
+  const CArcInfoEx &ai = core.Get_ArcInfoEx();
+  NCompression::CFormatOptions &fo = core.Get_FormatOptions();
+
+  // NTFS group.
+  ctx->NtSymLinksSupported = core.SymLinks.Supported;
+  ctx->NtSymLinks = core.SymLinks.Val;
+  ctx->NtHardLinksSupported = core.HardLinks.Supported;
+  ctx->NtHardLinks = core.HardLinks.Val;
+  ctx->NtAltStreamsSupported = core.AltStreams.Supported;
+  ctx->NtAltStreams = core.AltStreams.Val;
+  ctx->NtSecuritySupported = core.NtSecurity.Supported;
+  ctx->NtSecurity = core.NtSecurity.Val;
+  ctx->PreserveATime = core.PreserveATime.Val;
+
+  // Time group: current values.
+  ctx->TimePrec = fo.TimePrec;
+  ctx->TimePrecSet = (fo.TimePrec != (UInt32)(Int32)-1);
+  ctx->MTimeIsSet = fo.MTime.Def;
+  ctx->MTimeVal = fo.MTime.Val;
+  ctx->CTimeIsSet = fo.CTime.Def;
+  ctx->CTimeVal = fo.CTime.Val;
+  ctx->ATimeIsSet = fo.ATime.Def;
+  ctx->ATimeVal = fo.ATime.Val;
+  ctx->ZTimeIsSet = fo.SetArcMTime.Def;
+  ctx->ZTimeVal = fo.SetArcMTime.Val;
+
+  // Format flags and defaults (SetTimeMAC inputs).
+  ctx->MTimeSupported = ai.Flags_MTime();
+  ctx->CTimeSupported = ai.Flags_CTime();
+  ctx->ATimeSupported = ai.Flags_ATime();
+  ctx->MTimeDefault = ai.Flags_MTime_Default();
+  ctx->CTimeDefault = ai.Flags_CTime_Default();
+  ctx->ATimeDefault = ai.Flags_ATime_Default();
+  ctx->IsZip = ai.Is_Zip();
+  ctx->IsTar = ai.Is_Tar();
+  ctx->TarPosix = (ai.Is_Tar() && core.GetMethodID() == kPosix);
+  ctx->IsSingleFile = ai.Flags_KeepName();
+
+  // Precision combo items (SetPrec logic).
+  {
+    UInt32 flags = ai.Get_TimePrecFlags();
+    UInt32 defaultPrec = ai.Get_DefaultTimePrec();
+    if (defaultPrec != 0)
+      flags |= ((UInt32)1 << defaultPrec);
+    if (ai.Is_GZip())
+      defaultPrec = kTimePrec_Unix;
+    ctx->DefaultTimePrec = defaultPrec;
+
+    UString sec;
+    LangString(IDS_COMPRESS_SEC, sec);
+    if (sec.IsEmpty())
+      sec = "sec";
+    UString ns;
+    LangString(IDS_COMPRESS_NS, ns);
+    if (ns.IsEmpty())
+      ns = "ns";
+
+    const UInt32 selectedPrec =
+        ((Int32)fo.TimePrec >= 0) ? fo.TimePrec : defaultPrec;
+    ctx->PrecCount = 0;
+    for (unsigned prec = 0;
+        prec <= k_PropVar_TimePrec_1ns &&
+        ctx->PrecCount < K7_COMPRESS_OPTIONS_MAX_PREC;
+        prec++)
+    {
+      if (((flags >> prec) & 1) == 0)
+        continue;
+      const bool isDefault = (defaultPrec == prec);
+      UString s;
+      AddPrecText(s, prec, sec, ns);
+      PK7_COMPRESS_OPTIONS_PREC_ITEM item =
+          &ctx->PrecItems[ctx->PrecCount];
+      CopyText(item->Text, K7_COMPRESS_OPTIONS_MAX_TEXT, s);
+      item->Value = prec;
+      item->IsDefault = isDefault;
+      ctx->PrecCount++;
+    }
+    if (selectedPrec > kTimePrec_DOS &&
+        ctx->PrecCount < K7_COMPRESS_OPTIONS_MAX_PREC)
+    {
+      // The selected precision may not be in the mask; append it so the
+      // current value always has a visible entry.
+      UString s;
+      AddPrecText(s, selectedPrec, sec, ns);
+      PK7_COMPRESS_OPTIONS_PREC_ITEM item =
+          &ctx->PrecItems[ctx->PrecCount];
+      CopyText(item->Text, K7_COMPRESS_OPTIONS_MAX_TEXT, s);
+      item->Value = selectedPrec;
+      item->IsDefault = false;
+      ctx->PrecCount++;
+    }
+  }
+
+  // Info line ("type: xxx").
+  {
+    UString s;
+    s += GetNameOfProperty(kpidType, L"type");
+    s += ": ";
+    s += ai.Name;
+    if (ai.Is_Tar())
+    {
+      const int methodID = core.GetMethodID();
+      UString estimatedName;
+      core.GetMethodSpec(estimatedName);
+      s.Add_Colon();
+      if (methodID >= 0 && !estimatedName.IsEmpty())
+        s += estimatedName;
+    }
+    CopyText(ctx->InfoText, 256, s);
+  }
+
+  // Localized texts (the XAML page cannot reach the 7-Zip language
+  // resources).
+  {
+    UString s;
+    wcscpy_s(ctx->GroupNtfsText, L"NTFS");
+    LangString(IDG_COMPRESS_TIME, s);
+    CopyText(ctx->GroupTimeText, 32, s);
+    LangString(IDX_COMPRESS_NT_SYM_LINKS, s);
+    CopyText(ctx->NtSymLinksText, 96, s);
+    LangString(IDX_COMPRESS_NT_HARD_LINKS, s);
+    CopyText(ctx->NtHardLinksText, 96, s);
+    LangString(IDX_COMPRESS_NT_ALT_STREAMS, s);
+    CopyText(ctx->NtAltStreamsText, 96, s);
+    LangString(IDX_COMPRESS_NT_SECUR, s);
+    CopyText(ctx->NtSecurityText, 96, s);
+    LangString(IDX_COMPRESS_MTIME, s);
+    CopyText(ctx->MTimeText, 96, s);
+    LangString(IDX_COMPRESS_CTIME, s);
+    CopyText(ctx->CTimeText, 96, s);
+    LangString(IDX_COMPRESS_ATIME, s);
+    CopyText(ctx->ATimeText, 96, s);
+    LangString(IDX_COMPRESS_ZTIME, s);
+    CopyText(ctx->ZTimeText, 96, s);
+    LangString(IDX_COMPRESS_PRESERVE_ATIME, s);
+    CopyText(ctx->PreserveATimeText, 96, s);
+    LangString(IDT_COMPRESS_TIME_PREC, s);
+    CopyText(ctx->PrecLabelText, 96, s);
+    wcscpy_s(ctx->OkText, L"OK");
+    wcscpy_s(ctx->CancelText, L"Cancel");
+  }
+
+  ctx->FontSizePt = ReadFontSizeDialog();
+}
+
+// Writes the confirmed values back into the core and refreshes the
+// compress-dialog snapshot (summary text etc.).
+static void SaveCompressOptionsContext(
+    CCompressXamlHost *host,
+    PK7_COMPRESS_OPTIONS_DIALOG_CONTEXT ctx)
+{
+  if (!host || !host->Core)
+    return;
+
+  CCompressDialogCore &core = *host->Core;
+  NCompression::CFormatOptions &fo = core.Get_FormatOptions();
+
+  core.SymLinks.Val = !!ctx->NtSymLinks;
+  core.HardLinks.Val = !!ctx->NtHardLinks;
+  core.AltStreams.Val = !!ctx->NtAltStreams;
+  core.NtSecurity.Val = !!ctx->NtSecurity;
+  core.PreserveATime.Val = !!ctx->PreserveATime;
+
+  fo.TimePrec = ctx->TimePrec;
+  fo.MTime.Def = !!ctx->MTimeIsSet;
+  fo.MTime.Val = !!ctx->MTimeVal;
+  fo.CTime.Def = !!ctx->CTimeIsSet;
+  fo.CTime.Val = !!ctx->CTimeVal;
+  fo.ATime.Def = !!ctx->ATimeIsSet;
+  fo.ATime.Val = !!ctx->ATimeVal;
+  fo.SetArcMTime.Def = !!ctx->ZTimeIsSet;
+  fo.SetArcMTime.Val = !!ctx->ZTimeVal;
+
+  UpdateSnapshot(core, host->Context);
+}
+
 static BOOLEAN WINAPI CCompressOptionsThunk(LPVOID callbackContext)
 {
   CCompressXamlHost *host = (CCompressXamlHost *)callbackContext;
   if (!host || !host->Core || !host->Context)
     return FALSE;
-  COptionsDialog dialog(host->Core);
-  if (dialog.Create(host->Parent) == IDOK)
-    UpdateSnapshot(*host->Core, host->Context);
+  K7_COMPRESS_OPTIONS_DIALOG_CONTEXT ctx = {};
+  FillCompressOptionsContext(host, &ctx);
+  ::K7ModernShowCompressOptionsDialog(host->Parent, &ctx);
+  if (ctx.OK)
+    SaveCompressOptionsContext(host, &ctx);
   return TRUE;
 }
 

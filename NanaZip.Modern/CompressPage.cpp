@@ -1327,10 +1327,24 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
+        // The options dialog is a second XAML island; creating it
+        // synchronously from this XAML event handler would re-enter the
+        // single-threaded XAML core when the island is shown and deadlock.
+        // Defer the call to the host window's Win32 message level; the
+        // host subclass invokes the callback and then calls
+        // OnOptionsClosed to refresh this page.
         if (this->m_Context->OptionsCallback)
         {
-            this->m_Context->OptionsCallback(this->m_Context->CallbackContext);
+            ::PostMessageW(
+                this->m_WindowHandle,
+                K7_COMPRESS_OPTIONS_OPEN_MESSAGE,
+                0,
+                0);
         }
+    }
+
+    void CompressPage::OnOptionsClosed()
+    {
         RefreshFromSnapshot();
     }
 

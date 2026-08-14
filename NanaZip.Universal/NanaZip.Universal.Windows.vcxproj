@@ -58,7 +58,6 @@
     <None Include="SevenZip\CPP\7zip\UI\FileManager\resourceGui.rc" />
     <None Include="SevenZip\CPP\7zip\UI\GUI\BenchmarkDialog.rc" />
     <None Include="SevenZip\CPP\7zip\UI\GUI\CompressDialog.rc" />
-    <None Include="SevenZip\CPP\7zip\UI\GUI\CompressOptionsDialog.rc" />
     <None Include="SevenZip\CPP\7zip\UI\GUI\Extract.rc" />
     <None Include="SevenZip\CPP\7zip\UI\GUI\ExtractDialog.rc" />
     <None Include="SevenZip\CPP\7zip\UI\GUI\resource2.rc" />
@@ -156,7 +155,6 @@
     <ClInclude Include="SevenZip\CPP\7zip\UI\FileManager\SysIconUtils.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\GUI\BenchmarkDialog.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\GUI\BenchmarkDialogRes.h" />
-    <ClInclude Include="SevenZip\CPP\7zip\UI\GUI\CompressDialog.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\GUI\CompressDialogCore.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\GUI\CompressXamlAdapter.h" />
     <ClInclude Include="SevenZip\CPP\7zip\UI\GUI\CompressDialogRes.h" />
@@ -302,7 +300,6 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\StringUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\SysIconUtils.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\BenchmarkDialog.cpp" />
-    <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\CompressDialog.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\CompressDialogCore.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\CompressXamlAdapter.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\ExtractDialog.cpp" />

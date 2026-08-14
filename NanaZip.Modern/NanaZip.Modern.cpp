@@ -26,6 +26,7 @@
 #include "ProgressPage.h"
 #include "CopyLocationPage.h"
 #include "SettingsPage.h"
+#include "CompressOptionsPage.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -1094,6 +1095,34 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
             ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
             return 0;
         }
+        else if (uMsg == K7_COMPRESS_OPTIONS_OPEN_MESSAGE)
+        {
+            // Open the options child dialog at the Win32 message level:
+            // the dialog creates a second XAML island, which must not be
+            // created synchronously inside the XAML event handler (the
+            // single-threaded XAML core would deadlock when the island is
+            // shown). This message is dispatched by the window's own
+            // message loop after the current XAML callback has returned.
+            if (Context && Context->OptionsCallback)
+            {
+                Context->OptionsCallback(Context->CallbackContext);
+            }
+            // The adapter updated the snapshot; refresh the page UI now
+            // that the options dialog has closed.
+            winrt::DesktopWindowXamlSource XamlSource =
+                ::K7ModernGetDesktopWindowXamlSource(hWnd);
+            if (XamlSource)
+            {
+                if (auto Page = XamlSource.Content().try_as<
+                    winrt::NanaZip::Modern::CompressPage>())
+                {
+                    winrt::get_self<
+                        winrt::NanaZip::Modern::implementation::CompressPage>(
+                            Page)->OnOptionsClosed();
+                }
+            }
+            return 0;
+        }
         return ::DefSubclassProc(hWnd, uMsg, wParam, lParam);
     },
         1,
@@ -1613,6 +1642,180 @@ EXTERN_C INT WINAPI K7ModernShowSettingsDialog(
         ClientH,
         ParentWindowHandle,
         &InitialRect);
+
+    return Result;
+}
+
+EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_COMPRESS_OPTIONS_DIALOG_CONTEXT Context)
+{
+    if (!Context)
+    {
+        return -1;
+    }
+
+    SettingsDiagLog(L"[O1] K7ModernShowCompressOptionsDialog enter");
+
+    HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
+    if (!WindowHandle)
+    {
+        SettingsDiagLog(L"[O1b] K7ModernCreateXamlDialog FAILED");
+        return -1;
+    }
+    SettingsDiagLog(L"[O2] K7ModernCreateXamlDialog OK");
+
+    // Esc at the Win32 level closes the dialog like the X button (a
+    // cancel): the keyboard focus often sits on the Win32 host window, so
+    // the XAML page's own KeyDown never sees the key.
+    if (!::SetWindowSubclass(
+        WindowHandle,
+        [](_In_ HWND hWnd,
+            _In_ UINT uMsg,
+            _In_ WPARAM wParam,
+            _In_ LPARAM lParam,
+            _In_ UINT_PTR uIdSubclass,
+            _In_ DWORD_PTR dwRefData) -> LRESULT
+        {
+            UNREFERENCED_PARAMETER(uIdSubclass);
+            UNREFERENCED_PARAMETER(dwRefData);
+            if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
+            {
+                ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
+                return 0;
+            }
+            return ::DefSubclassProc(hWnd, uMsg, wParam, lParam);
+        },
+        1,
+        reinterpret_cast<DWORD_PTR>(Context)))
+    {
+        ::DestroyWindow(WindowHandle);
+        SettingsDiagLog(L"[O2b] SetWindowSubclass FAILED");
+        return -1;
+    }
+    SettingsDiagLog(L"[O3] subclass OK");
+
+    using Interface =
+        winrt::NanaZip::Modern::CompressOptionsPage;
+    using Implementation =
+        winrt::NanaZip::Modern::implementation::CompressOptionsPage;
+
+    Interface Window = winrt::make<Implementation>(
+        WindowHandle,
+        Context);
+    SettingsDiagLog(L"[O4] winrt::make OK");
+
+    ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
+
+    // NOTE: EnableWindow(Parent, FALSE) is intentionally disabled for now:
+    // the parent here is the compress dialog's own XAML island window, and
+    // disabling an island window while a second island (this dialog) runs
+    // its message loop on the same thread deadlocks the shared XAML
+    // pipeline (the settings dialog's parent is the plain FM main window,
+    // which is why it never hit this). Real modal semantics can be
+    // restored once the nested-island bring-up is stable.
+
+    if (FAILED(::MileXamlSetXamlContentForContentWindow(
+        WindowHandle,
+        winrt::get_abi(Window))))
+    {
+        ::DestroyWindow(WindowHandle);
+        SettingsDiagLog(L"[O4b] SetXamlContent FAILED");
+        return -1;
+    }
+    SettingsDiagLog(L"[O5] SetXamlContent OK");
+
+    // The content drives the default size (labels, check boxes and dialog
+    // font already applied by the page); the host caps the height at 75%
+    // of the monitor so the dialog never dominates the display (the page
+    // scrolls if the content is taller).
+    winrt::Windows::Foundation::Size Desired(420, 480);
+    {
+        auto Page = winrt::get_self<Implementation>(Window);
+        Desired = Page->PrepareForShow();
+    }
+    SettingsDiagLog(L"[O6] PrepareForShow OK");
+
+    const UINT Dpi = ::GetDpiForWindow(WindowHandle);
+    const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+    const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+    const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+
+    int ClientW = (int)(Desired.Width * Scale + 0.5f);
+    if (ClientW < (int)(380.0f * Scale))
+    {
+        ClientW = (int)(380.0f * Scale);
+    }
+    if (ClientW > 1400) ClientW = 1400;
+
+    RECT ScreenRect = {};
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle, MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                ScreenRect = MonitorInfo.rcMonitor;
+            }
+        }
+    }
+    int ClientH = (int)(Desired.Height * Scale + 0.5f);
+    if (ScreenRect.bottom > ScreenRect.top)
+    {
+        const int MaxClientH =
+            (int)((double)(ScreenRect.bottom - ScreenRect.top) * 0.75 + 0.5);
+        ClientH = (std::min)(ClientH, MaxClientH);
+    }
+    if (ClientH < (int)(320.0f * Scale))
+    {
+        ClientH = (int)(320.0f * Scale);
+    }
+    if (ClientH > 1400) ClientH = 1400;
+
+    RECT WindowRect = { 0, 0, ClientW, ClientH };
+    ::AdjustWindowRectEx(
+        &WindowRect, (DWORD)Style, FALSE, (DWORD)ExStyle);
+    const int WindowW = WindowRect.right - WindowRect.left;
+    const int WindowH = WindowRect.bottom - WindowRect.top;
+
+    // Center on the owner window (fall back to the nearest monitor's work
+    // area).
+    RECT CenterRect = {};
+    if (ParentWindowHandle)
+    {
+        ::GetWindowRect(ParentWindowHandle, &CenterRect);
+    }
+    if (CenterRect.right <= CenterRect.left ||
+        CenterRect.bottom <= CenterRect.top)
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle, MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo = {};
+            MonitorInfo.cbSize = sizeof(MonitorInfo);
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                CenterRect = MonitorInfo.rcWork;
+            }
+        }
+    }
+    const int PosX = CenterRect.left +
+        ((CenterRect.right - CenterRect.left - WindowW) / 2);
+    const int PosY = CenterRect.top +
+        ((CenterRect.bottom - CenterRect.top - WindowH) / 2);
+    RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
+
+    SettingsDiagLog(L"[O7] enter message loop");
+    int Result = ::K7ModernShowXamlWindow(
+        WindowHandle,
+        ClientW,
+        ClientH,
+        ParentWindowHandle,
+        &InitialRect);
+    SettingsDiagLog(L"[O8] message loop exited");
 
     return Result;
 }
