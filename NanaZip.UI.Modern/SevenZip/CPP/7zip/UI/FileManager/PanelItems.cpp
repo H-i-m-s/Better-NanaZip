@@ -46,6 +46,7 @@ static int GetColumnWidth(PROPID propID, VARTYPE /* varType */)
   switch (propID)
   {
     case kpidName: return 160;
+    case kpidType: return 120;
   }
   return 100;
 }

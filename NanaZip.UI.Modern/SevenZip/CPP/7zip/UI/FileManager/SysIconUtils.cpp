@@ -90,6 +90,32 @@ DWORD_PTR GetRealIconIndex(CFSTR path, DWORD attrib, int &iconIndex)
   }
 }
 
+UString GetFileTypeName(const UString &fileName, DWORD attrib)
+{
+  #ifndef _UNICODE
+  if (!g_IsNT)
+  {
+    SHFILEINFO shellInfo;
+    shellInfo.szTypeName[0] = 0;
+    DWORD_PTR res = ::SHGetFileInfoA(GetSystemString(fileName), FILE_ATTRIBUTE_NORMAL | attrib, &shellInfo,
+        sizeof(shellInfo), SHGFI_USEFILEATTRIBUTES | SHGFI_TYPENAME);
+    if (!res)
+      return UString();
+    return GetUnicodeString(shellInfo.szTypeName);
+  }
+  else
+  #endif
+  {
+    SHFILEINFOW shellInfo;
+    shellInfo.szTypeName[0] = 0;
+    DWORD_PTR res = ::MySHGetFileInfoW(fileName, FILE_ATTRIBUTE_NORMAL | attrib, &shellInfo,
+        sizeof(shellInfo), SHGFI_USEFILEATTRIBUTES | SHGFI_TYPENAME);
+    if (!res)
+      return UString();
+    return shellInfo.szTypeName;
+  }
+}
+
 /*
 DWORD_PTR GetRealIconIndex(const UString &fileName, DWORD attrib, int &iconIndex, UString *typeName)
 {

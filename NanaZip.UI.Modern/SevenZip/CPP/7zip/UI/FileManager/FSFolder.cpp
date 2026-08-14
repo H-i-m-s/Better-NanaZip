@@ -62,12 +62,17 @@ int CompareFileNames_ForFolderList(const FChar *s1, const FChar *s2)
 
 namespace NFsFolder {
 
+// Forward declaration: GetProperty below uses the type-description cache
+// which is defined after CompareItems (file layout of this source).
+static UString GetFileTypeDesc(const FString &name, bool isDir);
+
 static const Byte kProps[] =
 {
   kpidName,
   kpidSize,
   kpidMTime,
   kpidCTime,
+  kpidType,
   kpidATime,
  #ifdef FS_SHOW_LINKS_INFO
   kpidChangeTime,
@@ -590,6 +595,13 @@ STDMETHODIMP CFSFolder::GetProperty(UInt32 index, PROPID propID, PROPVARIANT *va
     #endif
 
     case kpidAttrib: prop = (UInt32)fi.Attrib; break;
+    case kpidType:
+    {
+      const UString s = GetFileTypeDesc(fi.Name, fi.IsDir());
+      if (!s.IsEmpty())
+        prop = s;
+      break;
+    }
     case kpidCTime: prop = fi.CTime; break;
     case kpidATime: prop = fi.ATime; break;
     case kpidMTime: prop = fi.MTime; break;
@@ -680,6 +692,52 @@ static inline CFSTR GetExtensionPtr(const FString &name)
   return name.Ptr((dotPos < 0) ? name.Len() : dotPos);
 }
 
+// Extension -> shell type description cache (the same description is valid
+// for every file with the same extension; folders resolve once). The shell
+// lookup (SHGetFileInfo with SHGFI_TYPENAME) is slow, so it must never run
+// per file on a directory listing.
+struct CTypeDescPair
+{
+  UString Ext; // lowercase extension, without the dot; L"" for folders
+  UString Desc;
+};
+
+static CObjectVector<CTypeDescPair> g_TypeDescCache;
+
+static UString GetFileTypeDesc(const FString &name, bool isDir)
+{
+  if (isDir)
+  {
+    for (unsigned i = 0; i < g_TypeDescCache.Size(); i++)
+      if (g_TypeDescCache[i].Ext.IsEmpty())
+        return g_TypeDescCache[i].Desc;
+    UString desc = GetFileTypeName(UString(L"folder"), FILE_ATTRIBUTE_DIRECTORY);
+    if (desc.IsEmpty())
+      desc = L"Folder";
+    CTypeDescPair p;
+    p.Desc = desc;
+    g_TypeDescCache.Add(p);
+    return desc;
+  }
+  CFSTR extPtr = GetExtensionPtr(name);
+  if (*extPtr == 0)
+    return UString();
+  UString ext = fs2us(extPtr);
+  for (unsigned i = 0; i < g_TypeDescCache.Size(); i++)
+    if (MyStringCompareNoCase(g_TypeDescCache[i].Ext, ext) == 0)
+      return g_TypeDescCache[i].Desc;
+  // SHGFI_USEFILEATTRIBUTES matches the registered extension; a synthetic
+  // file name ("a.txt") is enough, no disk access happens.
+  UString desc = GetFileTypeName(UString(L"a") + ext, FILE_ATTRIBUTE_NORMAL);
+  if (desc.IsEmpty())
+    desc = ext;
+  CTypeDescPair p;
+  p.Ext = ext;
+  p.Desc = desc;
+  g_TypeDescCache.Add(p);
+  return desc;
+}
+
 STDMETHODIMP_(Int32) CFSFolder::CompareItems(UInt32 index1, UInt32 index2, PROPID propID, Int32 /* propIsRaw */)
 {
   /*
@@ -712,6 +770,12 @@ STDMETHODIMP_(Int32) CFSFolder::CompareItems(UInt32 index1, UInt32 index2, PROPI
           /* ss1 ? ss1->Size : */ fi1.Size,
           /* ss2 ? ss2->Size : */ fi2.Size);
     case kpidAttrib: return MyCompare(fi1.Attrib, fi2.Attrib);
+    case kpidType:
+    {
+      const UString s1 = GetFileTypeDesc(fi1.Name, fi1.IsDir());
+      const UString s2 = GetFileTypeDesc(fi2.Name, fi2.IsDir());
+      return MyStringCompareNoCase(s1, s2);
+    }
     case kpidCTime: return CompareFileTime(&fi1.CTime, &fi2.CTime);
     case kpidATime: return CompareFileTime(&fi1.ATime, &fi2.ATime);
     case kpidMTime: return CompareFileTime(&fi1.MTime, &fi2.MTime);
@@ -922,7 +986,20 @@ STDMETHODIMP CFSFolder::GetNumberOfProperties(UInt32 *numProperties)
   return S_OK;
 }
 
-STDMETHODIMP CFSFolder::GetPropertyInfo IMP_IFolderFolder_GetProp(kProps)
+STDMETHODIMP CFSFolder::GetPropertyInfo(UInt32 index, BSTR *name, PROPID *propID, VARTYPE *varType)
+{
+  if (index >= ARRAY_SIZE(kProps))
+    return E_INVALIDARG;
+  *propID = kProps[index];
+  *varType = k7z_PROPID_To_VARTYPE[(unsigned)*propID];
+  *name = 0;
+  // Column title fallback for kpidType: the language file (IDS_PROP_TYPE =
+  // 1020) wins when present; otherwise the English "Type" is shown instead
+  // of the raw numeric prop ID.
+  if (*propID == kpidType)
+    *name = ::SysAllocString(L"Type");
+  return S_OK;
+}
 
 STDMETHODIMP CFSFolder::GetFolderProperty(PROPID propID, PROPVARIANT *value)
 {

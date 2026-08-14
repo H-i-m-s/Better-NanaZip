@@ -50,6 +50,12 @@ public:
 DWORD_PTR GetRealIconIndex(CFSTR path, DWORD attrib, int &iconIndex);
 int GetIconIndexForCSIDL(int csidl);
 
+// File-type description from the shell (e.g. "Text Document"), localized by
+// the system. Works on the file name plus attributes (SHGFI_USEFILEATTRIBUTES),
+// so it never touches the disk. Returns an empty string when the shell has no
+// description for the extension (caller falls back to the extension itself).
+UString GetFileTypeName(const UString &fileName, DWORD attrib);
+
 inline HIMAGELIST GetSysImageList(bool smallIcons)
 {
   SHFILEINFO shellInfo;
