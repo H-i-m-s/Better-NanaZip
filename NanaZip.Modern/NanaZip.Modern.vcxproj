@@ -96,6 +96,9 @@
     <Page Include="PasswordPage.xaml">
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="ComboPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="CompressPage.xaml">
       <SubType>Designer</SubType>
     </Page>
@@ -151,6 +154,9 @@
     </Midl>
     <Midl Include="PasswordPage.idl">
       <DependentUpon>PasswordPage.xaml</DependentUpon>
+    </Midl>
+    <Midl Include="ComboPage.idl">
+      <DependentUpon>ComboPage.xaml</DependentUpon>
     </Midl>
     <Midl Include="CompressPage.idl">
       <DependentUpon>CompressPage.xaml</DependentUpon>
@@ -216,6 +222,9 @@
     <ClInclude Include="PasswordPage.h">
       <DependentUpon>PasswordPage.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="ComboPage.h">
+      <DependentUpon>ComboPage.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="CompressPage.h">
       <DependentUpon>CompressPage.xaml</DependentUpon>
     </ClInclude>
@@ -278,6 +287,9 @@
     </ClCompile>
     <ClCompile Include="PasswordPage.cpp">
       <DependentUpon>PasswordPage.xaml</DependentUpon>
+    </ClCompile>
+    <ClCompile Include="ComboPage.cpp">
+      <DependentUpon>ComboPage.xaml</DependentUpon>
     </ClCompile>
     <ClCompile Include="CompressPage.cpp">
       <DependentUpon>CompressPage.xaml</DependentUpon>

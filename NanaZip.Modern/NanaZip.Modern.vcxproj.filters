@@ -15,6 +15,7 @@
     <ClCompile Include="OverwritePage.cpp" />
     <ClCompile Include="SplitPage.cpp" />
     <ClCompile Include="PasswordPage.cpp" />
+    <ClCompile Include="ComboPage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -24,6 +25,7 @@
     <ClInclude Include="OverwritePage.h" />
     <ClInclude Include="SplitPage.h" />
     <ClInclude Include="PasswordPage.h" />
+    <ClInclude Include="ComboPage.h" />
     <ClInclude Include="ControlMacros.h" />
   </ItemGroup>
   <ItemGroup>
@@ -43,6 +45,7 @@
     <Page Include="OverwritePage.xaml" />
     <Page Include="SplitPage.xaml" />
     <Page Include="PasswordPage.xaml" />
+    <Page Include="ComboPage.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Strings">
@@ -1059,5 +1062,6 @@
     <Midl Include="OverwritePage.idl" />
     <Midl Include="SplitPage.idl" />
     <Midl Include="PasswordPage.idl" />
+    <Midl Include="ComboPage.idl" />
   </ItemGroup>
 </Project>

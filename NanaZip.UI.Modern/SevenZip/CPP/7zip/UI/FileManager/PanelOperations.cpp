@@ -14,6 +14,7 @@
 // **************** SSS Modification End ****************
 
 #include "ComboDialog.h"
+#include "NanaZip.Modern.h"
 
 #include "FSFolder.h"
 #include "FormatUtils.h"
@@ -442,6 +443,44 @@ void CPanel::CreateFile()
   CDisableTimerProcessing disableTimerProcessing2(*this);
   CSelectedState state;
   SaveSelectedState(state);
+  UString newName;
+#ifdef NANAZIP_MODERN
+  K7_COMBO_DIALOG_CONTEXT Context = {};
+  {
+    // Dialog font size from the registry (mirrors the ExtractDialog font).
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&pt), &size);
+      ::RegCloseKey(key);
+    }
+    Context.FontSizeDialog = pt;
+  }
+  {
+    UString title, staticText, value;
+    LangString(IDS_CREATE_FILE, title);
+    LangString(IDS_CREATE_FILE_NAME, staticText);
+    LangString(IDS_CREATE_FILE_DEFAULT_NAME, value);
+    // Fixed-size ABI buffers: truncate before writing so an over-long
+    // string can never trigger wcscpy_s failure.
+    if (title.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      title.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (staticText.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      staticText.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (value.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      value.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    wcscpy_s(Context.Title, title.Ptr());
+    wcscpy_s(Context.Static, staticText.Ptr());
+    wcscpy_s(Context.Value, value.Ptr());
+  }
+  if (K7ModernShowComboDialog(GetParent(), &Context) < 0 || !Context.OK)
+    return;
+  newName = Context.Value;
+#else
   CComboDialog dlg;
   LangString(IDS_CREATE_FILE, dlg.Title);
   LangString(IDS_CREATE_FILE_NAME, dlg.Static);
@@ -450,9 +489,10 @@ void CPanel::CreateFile()
   if (dlg.Create(GetParent()) != IDOK)
     return;
 
-  CDisableNotify disableNotify(*this);
+  newName = dlg.Value;
+#endif
 
-  UString newName = dlg.Value;
+  CDisableNotify disableNotify(*this);
 
   if (IsFSFolder())
   {
@@ -518,6 +558,45 @@ void CPanel::ChangeComment()
       return;
   }
   UString name = GetItemRelPath2(realIndex);
+  UString newComment;
+#ifdef NANAZIP_MODERN
+  K7_COMBO_DIALOG_CONTEXT Context = {};
+  {
+    // Dialog font size from the registry (mirrors the ExtractDialog font).
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&pt), &size);
+      ::RegCloseKey(key);
+    }
+    Context.FontSizeDialog = pt;
+  }
+  {
+    UString title = name;
+    title += " : ";
+    AddLangString(title, IDS_COMMENT);
+    UString staticText;
+    LangString(IDS_COMMENT2, staticText);
+    // Fixed-size ABI buffers: truncate before writing so an over-long
+    // string can never trigger wcscpy_s failure.
+    if (title.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      title.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (staticText.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      staticText.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (comment.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      comment.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    wcscpy_s(Context.Title, title.Ptr());
+    wcscpy_s(Context.Static, staticText.Ptr());
+    wcscpy_s(Context.Value, comment.Ptr());
+  }
+  if (K7ModernShowComboDialog(GetParent(), &Context) < 0 || !Context.OK)
+    return;
+  newComment = Context.Value;
+#else
   CComboDialog dlg;
   dlg.Title = name;
   dlg.Title += " : ";
@@ -526,7 +605,9 @@ void CPanel::ChangeComment()
   LangString(IDS_COMMENT2, dlg.Static);
   if (dlg.Create(GetParent()) != IDOK)
     return;
-  NCOM::CPropVariant propVariant (dlg.Value);
+  newComment = dlg.Value;
+#endif
+  NCOM::CPropVariant propVariant (newComment);
 
   CDisableNotify disableNotify(*this);
   HRESULT result = _folderOperations->SetProperty(realIndex, kpidComment, &propVariant, NULL);

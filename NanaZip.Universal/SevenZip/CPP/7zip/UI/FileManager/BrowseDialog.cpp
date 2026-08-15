@@ -46,6 +46,7 @@
 #endif // USE_MY_BROWSE_DIALOG
 
 #include "ComboDialog.h"
+#include "NanaZip.Modern.h"
 #include "LangUtils.h"
 
 #include "resource.h"
@@ -1124,6 +1125,44 @@ bool CorrectFsPath(const UString & /* relBase */, const UString &path, UString &
 bool Dlg_CreateFolder(HWND wnd, UString &destName)
 {
   destName.Empty();
+#ifdef NANAZIP_MODERN
+  K7_COMBO_DIALOG_CONTEXT Context = {};
+  {
+    // Dialog font size from the registry (mirrors the ExtractDialog font).
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&pt), &size);
+      ::RegCloseKey(key);
+    }
+    Context.FontSizeDialog = pt;
+  }
+  {
+    UString title, staticText, value;
+    LangString(IDS_CREATE_FOLDER, title);
+    LangString(IDS_CREATE_FOLDER_NAME, staticText);
+    LangString(IDS_CREATE_FOLDER_DEFAULT_NAME, value);
+    // Fixed-size ABI buffers: truncate before writing so an over-long
+    // string can never trigger wcscpy_s failure.
+    if (title.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      title.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (staticText.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      staticText.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (value.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      value.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    wcscpy_s(Context.Title, title.Ptr());
+    wcscpy_s(Context.Static, staticText.Ptr());
+    wcscpy_s(Context.Value, value.Ptr());
+  }
+  if (K7ModernShowComboDialog(wnd, &Context) < 0 || !Context.OK)
+    return false;
+  destName = Context.Value;
+  return true;
+#else
   CComboDialog dlg;
   LangString(IDS_CREATE_FOLDER, dlg.Title);
   LangString(IDS_CREATE_FOLDER_NAME, dlg.Static);
@@ -1132,4 +1171,5 @@ bool Dlg_CreateFolder(HWND wnd, UString &destName)
     return false;
   destName = dlg.Value;
   return true;
+#endif
 }

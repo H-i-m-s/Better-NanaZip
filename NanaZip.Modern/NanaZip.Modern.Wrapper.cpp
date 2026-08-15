@@ -486,3 +486,29 @@ EXTERN_C INT WINAPI K7ModernShowPasswordDialog(
 
     return -1;
 }
+
+EXTERN_C INT WINAPI K7ModernShowComboDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_COMBO_DIALOG_CONTEXT Context)
+{
+    using ProcType = decltype(::K7ModernShowComboDialog)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowComboDialog");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(ParentWindowHandle, Context);
+    }
+
+    return -1;
+}

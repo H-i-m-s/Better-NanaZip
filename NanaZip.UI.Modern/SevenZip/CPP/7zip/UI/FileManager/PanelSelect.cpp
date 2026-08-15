@@ -8,6 +8,7 @@
 #include "../../../Common/Wildcard.h"
 
 #include "ComboDialog.h"
+#include "NanaZip.Modern.h"
 #include "LangUtils.h"
 #include "Panel.h"
 
@@ -153,13 +154,49 @@ void CPanel::UpdateSelection()
 
 void CPanel::SelectSpec(bool selectMode)
 {
+  UString mask;
+#ifdef NANAZIP_MODERN
+  K7_COMBO_DIALOG_CONTEXT Context = {};
+  {
+    // Dialog font size from the registry (mirrors the ExtractDialog font).
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&pt), &size);
+      ::RegCloseKey(key);
+    }
+    Context.FontSizeDialog = pt;
+  }
+  {
+    UString title, staticText;
+    LangString(selectMode ? IDS_SELECT : IDS_DESELECT, title);
+    LangString(IDS_SELECT_MASK, staticText);
+    // Fixed-size ABI buffers: truncate before writing so an over-long
+    // string can never trigger wcscpy_s failure.
+    if (title.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      title.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    if (staticText.Len() >= K7_COMBO_MAX_TEXT_LENGTH)
+      staticText.DeleteFrom(K7_COMBO_MAX_TEXT_LENGTH - 1);
+    wcscpy_s(Context.Title, title.Ptr());
+    wcscpy_s(Context.Static, staticText.Ptr());
+    wcscpy_s(Context.Value, L"*");
+  }
+  if (K7ModernShowComboDialog(GetParent(), &Context) < 0 || !Context.OK)
+    return;
+  mask = Context.Value;
+#else
   CComboDialog dlg;
   LangString(selectMode ? IDS_SELECT : IDS_DESELECT, dlg.Title );
   LangString(IDS_SELECT_MASK, dlg.Static);
   dlg.Value = '*';
   if (dlg.Create(GetParent()) != IDOK)
     return;
-  const UString &mask = dlg.Value;
+  mask = dlg.Value;
+#endif
   FOR_VECTOR (i, _selectedStatusVector)
     if (DoesWildcardMatchName(mask, GetItemName(i)))
        _selectedStatusVector[i] = selectMode;
