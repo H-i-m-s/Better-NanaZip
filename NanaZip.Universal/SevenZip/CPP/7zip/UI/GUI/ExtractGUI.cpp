@@ -646,10 +646,29 @@ HRESULT ExtractGUI(
         ctx.OpenFolderVal = dialog.OpenFolder.Val;
         ctx.OpenFolderDef2 = xInfo.OpenFolder.Def;
         ctx.OpenFolderVal2 = xInfo.OpenFolder.Val;
-        ctx.ShowPasswordDef = FALSE;
-        ctx.ShowPasswordVal = xInfo.ShowPassword.Val;
-        ctx.ShowPasswordDef2 = FALSE;
-        ctx.ShowPasswordVal2 = xInfo.ShowPassword.Val;
+        // The "auto show password" setting (HKCU\Software\NanaZip\FM\AutoShowPassword)
+        // is the parent of the extract dialog's "show password" check box:
+        // when it is on, the dialog checks the box by default; otherwise the
+        // remembered value (xInfo.ShowPassword.Val) is used. The GetBoolsVal
+        // rule is pair1.Def ? pair1.Val : (pair2.Def ? pair2.Val : pair1.Val),
+        // so pair1 = (autoShow, TRUE) and pair2 = (TRUE, remembered) yields
+        // autoShow ? TRUE : remembered.
+        {
+          DWORD autoShow = 0;
+          HKEY key = nullptr;
+          if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", 0,
+              KEY_READ, &key) == ERROR_SUCCESS)
+          {
+            DWORD size = sizeof(autoShow);
+            ::RegQueryValueExW(key, L"AutoShowPassword", nullptr, nullptr,
+                reinterpret_cast<LPBYTE>(&autoShow), &size);
+            ::RegCloseKey(key);
+          }
+          ctx.ShowPasswordDef = (autoShow != 0) ? TRUE : FALSE;
+          ctx.ShowPasswordVal = TRUE;
+          ctx.ShowPasswordDef2 = TRUE;
+          ctx.ShowPasswordVal2 = xInfo.ShowPassword.Val ? TRUE : FALSE;
+        }
         ctx.SplitDestDef = FALSE;
         ctx.SplitDestVal = xInfo.SplitDest.Val;
         ctx.SplitDestDef2 = FALSE;

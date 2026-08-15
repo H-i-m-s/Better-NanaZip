@@ -903,4 +903,45 @@ EXTERN_C INT WINAPI K7ModernShowSplitDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_SPLIT_DIALOG_CONTEXT Context);
 
+/**
+ * @brief The password dialog context structure. The caller fills it with
+ *        the initial password and the show-password state before calling
+ *        K7ModernShowPasswordDialog, and the dialog writes the user's
+ *        input back into it.
+ */
+#define K7_PASSWORD_MAX_PASSWORD_LENGTH 512
+
+typedef struct _K7_PASSWORD_DIALOG_CONTEXT
+{
+    // --- Input ---
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32 FontSizeDialog;
+    // The initial password (may be empty). The caller truncates to
+    // K7_PASSWORD_MAX_PASSWORD_LENGTH - 1 before writing.
+    WCHAR Password[K7_PASSWORD_MAX_PASSWORD_LENGTH];
+    // The initial show-password state.
+    BOOLEAN ShowPassword;
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content and read by the window subclass in
+    // WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
+
+    // --- Output ---
+    // True when the user pressed OK; false otherwise (cancel / X close).
+    BOOLEAN OK;
+} K7_PASSWORD_DIALOG_CONTEXT, *PK7_PASSWORD_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the password dialog.
+ * @param ParentWindowHandle The owner window, or nullptr.
+ * @param Context The caller-owned snapshot and result context. The caller
+ *                must keep it valid until this function returns.
+ * @return The XAML message-loop result, or -1 when Modern is unavailable.
+ */
+EXTERN_C INT WINAPI K7ModernShowPasswordDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_PASSWORD_DIALOG_CONTEXT Context);
+
 #endif // !NANAZIP_MODERN_EXPERIENCE

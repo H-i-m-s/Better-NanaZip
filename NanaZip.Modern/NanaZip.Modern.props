@@ -17,6 +17,16 @@
       <ClCompile Include="$(MSBuildThisFileDirectory)NanaZip.Modern.Wrapper.cpp" />
     </ItemGroup>
   </Target>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- Marks the GUI builds that link the Modern wrapper (FileManager and
+           Universal): the 7-Zip side uses this to route the password dialog
+           to the XAML implementation instead of the Win32 CPasswordDialog.
+           SFX / Classic do not import this props file, so they keep the
+           Win32 dialog. -->
+      <PreprocessorDefinitions>NANAZIP_MODERN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)NanaZip.Modern.vcxproj">
       <Project>{1AB11057-1F48-44D2-A913-C945BFC1AA93}</Project>

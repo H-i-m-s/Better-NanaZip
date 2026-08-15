@@ -769,6 +769,61 @@ STDMETHODIMP CExtractCallbackImp::CryptoGetTextPassword(BSTR *password)
   PasswordWasAsked = true;
   if (!PasswordIsDefined)
   {
+#ifdef NANAZIP_MODERN
+    K7_PASSWORD_DIALOG_CONTEXT Context = {};
+    {
+      // Dialog font size from the registry (mirrors the ExtractDialog font).
+      DWORD pt = 0;
+      HKEY key = nullptr;
+      if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+          KEY_READ, &key) == ERROR_SUCCESS)
+      {
+        DWORD size = sizeof(pt);
+        ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+            reinterpret_cast<LPBYTE>(&pt), &size);
+        ::RegCloseKey(key);
+      }
+      Context.FontSizeDialog = pt;
+    }
+    #ifndef _SFX
+    // The "auto show password" setting (HKCU\\Software\\NanaZip\\FM\\AutoShowPassword)
+    // is the parent of this box: when it is on, the box is checked by
+    // default; otherwise the remembered value is used. The dialog never
+    // writes back to the setting.
+    bool showPassword = NExtract::Read_ShowPassword();
+    {
+      DWORD autoShow = 0;
+      HKEY key = nullptr;
+      if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", 0,
+          KEY_READ, &key) == ERROR_SUCCESS)
+      {
+        DWORD size = sizeof(autoShow);
+        ::RegQueryValueExW(key, L"AutoShowPassword", nullptr, nullptr,
+            reinterpret_cast<LPBYTE>(&autoShow), &size);
+        ::RegCloseKey(key);
+      }
+      Context.ShowPassword = (autoShow != 0 || showPassword) ? TRUE : FALSE;
+    }
+    #endif
+    {
+      // Fixed-size ABI buffer: truncate before writing so an over-long
+      // password can never trigger wcscpy_s failure.
+      UString pwd = Password;
+      if (pwd.Len() >= K7_PASSWORD_MAX_PASSWORD_LENGTH)
+        pwd.DeleteFrom(K7_PASSWORD_MAX_PASSWORD_LENGTH - 1);
+      wcscpy_s(Context.Password, pwd.Ptr());
+    }
+    ProgressDialog->WaitCreating();
+    if (K7ModernShowPasswordDialog(*ProgressDialog, &Context) < 0 ||
+        !Context.OK)
+      return E_ABORT;
+    Password = Context.Password;
+    PasswordIsDefined = true;
+    #ifndef _SFX
+    if ((Context.ShowPassword != FALSE) != showPassword)
+      NExtract::Save_ShowPassword(Context.ShowPassword);
+    #endif
+#else
     CPasswordDialog dialog;
     #ifndef _SFX
     bool showPassword = NExtract::Read_ShowPassword();
@@ -783,6 +838,7 @@ STDMETHODIMP CExtractCallbackImp::CryptoGetTextPassword(BSTR *password)
     if (dialog.ShowPassword != showPassword)
       NExtract::Save_ShowPassword(dialog.ShowPassword);
     #endif
+#endif
   }
   return StringToBstr(Password, password);
 }
