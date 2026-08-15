@@ -839,4 +839,68 @@ EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_COMPRESS_OPTIONS_DIALOG_CONTEXT Context);
 
+/**
+ * @brief The split dialog command callback. Invoked on the XAML UI thread
+ *        while the split dialog is open. Returning FALSE rejects the
+ *        command and the page keeps the dialog open.
+ */
+typedef BOOLEAN (WINAPI *K7_SPLIT_DIALOG_COMMAND_CALLBACK)(
+    _In_ LPVOID CallbackContext,
+    _In_ UINT32 Command,
+    _In_ INT64 Value,
+    _In_opt_ LPCWSTR SemanticText);
+
+// Validate the volume-size text. SemanticText carries the raw text and the
+// callback writes the parsed sizes back into the context; it returns FALSE
+// when the text cannot be parsed or yields no sizes.
+#define K7_SPLIT_DIALOG_COMMAND_VALIDATE_VOLUME 0u
+
+#define K7_SPLIT_MAX_VOLUME_SIZES 16
+
+/**
+ * @brief The split dialog context structure. The caller fills it with the
+ *        current values before calling K7ModernShowSplitDialog, and the
+ *        dialog writes the user-modified values back into it.
+ */
+typedef struct _K7_SPLIT_DIALOG_CONTEXT
+{
+    // --- Input ---
+    // The source file name, appended to the dialog title.
+    WCHAR FileName[MAX_PATH];
+    // The initial output directory.
+    WCHAR DirPath[MAX_PATH];
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32 FontSizeDialog;
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content and read by the window subclass in
+    // WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
+
+    // --- Command ---
+    K7_SPLIT_DIALOG_COMMAND_CALLBACK CommandCallback;
+    LPVOID CallbackContext;
+
+    // --- Output ---
+    // True when the user pressed OK; false otherwise (cancel / X close).
+    BOOLEAN OK;
+    // The final output directory.
+    WCHAR OutDirPath[MAX_PATH];
+    // The parsed volume sizes written by the command callback.
+    UINT64 VolumeSizes[K7_SPLIT_MAX_VOLUME_SIZES];
+    UINT32 VolumeSizesCount;
+} K7_SPLIT_DIALOG_CONTEXT, *PK7_SPLIT_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the split dialog.
+ * @param ParentWindowHandle The owner window, or nullptr.
+ * @param Context The caller-owned snapshot and result context. The caller
+ *                must keep it valid until this function returns.
+ * @return The XAML message-loop result, or -1 when Modern is unavailable.
+ */
+EXTERN_C INT WINAPI K7ModernShowSplitDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_SPLIT_DIALOG_CONTEXT Context);
+
 #endif // !NANAZIP_MODERN_EXPERIENCE

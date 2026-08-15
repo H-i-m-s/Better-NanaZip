@@ -13,6 +13,7 @@
     <ClCompile Include="AddressBar.cpp" />
     <ClCompile Include="StatusBar.cpp" />
     <ClCompile Include="OverwritePage.cpp" />
+    <ClCompile Include="SplitPage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -20,6 +21,7 @@
     <ClInclude Include="AddressBar.h" />
     <ClInclude Include="StatusBar.h" />
     <ClInclude Include="OverwritePage.h" />
+    <ClInclude Include="SplitPage.h" />
     <ClInclude Include="ControlMacros.h" />
   </ItemGroup>
   <ItemGroup>
@@ -37,6 +39,7 @@
     <Page Include="ProgressPage.xaml" />
     <Page Include="CopyLocationPage.xaml" />
     <Page Include="OverwritePage.xaml" />
+    <Page Include="SplitPage.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Strings">
@@ -1051,5 +1054,6 @@
     <Midl Include="AddressBar.idl" />
     <Midl Include="StatusBar.idl" />
     <Midl Include="OverwritePage.idl" />
+    <Midl Include="SplitPage.idl" />
   </ItemGroup>
 </Project>

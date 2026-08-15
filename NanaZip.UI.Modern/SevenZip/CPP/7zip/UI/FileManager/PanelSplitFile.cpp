@@ -15,6 +15,7 @@
 #include "CopyDialog.h"
 #include "FormatUtils.h"
 #include "LangUtils.h"
+#include "NanaZip.Modern.h"
 #include "SplitDialog.h"
 #include "SplitUtils.h"
 
@@ -232,6 +233,52 @@ HRESULT CThreadSplit::ProcessVirt()
 }
 
 
+// Volume-size validation for the XAML split dialog. The parsing rule lives
+// here on the 7-Zip side (ParseVolumeSizes); the XAML page only forwards the
+// raw text through the command callback and keeps the dialog open when this
+// rejects it (mirrors the Win32 OnOK behavior of staying on the dialog).
+static BOOLEAN WINAPI SplitVolumeCommandCallback(
+    _In_ LPVOID CallbackContext,
+    _In_ UINT32 Command,
+    _In_ INT64 Value,
+    _In_opt_ LPCWSTR SemanticText)
+{
+    UNREFERENCED_PARAMETER(Value);
+    if (Command != K7_SPLIT_DIALOG_COMMAND_VALIDATE_VOLUME)
+    {
+        return FALSE;
+    }
+    if (!SemanticText || !CallbackContext)
+    {
+        return FALSE;
+    }
+
+    PK7_SPLIT_DIALOG_CONTEXT Context =
+        static_cast<PK7_SPLIT_DIALOG_CONTEXT>(CallbackContext);
+
+    CRecordVector<UInt64> Sizes;
+    UString Text(SemanticText);
+    Text.Trim();
+    if (!ParseVolumeSizes(Text, Sizes) || Sizes.Size() == 0)
+    {
+        return FALSE;
+    }
+
+    // Fixed-size ABI buffer: cap the count before writing.
+    UINT32 Count = static_cast<UINT32>(Sizes.Size());
+    if (Count > K7_SPLIT_MAX_VOLUME_SIZES)
+    {
+        Count = K7_SPLIT_MAX_VOLUME_SIZES;
+    }
+    for (UINT32 i = 0; i < Count; i++)
+    {
+        Context->VolumeSizes[i] = Sizes[i];
+    }
+    Context->VolumeSizesCount = Count;
+    return TRUE;
+}
+
+
 void CApp::Split()
 {
   int srcPanelIndex = GetFocusedPanelIndex();
@@ -265,11 +312,48 @@ void CApp::Split()
   if (NumPanels > 1)
     if (destPanel.IsFSFolder())
       path = destPanel.GetFsPath();
-  CSplitDialog splitDialog;
-  splitDialog.FilePath = srcPanel.GetItemRelPath(index);
-  splitDialog.Path = path;
-  if (splitDialog.Create(srcPanel.GetParent()) != IDOK)
+
+  // XAML split dialog: the 7-Zip side owns the path normalization, the
+  // volume-size parsing rule and the business checks below; the page only
+  // collects the path and the raw volume text and forwards it through the
+  // command callback. On failure (Modern unavailable, dialog rejected) the
+  // call returns without falling back to the Win32 dialog.
+  K7_SPLIT_DIALOG_CONTEXT splitContext = {};
+  splitContext.CommandCallback = SplitVolumeCommandCallback;
+  splitContext.CallbackContext = &splitContext;
+  {
+    UString relPath = srcPanel.GetItemRelPath(index);
+    if (relPath.Len() >= MAX_PATH)
+      relPath.DeleteFrom(MAX_PATH - 1);
+    wcscpy_s(splitContext.FileName, relPath.Ptr());
+  }
+  {
+    if (path.Len() >= MAX_PATH)
+      path.DeleteFrom(MAX_PATH - 1);
+    wcscpy_s(splitContext.DirPath, path.Ptr());
+  }
+  // Dialog font size from the registry (mirrors the ExtractDialog font).
+  {
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&pt), &size);
+      ::RegCloseKey(key);
+    }
+    splitContext.FontSizeDialog = pt;
+  }
+  if (K7ModernShowSplitDialog(srcPanel.GetParent(), &splitContext) < 0)
     return;
+  if (!splitContext.OK)
+    return;
+  path = splitContext.OutDirPath;
+  CRecordVector<UInt64> volumeSizes;
+  for (UINT32 i = 0; i < splitContext.VolumeSizesCount; i++)
+    volumeSizes.Add(splitContext.VolumeSizes[i]);
 
   NFind::CFileInfo fileInfo;
   if (!fileInfo.Find(us2fs(srcPath + itemName)))
@@ -277,12 +361,12 @@ void CApp::Split()
     srcPanel.MessageBox_Error(L"Cannot find file");
     return;
   }
-  if (fileInfo.Size <= splitDialog.VolumeSizes.Front())
+  if (fileInfo.Size <= volumeSizes.Front())
   {
     srcPanel.MessageBox_Error_LangID(IDS_SPLIT_VOL_MUST_BE_SMALLER);
     return;
   }
-  const UInt64 numVolumes = GetNumberOfVolumes(fileInfo.Size, splitDialog.VolumeSizes);
+  const UInt64 numVolumes = GetNumberOfVolumes(fileInfo.Size, volumeSizes);
   if (numVolumes >= 100)
   {
     wchar_t s[32];
@@ -293,7 +377,6 @@ void CApp::Split()
       return;
   }
 
-  path = splitDialog.Path;
   NName::NormalizeDirPathPrefix(path);
   if (!CreateComplexDir(us2fs(path)))
   {
@@ -322,7 +405,7 @@ void CApp::Split()
 
   spliter.FilePath = us2fs(srcPath + itemName);
   spliter.VolBasePath = us2fs(path + srcPanel.GetItemName_for_Copy(index));
-  spliter.VolumeSizes = splitDialog.VolumeSizes;
+  spliter.VolumeSizes = volumeSizes;
 
   // if (splitDialog.VolumeSizes.Size() == 0) return;
 

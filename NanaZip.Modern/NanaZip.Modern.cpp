@@ -27,6 +27,7 @@
 #include "CopyLocationPage.h"
 #include "SettingsPage.h"
 #include "CompressOptionsPage.h"
+#include "SplitPage.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -1922,6 +1923,184 @@ EXTERN_C INT WINAPI K7ModernShowCompressOptionsDialog(
         ParentWindowHandle,
         &InitialRect);
     SettingsDiagLog(L"[O8] message loop exited");
+
+    return Result;
+}
+
+// Split-dialog host function.
+EXTERN_C INT WINAPI K7ModernShowSplitDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_SPLIT_DIALOG_CONTEXT Context)
+{
+    if (!Context)
+    {
+        return -1;
+    }
+
+    HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
+    if (!WindowHandle)
+    {
+        return -1;
+    }
+
+    using Interface =
+        winrt::NanaZip::Modern::SplitPage;
+    using Implementation =
+        winrt::NanaZip::Modern::implementation::SplitPage;
+
+    Interface Window = winrt::make<Implementation>(
+        WindowHandle,
+        Context);
+
+    ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
+
+    // The split dialog adapts its size to the content, but the user should
+    // still be able to enlarge it (e.g. with a larger dialog font size), so
+    // give it a resize border and the maximize/minimize box.
+    {
+        LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+        Style |= WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
+        ::SetWindowLongPtrW(WindowHandle, GWL_STYLE, Style);
+    }
+
+    // Enforce a minimum window size so that dragging the border can never
+    // shrink the dialog below its measured content (which would clip the
+    // controls). The XAML page writes MinTrackW/MinTrackH during
+    // PrepareForShow; this subclass reads them in WM_GETMINMAXINFO.
+    if (!::SetWindowSubclass(
+        WindowHandle,
+        [](
+            _In_ HWND hWnd,
+            _In_ UINT uMsg,
+            _In_ WPARAM wParam,
+            _In_ LPARAM lParam,
+            _In_ UINT_PTR uIdSubclass,
+            _In_ DWORD_PTR dwRefData) -> LRESULT
+    {
+        UNREFERENCED_PARAMETER(wParam);
+        UNREFERENCED_PARAMETER(uIdSubclass);
+        if (uMsg == WM_GETMINMAXINFO)
+        {
+            const LONG *MinTrack = reinterpret_cast<const LONG *>(dwRefData);
+            if (MinTrack && MinTrack[0] > 0 && MinTrack[1] > 0)
+            {
+                MINMAXINFO *MinMaxInfo =
+                    reinterpret_cast<MINMAXINFO *>(lParam);
+                MinMaxInfo->ptMinTrackSize.x = MinTrack[0];
+                MinMaxInfo->ptMinTrackSize.y = MinTrack[1];
+                return 0;
+            }
+        }
+        else if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
+        {
+            // Esc closes the dialog like the X button (a cancel: the page's
+            // OnUnloaded clears the OK flag).
+            ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
+        return ::DefSubclassProc(
+            hWnd,
+            uMsg,
+            wParam,
+            lParam);
+    },
+        1,
+        reinterpret_cast<DWORD_PTR>(&Context->MinTrackW)))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+
+    if (FAILED(::MileXamlSetXamlContentForContentWindow(
+        WindowHandle,
+        winrt::get_abi(Window))))
+    {
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+
+    if (ParentWindowHandle)
+    {
+        ::EnableWindow(ParentWindowHandle, FALSE);
+    }
+
+    // Apply the dialog font and measure the content before the window is
+    // shown, so the initial size is final (no visible resize after show).
+    winrt::Windows::Foundation::Size Desired(360, 140);
+    {
+        auto Self = winrt::get_self<Implementation>(Window);
+        Desired = Self->PrepareForShow();
+    }
+
+    const UINT Dpi = ::GetDpiForWindow(WindowHandle);
+    const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+
+    // Default size: content plus a tiny margin. The content rows are Auto,
+    // so Desired already is the full height; keeping the window close to the
+    // content avoids empty space both below the volume row and below the
+    // buttons (the Grid is top-aligned when the window is taller).
+    int ClientW = (int)((Desired.Width + 48.0f) * Scale + 0.5f);
+    int ClientH = (int)((Desired.Height + 4.0f) * Scale + 0.5f);
+    if (ClientW < 400) ClientW = 400;
+    if (ClientH < 110) ClientH = 110;
+
+    // Never exceed the work area (minus a small margin) even for very long
+    // paths, so the dialog cannot open off-screen; 1400 is a hard backstop.
+    RECT ParentRect = {};
+    if (ParentWindowHandle)
+    {
+        ::GetWindowRect(ParentWindowHandle, &ParentRect);
+    }
+    else
+    {
+        HMONITOR MonitorHandle = ::MonitorFromWindow(
+            WindowHandle,
+            MONITOR_DEFAULTTONEAREST);
+        if (MonitorHandle)
+        {
+            MONITORINFO MonitorInfo;
+            MonitorInfo.cbSize = sizeof(MONITORINFO);
+            if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+            {
+                ParentRect = MonitorInfo.rcWork;
+            }
+        }
+    }
+    if (ParentRect.right > ParentRect.left)
+    {
+        const int WorkW = ParentRect.right - ParentRect.left - 48;
+        const int MaxClientW = (int)((float)WorkW / Scale + 0.5f);
+        if (ClientW > MaxClientW)
+        {
+            ClientW = MaxClientW;
+        }
+    }
+    if (ClientW > 1400) ClientW = 1400;
+    if (ClientH > 900) ClientH = 900;
+
+    RECT rc = { 0, 0, ClientW, ClientH };
+    {
+        const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+        const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+        ::AdjustWindowRectEx(&rc, (DWORD)Style, FALSE, (DWORD)ExStyle);
+    }
+
+    // Center the dialog on the parent window (or the nearest monitor).
+    // ParentRect was already resolved above for the work-area limit.
+    const int WindowW = rc.right - rc.left;
+    const int WindowH = rc.bottom - rc.top;
+    const int PosX = ParentRect.left +
+        ((ParentRect.right - ParentRect.left - WindowW) / 2);
+    const int PosY = ParentRect.top +
+        ((ParentRect.bottom - ParentRect.top - WindowH) / 2);
+    RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
+
+    int Result = ::K7ModernShowXamlWindow(
+        WindowHandle,
+        ClientW,
+        ClientH,
+        ParentWindowHandle,
+        &InitialRect);
 
     return Result;
 }
