@@ -366,6 +366,7 @@ static void FillSettingsDialogContext(
   ctx.AutoQueryCloud = st.AutoQueryCloud;
   ctx.AutoMatchLocal = st.AutoMatchLocal;
   ctx.AutoShowPassword = st.AutoShowPassword;
+  ctx.AutoSharePassword = st.AutoSharePassword;
   ctx.MatchPriority = st.MatchPriority;
 
   {
@@ -420,6 +421,7 @@ static void SaveSettingsDialogContext(
   st.AutoQueryCloud = ctx.AutoQueryCloud != FALSE;
   st.AutoMatchLocal = ctx.AutoMatchLocal != FALSE;
   st.AutoShowPassword = ctx.AutoShowPassword != FALSE;
+  st.AutoSharePassword = ctx.AutoSharePassword != FALSE;
   st.MatchPriority = ctx.MatchPriority;
   st.Save();
 

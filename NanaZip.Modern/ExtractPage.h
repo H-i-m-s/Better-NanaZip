@@ -74,6 +74,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        void OnSharePasswordClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
         void OnOkClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);

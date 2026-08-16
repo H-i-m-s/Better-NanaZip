@@ -2225,6 +2225,24 @@ EXTERN_C INT WINAPI K7ModernShowPasswordDialog(
         return -1;
     }
 
+    // The "auto share password" setting is the parent of the dialog's
+    // "share password" check box: when it is on, the box is checked by
+    // default. Changing the box in the dialog never writes back to the
+    // setting (the caller gets the value via Context).
+    {
+        DWORD autoShare = 0;
+        HKEY key = nullptr;
+        if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", 0,
+            KEY_READ, &key) == ERROR_SUCCESS)
+        {
+            DWORD size = sizeof(autoShare);
+            ::RegQueryValueExW(key, L"AutoSharePassword", nullptr, nullptr,
+                reinterpret_cast<LPBYTE>(&autoShare), &size);
+            ::RegCloseKey(key);
+        }
+        Context->SharePassword = (autoShare != 0) ? TRUE : FALSE;
+    }
+
     HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
     if (!WindowHandle)
     {

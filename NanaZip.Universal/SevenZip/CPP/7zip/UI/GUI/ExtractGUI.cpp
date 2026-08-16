@@ -669,6 +669,22 @@ HRESULT ExtractGUI(
           ctx.ShowPasswordDef2 = TRUE;
           ctx.ShowPasswordVal2 = xInfo.ShowPassword.Val ? TRUE : FALSE;
         }
+        // The "auto share password" setting is the parent of the dialog's
+        // "share password" check box; changing the box in the dialog never
+        // writes back to the setting.
+        {
+          DWORD autoShare = 0;
+          HKEY key = nullptr;
+          if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", 0,
+              KEY_READ, &key) == ERROR_SUCCESS)
+          {
+            DWORD size = sizeof(autoShare);
+            ::RegQueryValueExW(key, L"AutoSharePassword", nullptr, nullptr,
+                reinterpret_cast<LPBYTE>(&autoShare), &size);
+            ::RegCloseKey(key);
+          }
+          ctx.SharePassword = (autoShare != 0) ? TRUE : FALSE;
+        }
         ctx.SplitDestDef = FALSE;
         ctx.SplitDestVal = xInfo.SplitDest.Val;
         ctx.SplitDestDef2 = FALSE;

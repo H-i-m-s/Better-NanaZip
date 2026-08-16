@@ -151,6 +151,10 @@ namespace winrt::NanaZip::Modern::implementation
         PasswordText().Text(RemoveMnemonic(Res(3807, L"Password")));
         ShowPasswordCheck().Content(winrt::box_value(
             RemoveMnemonic(Res(3803, L"Show Password"))));
+        // 2554: NanaZip-specific free ID; the "share password" box
+        // resolves like every other label (English fallback).
+        SharePasswordCheck().Content(winrt::box_value(
+            RemoveMnemonic(Res(2554, L"Share Password"))));
         OkButton().Content(winrt::box_value(RemoveMnemonic(Res(401, L"OK"))));
         CancelButton().Content(winrt::box_value(RemoveMnemonic(Res(402, L"Cancel"))));
 
@@ -158,6 +162,10 @@ namespace winrt::NanaZip::Modern::implementation
         PasswordInput().Password(winrt::hstring(Context->Password));
         ShowPasswordCheck().IsChecked(BoxBool(
             Context->ShowPassword != FALSE));
+        // "Share password" initial state comes from the host (the
+        // "auto share password" setting); changes here never write back.
+        SharePasswordCheck().IsChecked(BoxBool(
+            Context->SharePassword != FALSE));
         UpdatePasswordControl();
 
         ApplyDialogFont(Context->FontSizeDialog);
@@ -250,6 +258,16 @@ namespace winrt::NanaZip::Modern::implementation
     {
         // Placeholder: local password matching is implemented later (same as
         // the extract dialog).
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+    }
+
+    void PasswordPage::OnSharePasswordClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        // Placeholder: password sharing is implemented later (same as the
+        // extract dialog).
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
     }

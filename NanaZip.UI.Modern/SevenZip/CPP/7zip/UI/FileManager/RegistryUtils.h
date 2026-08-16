@@ -38,6 +38,7 @@ struct CFmSettings
   bool AutoMatchLocal;       // auto try local password book entries
   UInt32 MatchPriority;      // 0 = local first (default), 1 = cloud first
   bool AutoShowPassword;     // default checked state of "show password" in extract dialog
+  bool AutoSharePassword;    // default checked state of "share password" in extract/password dialogs
   // **************** SSS Modification End ****************
   // bool Underline;
 
@@ -66,6 +67,7 @@ bool WantAutoQueryCloud();
 bool WantAutoMatchLocal();
 UInt32 ReadMatchPriority();
 bool WantAutoShowPassword();
+bool WantAutoSharePassword();
 // **************** SSS Modification End ****************
 
 void SaveFlatView(UInt32 panelIndex, bool enable);

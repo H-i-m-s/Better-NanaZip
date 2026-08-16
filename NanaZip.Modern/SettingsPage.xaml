@@ -355,7 +355,12 @@
           <CheckBox
             x:Name="ExtractAutoQueryCloudCheck"
             Click="ExtractCheckBoxClick" />
-          <Grid Margin="0,6,0,0">
+          <!-- API configuration rows: collapsed unless "Auto query cloud
+               password" is checked (the switch reveals its own options). -->
+          <Grid
+            x:Name="ExtractApiConfigGrid"
+            Margin="0,6,0,0"
+            Visibility="Collapsed">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
@@ -400,6 +405,10 @@
               VerticalAlignment="Center"
               SelectionChanged="ExtractMatchPriorityChanged" />
           </Grid>
+          <CheckBox
+            x:Name="ExtractAutoSharePasswordCheck"
+            Margin="0,10,0,0"
+            Click="ExtractCheckBoxClick" />
           <CheckBox
             x:Name="ExtractAutoShowPasswordCheck"
             Margin="0,10,0,0"

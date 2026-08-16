@@ -53,6 +53,7 @@ static LPCTSTR const kAutoQueryCloud = TEXT("AutoQueryCloud");
 static LPCTSTR const kAutoMatchLocal = TEXT("AutoMatchLocal");
 static LPCTSTR const kMatchPriority = TEXT("MatchPriority");
 static LPCTSTR const kAutoShowPassword = TEXT("AutoShowPassword");
+static LPCTSTR const kAutoSharePassword = TEXT("AutoSharePassword");
 // **************** SSS Modification End ****************
 
 static LPCTSTR const kFlatViewName = TEXT("FlatViewArc");
@@ -177,6 +178,7 @@ void CFmSettings::Save() const
     key.SetValue(kMatchPriority, MatchPriority);
   }
   SaveOption(kAutoShowPassword, AutoShowPassword);
+  SaveOption(kAutoSharePassword, AutoSharePassword);
   // **************** SSS Modification End ****************
   // SaveOption(kUnderline, Underline);
 
@@ -206,6 +208,7 @@ void CFmSettings::Load()
   AutoMatchLocal = false;
   MatchPriority = 0;
   AutoShowPassword = false;
+  AutoSharePassword = false;
   // **************** SSS Modification End ****************
   // Underline = false;
 
@@ -236,6 +239,7 @@ void CFmSettings::Load()
     if (key.QueryValue(kMatchPriority, MatchPriority) != ERROR_SUCCESS)
       MatchPriority = 0;
     ReadOption(key, kAutoShowPassword, AutoShowPassword);
+    ReadOption(key, kAutoSharePassword, AutoSharePassword);
     // **************** SSS Modification End ****************
     // ReadOption(key, kUnderline, Underline);
 
@@ -271,6 +275,7 @@ UInt32 ReadMatchPriority()
   return priority;
 }
 bool WantAutoShowPassword() { return ReadFMOption(kAutoShowPassword); }
+bool WantAutoSharePassword() { return ReadFMOption(kAutoSharePassword); }
 // **************** SSS Modification End ****************
 
 static CSysString GetFlatViewName(UInt32 panelIndex)

@@ -192,6 +192,11 @@
                                 Click="OnLocalPasswordClicked"/>
                         </StackPanel>
                         <CheckBox
+                            x:Name="SharePasswordCheck"
+                            Margin="0,8,0,0"
+                            ContentTemplate="{StaticResource WrapCheckTextTemplate}"
+                            Click="OnSharePasswordClicked"/>
+                        <CheckBox
                             x:Name="ShowPasswordCheck"
                             Margin="0,8,0,0"
                             ContentTemplate="{StaticResource WrapCheckTextTemplate}"

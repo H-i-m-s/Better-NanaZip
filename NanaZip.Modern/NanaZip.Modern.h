@@ -316,6 +316,9 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     BOOLEAN AutoQueryCloud;
     BOOLEAN AutoMatchLocal;
     BOOLEAN AutoShowPassword;
+    // Default checked state of "share password" in the extract and password
+    // dialogs (the parent of the dialog-level check boxes).
+    BOOLEAN AutoSharePassword;
     UINT32 MatchPriority;
     // True when the user modified any API configuration field; the caller
     // only saves the API config when this is set (lazy creation).
@@ -659,6 +662,10 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     BOOLEAN ShowPasswordVal;
     BOOLEAN ShowPasswordDef2;
     BOOLEAN ShowPasswordVal2;
+    // Initial checked state of "share password" (input; the caller reads
+    // the "auto share password" setting, the dialog changes never write
+    // back).
+    BOOLEAN SharePassword;
     BOOLEAN SplitDestDef;
     BOOLEAN SplitDestVal;
     BOOLEAN SplitDestDef2;
@@ -905,6 +912,10 @@ typedef struct _K7_PASSWORD_DIALOG_CONTEXT
     WCHAR Password[K7_PASSWORD_MAX_PASSWORD_LENGTH];
     // The initial show-password state.
     BOOLEAN ShowPassword;
+    // The initial share-password state (input). The host fills it from the
+    // "auto share password" setting; the dialog-level changes never write
+    // back to the setting.
+    BOOLEAN SharePassword;
     // Minimum window track size in physical pixels, computed by the XAML
     // page from its measured content and read by the window subclass in
     // WM_GETMINMAXINFO. 0 = not yet set.

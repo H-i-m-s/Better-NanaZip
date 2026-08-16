@@ -497,6 +497,11 @@ namespace winrt::NanaZip::Modern::implementation
         ExtractAutoMatchGroupLabel().Text(Res(2542, L"Automatic matching"));
         ExtractAutoQueryCloudCheck().Content(winrt::box_value(Res(2530, L"Auto query cloud password")));
         ExtractAutoQueryCloudCheck().IsChecked(BoxBool(this->m_Context->AutoQueryCloud != FALSE));
+        // The API configuration rows follow the switch state.
+        ExtractApiConfigGrid().Visibility(
+            this->m_Context->AutoQueryCloud != FALSE
+                ? winrt::Windows::UI::Xaml::Visibility::Visible
+                : winrt::Windows::UI::Xaml::Visibility::Collapsed);
         ExtractApiUrlLabel().Text(Res(2546, L"API URL:"));
         ExtractApiAppIdLabel().Text(Res(2547, L"AppID:"));
         ExtractApiAesKeyLabel().Text(Res(2548, L"AES key:"));
@@ -521,6 +526,11 @@ namespace winrt::NanaZip::Modern::implementation
 
         ExtractAutoShowPasswordCheck().Content(winrt::box_value(Res(2533, L"Auto show password")));
         ExtractAutoShowPasswordCheck().IsChecked(BoxBool(this->m_Context->AutoShowPassword != FALSE));
+        // "自动分享密码": 2553 is a NanaZip-specific free ID (no 7-Zip
+        // string); resolves like every other settings label, English
+        // fallback when no resource is present.
+        ExtractAutoSharePasswordCheck().Content(winrt::box_value(Res(2553, L"Auto share password")));
+        ExtractAutoSharePasswordCheck().IsChecked(BoxBool(this->m_Context->AutoSharePassword != FALSE));
 
         ExtractBookGroupLabel().Text(Res(2543, L"Local password book"));
         ExtractPasswordBookBox().Text(winrt::hstring(this->m_Context->PasswordBook));
@@ -1350,11 +1360,20 @@ namespace winrt::NanaZip::Modern::implementation
         else if (sender == ExtractDeletePermanentlyCheck())
             this->m_Context->DeletePermanently = Checked ? TRUE : FALSE;
         else if (sender == ExtractAutoQueryCloudCheck())
+        {
             this->m_Context->AutoQueryCloud = Checked ? TRUE : FALSE;
+            // Show / hide the API configuration rows with the switch.
+            ExtractApiConfigGrid().Visibility(
+                Checked
+                    ? winrt::Windows::UI::Xaml::Visibility::Visible
+                    : winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        }
         else if (sender == ExtractAutoMatchLocalCheck())
             this->m_Context->AutoMatchLocal = Checked ? TRUE : FALSE;
         else if (sender == ExtractAutoShowPasswordCheck())
             this->m_Context->AutoShowPassword = Checked ? TRUE : FALSE;
+        else if (sender == ExtractAutoSharePasswordCheck())
+            this->m_Context->AutoSharePassword = Checked ? TRUE : FALSE;
     }
 
     void SettingsPage::ExtractApiTextChanged(
