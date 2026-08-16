@@ -371,7 +371,7 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
@@ -400,12 +400,25 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   // Suppress 7zG's own delete-after-extract: the batch file manager deletes
   // every archive together once the whole batch has finished (see
   // CPanel::SssExtractAll in PanelOperations.cpp).
-  if (suppressDelete)
+  if (suppressDelete || !releaseBeforeDeleteMarker.IsEmpty())
     params += L" -snd";
   // SSS: carry the previous archive's dialog choices into this one
   // (one-by-one extraction loop; see ExtractGUI.cpp SssReadDlgStateFile).
   if (useDlgState)
     params += L" -ssdlg";
+  // A file manager that is currently browsing the archive still owns an
+  // archive handle. Give 7zG a per-run marker destination in that case:
+  // it records a successful delete request but leaves the source untouched.
+  // The file manager releases its archive folder first, then consumes the
+  // marker and performs the deletion itself.
+  if (!releaseBeforeDeleteMarker.IsEmpty())
+  {
+    // Match 7-Zip's other string switches (for example, -o"<path>").
+    // The generated marker is an absolute temporary path and its quoted
+    // value is attached directly to this switch.
+    params += L" -srd";
+    params += GetQuotedString(releaseBeforeDeleteMarker);
+  }
   // **************** SSS Modification End ****************
   // **************** NanaZip Modification End ****************
   if (writeZone != (UInt32)(Int32)-1)

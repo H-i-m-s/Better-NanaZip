@@ -696,7 +696,7 @@ static bool SssReadOkFile(const UString &path)
 // Delete the successfully extracted archives in one shot after the whole
 // batch finished. Recycle Bin via SHFileOperationW (single operation), or
 // permanently via NDir::DeleteFileAlways.
-static void SssDeleteBatchArchives(const UStringVector &paths, bool permanently)
+void SssDeleteBatchArchives(const UStringVector &paths, bool permanently)
 {
   if (paths.IsEmpty())
     return;

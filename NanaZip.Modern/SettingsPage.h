@@ -24,7 +24,8 @@ namespace winrt::NanaZip::Modern::implementation
 
         SettingsPage(
             _In_opt_ HWND WindowHandle = nullptr,
-            _In_ PK7_SETTINGS_DIALOG_CONTEXT Context = nullptr);
+            _In_ PK7_SETTINGS_DIALOG_CONTEXT Context = nullptr,
+            bool HasSavedWindowRect = false);
 
         void InitializeComponent();
 
@@ -47,10 +48,6 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::RoutedEventArgs const& e);
 
         void CancelButtonClick(
-            winrt::IInspectable const& sender,
-            winrt::RoutedEventArgs const& e);
-
-        void OnUnloaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
@@ -139,6 +136,11 @@ namespace winrt::NanaZip::Modern::implementation
 
         HWND m_WindowHandle;
         PK7_SETTINGS_DIALOG_CONTEXT m_Context;
+        // True only when this opening started from a valid persisted rect.
+        // It keeps an explicitly remembered size intact during the first
+        // live scrollbar measurement; a first-open default instead settles
+        // exactly on that measurement's minimum width.
+        bool m_HasSavedWindowRect;
         bool m_InitGuard;
 
         winrt::Windows::UI::Xaml::Controls::CheckBox m_MenuChecks[13];
@@ -148,7 +150,6 @@ namespace winrt::NanaZip::Modern::implementation
         void ApplyFontToTree(
             winrt::Windows::UI::Xaml::DependencyObject const& Node,
             double FontSizePx);
-        void UpdateWindowRect();
         void SwitchTab(int Index);
         void InitFontCombo(
             winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
@@ -162,11 +163,9 @@ namespace winrt::NanaZip::Modern::implementation
         void RecalcMinTrack();
         void RefreshAfterFontChange();
 
-        // Measures the actual vertical scrollbar width at runtime (the
-        // system "auto-hide scrollbars" setting changes it) and caches it
-        // for the width candidate: the association button needs the
-        // scrollbar width added so the scrollbar never covers its right
-        // edge.
+        // The real scrollbar width is available only after the XAML visual
+        // tree has completed its first layout. It is needed so the minimum
+        // fits both the tab bar and the association button unobscured.
         void MeasureScrollBarWidth();
 
         double m_ScrollBarW;

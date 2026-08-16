@@ -53,6 +53,10 @@ bool g_SssNoDelete = false;
 // choices (path, path mode, overwrite mode, checkboxes, password)
 // consistent across a one-by-one extraction loop.
 bool g_SssUseDlgState = false;
+// -srd<path>: the File Manager is currently browsing the source archive.
+// 7zG records a successful delete request here instead of deleting while
+// the File Manager's archive handle is still open.
+UString g_SssReleaseBeforeDeleteMarker;
 // **************** SSS Modification End ****************
 
 #ifdef Z7_LARGE_PAGES
@@ -227,6 +231,7 @@ enum Enum
   // **************** SSS Modification Start ****************
   kNoDelete,
   kSSSDlgState,
+  kReleaseBeforeDelete,
   // **************** SSS Modification End ****************
 
   kDeleteAfterCompressing,
@@ -391,6 +396,7 @@ static const CSwitchForm kSwitchForms[] =
   // **************** SSS Modification Start ****************
   { "snd", SWFRM_MINUS },
   { "ssdlg", SWFRM_MINUS },
+  { "srd", SWFRM_STRING_SINGL(0) },
   // **************** SSS Modification End ****************
   
   { "sdel", SWFRM_SIMPLE },
@@ -1521,6 +1527,9 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
     g_SssNoDelete = !parser[NKey::kNoDelete].WithMinus;
   if (parser[NKey::kSSSDlgState].ThereIs)
     g_SssUseDlgState = !parser[NKey::kSSSDlgState].WithMinus;
+  if (parser[NKey::kReleaseBeforeDelete].ThereIs)
+    g_SssReleaseBeforeDeleteMarker =
+        parser[NKey::kReleaseBeforeDelete].PostStrings[0];
   // **************** SSS Modification End ****************
   
   NWildcard::ECensorPathMode censorPathMode = NWildcard::k_RelatPath;

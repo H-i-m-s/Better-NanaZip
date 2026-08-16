@@ -218,6 +218,10 @@ extern bool g_SssNoDelete;
 // initialize this dialog from the state file written by the previous
 // archive's dialog, so the user's per-run choices stay consistent.
 extern bool g_SssUseDlgState;
+// Set by the File Manager via -srd<path> when it is browsing the source
+// archive. A successful delete request is recorded at this path so the
+// File Manager can release its archive handle before deleting the source.
+extern UString g_SssReleaseBeforeDeleteMarker;
 
 // Path of the per-run dialog state file shared across the archives of a
 // one-by-one extraction loop.
@@ -428,6 +432,30 @@ static void SssWriteBatchOk()
   DWORD written = 0;
   wchar_t ok = L'1';
   ::WriteFile(h, &ok, sizeof(ok), &written, NULL);
+  ::CloseHandle(h);
+}
+
+// The marker contains the deletion mode selected in the extract dialog:
+// '1' for permanent deletion, '0' for Recycle Bin. 7zG writes it only
+// after a fully successful extraction; the File Manager consumes it after
+// it has released the archive it is currently browsing.
+static void SssWriteReleaseBeforeDeleteMarker(bool permanently)
+{
+  if (g_SssReleaseBeforeDeleteMarker.IsEmpty())
+    return;
+  HANDLE h = ::CreateFileW(
+      g_SssReleaseBeforeDeleteMarker.Ptr(),
+      GENERIC_WRITE,
+      FILE_SHARE_READ,
+      NULL,
+      CREATE_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL,
+      NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  const wchar_t marker = permanently ? L'1' : L'0';
+  DWORD written = 0;
+  ::WriteFile(h, &marker, sizeof(marker), &written, NULL);
   ::CloseHandle(h);
 }
 // **************** SSS Modification End ****************
@@ -917,7 +945,9 @@ HRESULT ExtractGUI(
   if (!options.TestMode && extracter.Result == S_OK && extractCallback->IsOK())
   {
     SssWriteBatchOk();
-    if (!g_SssNoDelete && deleteAfter)
+    if (!g_SssReleaseBeforeDeleteMarker.IsEmpty() && deleteAfter)
+      SssWriteReleaseBeforeDeleteMarker(deletePermanently);
+    else if (!g_SssNoDelete && deleteAfter)
       SssDeleteArchivesAfterExtract(archivePathsFull, deletePermanently);
   }
   // **************** SSS Modification End ****************

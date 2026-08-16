@@ -73,8 +73,8 @@ static void LoadOptionsDialogRect(RECT &rc)
       KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
     return;
 
-  DWORD x = 0, y = 0, w = 0, h = 0;
-  DWORD size = sizeof(DWORD);
+  LONG x = 0, y = 0, w = 0, h = 0;
+  DWORD size = sizeof(LONG);
   DWORD type = REG_DWORD;
   ::RegQueryValueExW(key, L"X", nullptr, &type,
       (LPBYTE)&x, &size);
@@ -86,10 +86,10 @@ static void LoadOptionsDialogRect(RECT &rc)
       (LPBYTE)&h, &size);
   ::RegCloseKey(key);
 
-  if (w == 0 || h == 0)
+  if (w <= 0 || h <= 0)
     return;
 
-  RECT candidate = { (LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h) };
+  RECT candidate = { x, y, x + w, y + h };
   // If the remembered position is outside every display (for example the
   // monitor was disconnected), fall back to the centered default.
   if (!::MonitorFromRect(&candidate, MONITOR_DEFAULTTONULL))
@@ -109,10 +109,13 @@ static void SaveOptionsDialogRect(const RECT &rc)
       nullptr, 0, KEY_SET_VALUE, nullptr, &key, &disp) != ERROR_SUCCESS)
     return;
 
-  DWORD x = (DWORD)rc.left;
-  DWORD y = (DWORD)rc.top;
-  DWORD w = (DWORD)(rc.right - rc.left);
-  DWORD h = (DWORD)(rc.bottom - rc.top);
+  // Registry values are DWORDs, while window coordinates are signed LONGs.
+  // Write their raw 32-bit representation, including negative positions on
+  // a monitor placed left or above the primary display.
+  const LONG x = rc.left;
+  const LONG y = rc.top;
+  const LONG w = rc.right - rc.left;
+  const LONG h = rc.bottom - rc.top;
   ::RegSetValueExW(key, L"X", 0, REG_DWORD, (const BYTE *)&x, sizeof(x));
   ::RegSetValueExW(key, L"Y", 0, REG_DWORD, (const BYTE *)&y, sizeof(y));
   ::RegSetValueExW(key, L"W", 0, REG_DWORD, (const BYTE *)&w, sizeof(w));

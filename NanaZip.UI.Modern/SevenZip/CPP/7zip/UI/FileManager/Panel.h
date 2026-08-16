@@ -203,9 +203,16 @@ enum MyMessages
   , kSssLoopStateMessage
   // SSS: the background extraction loop finished (flag release only).
   , kSssLoopDoneMessage
+  // 7zG finished extracting an archive currently open in this panel. The
+  // archive must be released before its delete-after-extract marker is read.
+  , kSssReleaseBeforeDeleteMessage
 };
 
 UString GetFolderPath(IFolderFolder *folder);
+
+// Shared File Manager deletion path: permanently deletes or performs one
+// Recycle Bin operation, according to the caller's selected mode.
+void SssDeleteBatchArchives(const UStringVector &paths, bool permanently);
 
 class CPanel;
 
@@ -570,6 +577,7 @@ public:
   // advances only when the previous archive really finished, and stops as
   // soon as the user cancels a dialog (or an archive fails).
   void SssExtractOneByOne();
+  void ExtractCurrentArchiveAndReleaseBeforeDelete();
   // **************** SSS Modification End ****************
 
   void SetBookmark(unsigned index);
@@ -647,6 +655,8 @@ public:
   // SSS: true while a background extract loop (batch / one-by-one) is
   // running on this panel; guards against starting a second loop.
   bool _sssLoopRunning;
+  UString _sssReleaseBeforeDeleteArchivePath;
+  UString _sssReleaseBeforeDeleteMarkerPath;
 
   CPropColumns _columns;
   CPropColumns _visibleColumns;

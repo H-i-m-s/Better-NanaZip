@@ -204,6 +204,10 @@ LRESULT CPanel::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case kSssLoopDoneMessage:
       _sssLoopRunning = false;
       return 0;
+    case kSssReleaseBeforeDeleteMessage:
+      _sssLoopRunning = false;
+      ExtractCurrentArchiveAndReleaseBeforeDelete();
+      return 0;
     case kRefresh_StatusBar:
       if (_processStatusBar)
       {
@@ -1421,8 +1425,96 @@ void CPanel::ExtractArchives()
       );
 }
 
+struct CSssReleaseBeforeDeleteArgs
+{
+  HWND PanelHwnd;
+  UString ArchivePath;
+  UString OutFolder;
+  UInt32 WriteZone;
+  UString MarkerPath;
+};
+
+static DWORD WINAPI SssExtractCurrentArchiveThread(void *param)
+{
+  CSssReleaseBeforeDeleteArgs *args =
+      static_cast<CSssReleaseBeforeDeleteArgs *>(param);
+  UStringVector paths;
+  paths.Add(args->ArchivePath);
+  ::ExtractArchives(
+      paths,
+      args->OutFolder,
+      true,  // showDialog
+      false, // elimDup
+      args->WriteZone,
+      false, // smartExtract
+      false, // openFolder
+      (UInt32)(Int32)-1, // overwriteMode
+      true,  // waitFinish: worker waits for the 7zG process to exit
+      false, // suppressDelete
+      false, // useDlgState
+      args->MarkerPath);
+  if (::IsWindow(args->PanelHwnd))
+    ::PostMessageW(args->PanelHwnd, kSssReleaseBeforeDeleteMessage, 0, 0);
+  delete args;
+  return 0;
+}
+
+void CPanel::ExtractCurrentArchiveAndReleaseBeforeDelete()
+{
+  const UString archivePath = _sssReleaseBeforeDeleteArchivePath;
+  const UString markerPath = _sssReleaseBeforeDeleteMarkerPath;
+  _sssReleaseBeforeDeleteArchivePath.Empty();
+  _sssReleaseBeforeDeleteMarkerPath.Empty();
+
+  if (archivePath.IsEmpty() || markerPath.IsEmpty())
+    return;
+
+  // The marker is written only by 7zG after the extraction completed with
+  // no errors and the user selected "delete archive after extraction".
+  // Read it before navigation, then remove it so a later unrelated action
+  // cannot consume stale state.
+  HANDLE marker = ::CreateFileW(
+      markerPath.Ptr(),
+      GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL,
+      NULL);
+  if (marker == INVALID_HANDLE_VALUE)
+    return;
+  wchar_t value = 0;
+  DWORD read = 0;
+  const BOOL readOk = ::ReadFile(marker, &value, sizeof(value), &read, NULL);
+  ::CloseHandle(marker);
+  ::DeleteFileW(markerPath.Ptr());
+  if (!readOk || read != sizeof(value) || (value != L'0' && value != L'1'))
+    return;
+
+  // This path is valid only for the archive root that launched the command.
+  // If the panel state has changed, do not risk deleting a source whose
+  // lifetime is no longer provably released by this panel.
+  if (_parentFolders.Size() != 1 ||
+      _parentFolders[0].VirtualPath != archivePath)
+    return;
+
+  // OpenParentFolder() calls CloseOneLevel(), whose ReleaseFolder() and
+  // _library.Free() release the current archive object and its source-file
+  // handle before it binds the containing file-system folder.
+  OpenParentFolder();
+  if (!IsFSFolder() || !_parentFolders.IsEmpty())
+    return;
+
+  UStringVector sourcePaths;
+  sourcePaths.Add(archivePath);
+  SssDeleteBatchArchives(sourcePaths, value == L'1');
+  RefreshListCtrl();
+}
+
 void CPanel::ExtractFromArchive()
 {
+  if (_sssLoopRunning)
+    return;
   if (_parentFolders.Size() > 1) {
     _panelCallback->OnCopy(false, false);
     return;
@@ -1446,14 +1538,52 @@ void CPanel::ExtractFromArchive()
   paths.Add(path);
   UString outFolder = GetSubFolderNameForExtract2(path);
 
+  // When the archive itself is the active folder, this File Manager owns
+  // its handle. 7zG must defer delete-after-extract until we have returned
+  // to the containing file-system folder and released that handle.
+  wchar_t temp[MAX_PATH] = {};
+  const DWORD tempLength = ::GetTempPathW(ARRAYSIZE(temp), temp);
+  if (tempLength == 0 || tempLength >= ARRAYSIZE(temp))
+    return;
+  wchar_t markerFile[MAX_PATH] = {};
+  if (::GetTempFileNameW(temp, L"nzd", 0, markerFile) == 0)
+    return;
+  UString markerPath(markerFile);
+  // GetTempFileNameW atomically reserves a unique name. Remove its empty
+  // placeholder so 7zG can create the marker only after real success.
+  ::DeleteFileW(markerPath.Ptr());
+  _sssReleaseBeforeDeleteArchivePath = path;
+  _sssReleaseBeforeDeleteMarkerPath = markerPath;
+
   CContextMenuInfo ci;
   ci.Load();
 
-  ::ExtractArchives(paths, outFolder
-      , true // showDialog
-      , false // elimDup
-      , ci.WriteZone
-      );
+  CSssReleaseBeforeDeleteArgs *args = new CSssReleaseBeforeDeleteArgs;
+  args->PanelHwnd = (HWND)*this;
+  args->ArchivePath = path;
+  args->OutFolder = outFolder;
+  args->WriteZone = ci.WriteZone;
+  args->MarkerPath = markerPath;
+  _sssLoopRunning = true;
+  HANDLE thread = ::CreateThread(
+      NULL,
+      0,
+      SssExtractCurrentArchiveThread,
+      args,
+      0,
+      NULL);
+  if (!thread)
+  {
+    _sssLoopRunning = false;
+    _sssReleaseBeforeDeleteArchivePath.Empty();
+    _sssReleaseBeforeDeleteMarkerPath.Empty();
+    delete args;
+    return;
+  }
+  ::CloseHandle(thread);
+
+  // The worker posts only after 7zG has fully exited. Its marker exists
+  // only after a fully successful extraction that requested deletion.
 }
 
 /*

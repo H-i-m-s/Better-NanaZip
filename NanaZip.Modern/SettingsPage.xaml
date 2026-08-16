@@ -355,12 +355,12 @@
           <CheckBox
             x:Name="ExtractAutoQueryCloudCheck"
             Click="ExtractCheckBoxClick" />
-          <!-- API configuration rows: collapsed unless "Auto query cloud
-               password" is checked (the switch reveals its own options). -->
+          <!-- Cloud API credentials remain editable independently of the
+               automatic-query switch, so users can configure them before
+               enabling the feature. -->
           <Grid
             x:Name="ExtractApiConfigGrid"
-            Margin="0,6,0,0"
-            Visibility="Collapsed">
+            Margin="0,6,0,0">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />

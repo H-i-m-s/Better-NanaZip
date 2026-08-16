@@ -189,17 +189,18 @@ namespace winrt::NanaZip::Modern::implementation
 {
     SettingsPage::SettingsPage(
         _In_opt_ HWND WindowHandle,
-        _In_ PK7_SETTINGS_DIALOG_CONTEXT Context) :
+        _In_ PK7_SETTINGS_DIALOG_CONTEXT Context,
+        bool HasSavedWindowRect) :
         m_WindowHandle(WindowHandle),
         m_Context(Context),
+        m_HasSavedWindowRect(HasSavedWindowRect),
         m_InitGuard(false),
         m_ScrollBarW(0.0),
         m_ScrollBarMeasured(false)
     {
-        // Remember the final window position and size when the dialog is
-        // closed (including via the system close button), and apply the
-        // dialog font size once the visual tree is fully realized.
-        this->Unloaded({ this, &SettingsPage::OnUnloaded });
+        // The Win32 host owns the final window-rectangle snapshot. The page
+        // applies the dialog font once its visual tree exists, then measures
+        // the live scrollbar exactly once to finish the minimum-width fit.
         this->Loaded({ this, &SettingsPage::OnLoaded });
         this->SizeChanged({ this, &SettingsPage::OnSizeChanged });
     }
@@ -281,14 +282,6 @@ namespace winrt::NanaZip::Modern::implementation
             ApplyFontToTree(
                 winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChild(Node, i),
                 FontSizePx);
-        }
-    }
-
-    void SettingsPage::UpdateWindowRect()
-    {
-        if (this->m_Context && this->m_WindowHandle)
-        {
-            ::GetWindowRect(this->m_WindowHandle, &this->m_Context->WindowRect);
         }
     }
 
@@ -497,11 +490,10 @@ namespace winrt::NanaZip::Modern::implementation
         ExtractAutoMatchGroupLabel().Text(Res(2542, L"Automatic matching"));
         ExtractAutoQueryCloudCheck().Content(winrt::box_value(Res(2530, L"Auto query cloud password")));
         ExtractAutoQueryCloudCheck().IsChecked(BoxBool(this->m_Context->AutoQueryCloud != FALSE));
-        // The API configuration rows follow the switch state.
+        // Cloud API credentials stay visible so they can be configured
+        // before automatic cloud querying is enabled.
         ExtractApiConfigGrid().Visibility(
-            this->m_Context->AutoQueryCloud != FALSE
-                ? winrt::Windows::UI::Xaml::Visibility::Visible
-                : winrt::Windows::UI::Xaml::Visibility::Collapsed);
+            winrt::Windows::UI::Xaml::Visibility::Visible);
         ExtractApiUrlLabel().Text(Res(2546, L"API URL:"));
         ExtractApiAppIdLabel().Text(Res(2547, L"AppID:"));
         ExtractApiAesKeyLabel().Text(Res(2548, L"AES key:"));
@@ -597,7 +589,6 @@ namespace winrt::NanaZip::Modern::implementation
         if (this->m_Context)
         {
             this->m_Context->OK = TRUE;
-            UpdateWindowRect();
         }
         ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
     }
@@ -609,7 +600,6 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
 
-        UpdateWindowRect();
         ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
     }
 
@@ -626,21 +616,8 @@ namespace winrt::NanaZip::Modern::implementation
             // editable control can consume it.
             SettingsPageDiagLog(L"[S4] XAML OnPageKeyDown ESC");
             e.Handled(true);
-            UpdateWindowRect();
             ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
         }
-    }
-
-    void SettingsPage::OnUnloaded(
-        winrt::IInspectable const& sender,
-        winrt::RoutedEventArgs const& e)
-    {
-        UNREFERENCED_PARAMETER(sender);
-        UNREFERENCED_PARAMETER(e);
-
-        // Covers the system close button (the last chance to snapshot the
-        // window rect before the window is destroyed).
-        UpdateWindowRect();
     }
 
     void SettingsPage::OnLoaded(
@@ -668,37 +645,23 @@ namespace winrt::NanaZip::Modern::implementation
         // font combo widths from the current font size.
         AlignLabels();
 
-        // Compute the minimum track size from the measured content before
-        // the window is shown, so the host can grow a remembered narrow
-        // rectangle up to the real content width.
+        // Compute the pre-show minimum from the same established formula.
+        // The XAML scrollbar has no ActualWidth before the first live layout,
+        // so only this provisional pass uses the Win32 fallback; it must not
+        // be written into m_ScrollBarW, which is reserved for an actual
+        // XAML measurement.
         RecalcMinTrack();
 
-        // The default window width follows the wider of the tab bar and
-        // the "Open Windows Settings..." association button; every other
-        // row is known to be narrower than both. The natural widths
-        // already carry their symmetric paddings (12px on the tab bar,
-        // 16px on the content area), so no extra margin is added: the
-        // left edge spacing equals the right edge spacing.
-        // Scrollbar-width fallback before the window is shown (the live
-        // measurement runs on the first layout in OnSizeChanged).
-        if (this->m_ScrollBarW <= 0.0)
-        {
-            this->m_ScrollBarW = (double)::GetSystemMetrics(SM_CXVSCROLL);
-        }
-
+        const double ScrollBarW = this->m_ScrollBarMeasured
+            ? this->m_ScrollBarW
+            : (double)::GetSystemMetrics(SM_CXVSCROLL);
         winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
         TabBar().Measure(Inf);
         const double TabBarW = TabBar().DesiredSize().Width;
         MenuAssociateButton().Measure(Inf);
         const double ButtonW = MenuAssociateButton().DesiredSize().Width;
-        // The tab bar sits outside the ScrollViewer, so it never meets
-        // the vertical scrollbar; the association button lives inside the
-        // content area, so its width gets the real scrollbar width added
-        // (the scrollbar would otherwise cover its right edge). The
-        // content area's left/right padding (16px each) is also counted
-        // so the button is never squeezed by the window border.
         const double MaxW = (std::max)(
-            TabBarW, ButtonW + this->m_ScrollBarW + 32.0);
+            TabBarW, ButtonW + ScrollBarW + 32.0);
 
         // The default height follows the tallest tab content: temporarily
         // reveal every tab and measure at the candidate width (the window
@@ -750,26 +713,31 @@ namespace winrt::NanaZip::Modern::implementation
             this->MeasureScrollBarWidth();
             this->RecalcMinTrack();
 
-            // Widen the window when the corrected candidate (button plus
-            // scrollbar) is wider than what the pre-show fallback sized.
+            // A first-open default has no user-selected width, therefore it
+            // must settle exactly on the actual XAML scrollbar measurement.
+            // A remembered rectangle remains the user's size unless it no
+            // longer satisfies the newly measured minimum.
             if (this->m_WindowHandle)
             {
                 RECT Current = {};
-                ::GetWindowRect(this->m_WindowHandle, &Current);
-                RECT rc = { 0, 0,
-                    this->m_Context->MinTrackW,
-                    this->m_Context->MinTrackH };
-                const int NeedW = rc.right - rc.left;
-                if (Current.right - Current.left < NeedW)
+                if (::GetWindowRect(this->m_WindowHandle, &Current))
                 {
-                    ::SetWindowPos(
-                        this->m_WindowHandle,
-                        nullptr,
-                        Current.left,
-                        Current.top,
-                        NeedW,
-                        Current.bottom - Current.top,
-                        SWP_NOZORDER | SWP_NOACTIVATE);
+                    const int NeedW = this->m_Context->MinTrackW;
+                    const int CurrentW = Current.right - Current.left;
+                    const bool NeedResize = !this->m_HasSavedWindowRect
+                        ? (NeedW > 0 && CurrentW != NeedW)
+                        : (NeedW > 0 && CurrentW < NeedW);
+                    if (NeedResize)
+                    {
+                        ::SetWindowPos(
+                            this->m_WindowHandle,
+                            nullptr,
+                            Current.left,
+                            Current.top,
+                            NeedW,
+                            Current.bottom - Current.top,
+                            SWP_NOZORDER | SWP_NOACTIVATE);
+                    }
                 }
             }
         }
@@ -880,16 +848,9 @@ namespace winrt::NanaZip::Modern::implementation
 
     void SettingsPage::MeasureScrollBarWidth()
     {
-        if (this->m_ScrollBarW > 0.0)
-        {
-            return;
-        }
-
-        // The system "auto-hide scrollbars" setting changes the actual
-        // scrollbar width, so measure it from a live ScrollBar instead of
-        // assuming a fixed value. Temporarily force the scrollbar visible
-        // (the settings tab is the default visible one) and read its
-        // width; restoring the visibility re-lays out cleanly.
+        // The system auto-hide setting changes the XAML scrollbar template's
+        // actual width. This first-live-layout measurement deliberately
+        // replaces the pre-show Win32 fallback used by PrepareForShow().
         auto Scroller = ContentSettings();
         const auto PrevVisibility = Scroller.VerticalScrollBarVisibility();
         Scroller.VerticalScrollBarVisibility(
@@ -899,24 +860,23 @@ namespace winrt::NanaZip::Modern::implementation
         std::vector<
             winrt::Windows::UI::Xaml::Controls::Primitives::ScrollBar> Bars;
         FindVisualChildren(Scroller, Bars);
+        double MeasuredWidth = 0.0;
         for (auto const& Bar : Bars)
         {
-            const double W = Bar.ActualWidth();
-            if (W > 0.0)
+            const double Width = Bar.ActualWidth();
+            if (Bar.Orientation() ==
+                winrt::Windows::UI::Xaml::Controls::Orientation::Vertical &&
+                Width > 0.0)
             {
-                this->m_ScrollBarW = W;
+                MeasuredWidth = Width;
                 break;
             }
         }
 
         Scroller.VerticalScrollBarVisibility(PrevVisibility);
-
-        // Fallback: the classic system scrollbar width when the live
-        // measurement could not find a ScrollBar.
-        if (this->m_ScrollBarW <= 0.0)
-        {
-            this->m_ScrollBarW = (double)::GetSystemMetrics(SM_CXVSCROLL);
-        }
+        this->m_ScrollBarW = (MeasuredWidth > 0.0)
+            ? MeasuredWidth
+            : (double)::GetSystemMetrics(SM_CXVSCROLL);
     }
 
     void SettingsPage::RecalcMinTrack()
@@ -939,12 +899,11 @@ namespace winrt::NanaZip::Modern::implementation
         // is also the smallest the dialog may shrink to without clipping.
         // The natural widths already carry their symmetric paddings; no
         // extra margin is added.
-        // Scrollbar-width fallback before the window is shown (the live
-        // measurement runs on the first layout in OnSizeChanged).
-        if (this->m_ScrollBarW <= 0.0)
-        {
-            this->m_ScrollBarW = (double)::GetSystemMetrics(SM_CXVSCROLL);
-        }
+        // Before the first live layout, use a local fallback without
+        // claiming it is a measured XAML scrollbar width.
+        const double ScrollBarW = this->m_ScrollBarMeasured
+            ? this->m_ScrollBarW
+            : (double)::GetSystemMetrics(SM_CXVSCROLL);
 
         winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
         TabBar().Measure(Inf);
@@ -957,7 +916,7 @@ namespace winrt::NanaZip::Modern::implementation
         // padding, so dragging the border can never squeeze the button
         // text.
         const double MaxW = (std::max)(
-            TabBarW, ButtonW + this->m_ScrollBarW + 32.0);
+            TabBarW, ButtonW + ScrollBarW + 32.0);
 
         const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);
         const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
@@ -967,9 +926,12 @@ namespace winrt::NanaZip::Modern::implementation
         // stays at a fixed floor while the horizontal minimum follows the
         // same width candidate as the default size (a larger font widens
         // it, so dragging can never clip the tab bar or the button).
+        // The horizontal track minimum is exactly the established content
+        // formula above. Do not impose a separate fixed pixel floor here:
+        // it creates unused right-side room and prevents the user from
+        // dragging to the true content minimum.
         int MinClientW = (int)(MaxW * Scale + 0.5);
         int MinClientH = (int)(420.0f * Scale + 0.5);
-        if (MinClientW < 480) MinClientW = 480;
         if (MinClientH < 420) MinClientH = 420;
 
         RECT rc = { 0, 0, MinClientW, MinClientH };
@@ -983,6 +945,18 @@ namespace winrt::NanaZip::Modern::implementation
 
         this->m_Context->MinTrackW = rc.right - rc.left;
         this->m_Context->MinTrackH = rc.bottom - rc.top;
+
+        wchar_t Buffer[256] = {};
+        swprintf_s(
+            Buffer,
+            L"[S5] MinTrack: Tab=%.1f Button=%.1f Scroll=%.1f Max=%.1f W=%ld H=%ld",
+            TabBarW,
+            ButtonW,
+            ScrollBarW,
+            MaxW,
+            this->m_Context->MinTrackW,
+            this->m_Context->MinTrackH);
+        SettingsPageDiagLog(Buffer);
     }
 
     void SettingsPage::RefreshAfterFontChange()
@@ -1361,12 +1335,9 @@ namespace winrt::NanaZip::Modern::implementation
             this->m_Context->DeletePermanently = Checked ? TRUE : FALSE;
         else if (sender == ExtractAutoQueryCloudCheck())
         {
+            // This controls automatic requests only; saved cloud credentials
+            // remain visible and editable regardless of its checked state.
             this->m_Context->AutoQueryCloud = Checked ? TRUE : FALSE;
-            // Show / hide the API configuration rows with the switch.
-            ExtractApiConfigGrid().Visibility(
-                Checked
-                    ? winrt::Windows::UI::Xaml::Visibility::Visible
-                    : winrt::Windows::UI::Xaml::Visibility::Collapsed);
         }
         else if (sender == ExtractAutoMatchLocalCheck())
             this->m_Context->AutoMatchLocal = Checked ? TRUE : FALSE;
