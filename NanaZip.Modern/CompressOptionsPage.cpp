@@ -170,7 +170,9 @@ namespace winrt::NanaZip::Modern::implementation
         const wchar_t* GroupTime =
             C->GroupTimeText[0] ? C->GroupTimeText : L"Time";
         NtfsGroupText().Text(winrt::hstring(GroupNtfs));
-        TimeInfoText().Text(winrt::hstring(GroupTime));
+        // The localized "Time" group title belongs to TimeGroupText;
+        // TimeInfoText carries the "type: xxx" info line instead.
+        TimeGroupText().Text(winrt::hstring(GroupTime));
 
         // NTFS group.
         NtSymLinksText().Text(winrt::hstring(C->NtSymLinksText));

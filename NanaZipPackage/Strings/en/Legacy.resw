@@ -747,6 +747,18 @@
   <data name="Resource2552" xml:space="preserve">
     <value>Match priority:</value>
   </data>
+  <data name="Resource2553" xml:space="preserve">
+    <value>Auto share password</value>
+  </data>
+  <data name="Resource2554" xml:space="preserve">
+    <value>Share password</value>
+  </data>
+  <data name="Resource2555" xml:space="preserve">
+    <value>Query cloud password</value>
+  </data>
+  <data name="Resource2556" xml:space="preserve">
+    <value>Match local password</value>
+  </data>
 
 
 

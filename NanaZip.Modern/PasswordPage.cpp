@@ -155,6 +155,12 @@ namespace winrt::NanaZip::Modern::implementation
         // resolves like every other label (English fallback).
         SharePasswordCheck().Content(winrt::box_value(
             RemoveMnemonic(Res(2554, L"Share Password"))));
+        // 2555/2556: the cloud/local password lookup buttons (NanaZip
+        // features, English fallback).
+        CloudPasswordButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(2555, L"Query cloud password"))));
+        LocalPasswordButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(2556, L"Match local password"))));
         OkButton().Content(winrt::box_value(RemoveMnemonic(Res(401, L"OK"))));
         CancelButton().Content(winrt::box_value(RemoveMnemonic(Res(402, L"Cancel"))));
 

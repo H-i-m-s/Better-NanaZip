@@ -183,11 +183,9 @@
                         <StackPanel x:Name="PasswordButtonsPanel" Orientation="Horizontal" Margin="0,8,0,0">
                             <Button
                                 x:Name="CloudPasswordButton"
-                                Content="查询云端密码"
                                 Click="OnCloudPasswordClicked"/>
                             <Button
                                 x:Name="LocalPasswordButton"
-                                Content="匹配本地密码"
                                 Margin="6,0,0,0"
                                 Click="OnLocalPasswordClicked"/>
                         </StackPanel>

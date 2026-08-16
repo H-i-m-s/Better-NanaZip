@@ -747,6 +747,18 @@
   <data name="Resource2552" xml:space="preserve">
     <value>解壓自動比對密碼優先級:</value>
   </data>
+  <data name="Resource2553" xml:space="preserve">
+    <value>自動分享密碼</value>
+  </data>
+  <data name="Resource2554" xml:space="preserve">
+    <value>分享密碼</value>
+  </data>
+  <data name="Resource2555" xml:space="preserve">
+    <value>查詢雲端密碼</value>
+  </data>
+  <data name="Resource2556" xml:space="preserve">
+    <value>比對本地密碼</value>
+  </data>
 
 
 

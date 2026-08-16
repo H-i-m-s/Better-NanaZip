@@ -262,6 +262,10 @@ namespace winrt::NanaZip::Modern::implementation
         // 2554: NanaZip-specific free ID; the "share password" box
         // resolves like every other label (English fallback).
         SharePasswordCheck().Content(winrt::box_value(Res(2554, L"Share Password")));
+        // 2555/2556: the cloud/local password lookup buttons (NanaZip
+        // features, English fallback).
+        CloudPasswordButton().Content(winrt::box_value(Res(2555, L"Query cloud password")));
+        LocalPasswordButton().Content(winrt::box_value(Res(2556, L"Match local password")));
         OkButton().Content(winrt::box_value(Res(401, L"OK")));
         CancelButton().Content(winrt::box_value(Res(402, L"Cancel")));
 

@@ -747,6 +747,18 @@
   <data name="Resource2552" xml:space="preserve">
     <value>解压自动匹配密码优先级:</value>
   </data>
+  <data name="Resource2553" xml:space="preserve">
+    <value>自动分享密码</value>
+  </data>
+  <data name="Resource2554" xml:space="preserve">
+    <value>分享密码</value>
+  </data>
+  <data name="Resource2555" xml:space="preserve">
+    <value>查询云端密码</value>
+  </data>
+  <data name="Resource2556" xml:space="preserve">
+    <value>匹配本地密码</value>
+  </data>
 
 
 

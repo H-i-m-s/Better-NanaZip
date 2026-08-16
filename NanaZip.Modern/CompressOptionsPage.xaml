@@ -68,7 +68,6 @@
 
                 <TextBlock
                     x:Name="TimeGroupText"
-                    Text="时间"
                     Margin="0,8,0,0"
                     HorizontalAlignment="Left" />
 
