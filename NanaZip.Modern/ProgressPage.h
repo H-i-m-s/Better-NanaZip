@@ -45,6 +45,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        void OnPageKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+
         void UpdateStatus(
             _In_ PK7_PROGRESS_WINDOW_STATUS Status);
 

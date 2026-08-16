@@ -1,7 +1,7 @@
 #include "pch.h"
-#include "CopyLocationPage.h"
-#if __has_include("CopyLocationPage.g.cpp")
-#include "CopyLocationPage.g.cpp"
+#include "LinkPage.h"
+#if __has_include("LinkPage.g.cpp")
+#include "LinkPage.g.cpp"
 #endif
 
 #include "NanaZip.Modern.h"
@@ -21,23 +21,23 @@
 
 namespace winrt::NanaZip::Modern::implementation
 {
-    CopyLocationPage::CopyLocationPage(
+    LinkPage::LinkPage(
         _In_opt_ HWND WindowHandle,
-        _In_ PK7_COPY_DIALOG_CONTEXT Context) :
+        _In_ PK7_LINK_DIALOG_CONTEXT Context) :
         m_WindowHandle(WindowHandle),
         m_Context(Context),
         m_OkClicked(false)
     {
-        this->Loaded({ this, &CopyLocationPage::OnLoaded });
-        this->Unloaded({ this, &CopyLocationPage::OnUnloaded });
+        this->Loaded({ this, &LinkPage::OnLoaded });
+        this->Unloaded({ this, &LinkPage::OnUnloaded });
     }
 
-    void CopyLocationPage::InitializeComponent()
+    void LinkPage::InitializeComponent()
     {
-        CopyLocationPageT::InitializeComponent();
+        LinkPageT::InitializeComponent();
     }
 
-    winrt::hstring CopyLocationPage::Res(
+    winrt::hstring LinkPage::Res(
         UINT32 ResourceId,
         LPCWSTR Fallback)
     {
@@ -49,7 +49,7 @@ namespace winrt::NanaZip::Modern::implementation
         return winrt::hstring(Fallback ? Fallback : L"");
     }
 
-    winrt::hstring CopyLocationPage::RemoveMnemonic(
+    winrt::hstring LinkPage::RemoveMnemonic(
         winrt::hstring const& Text)
     {
         std::wstring Result;
@@ -71,13 +71,13 @@ namespace winrt::NanaZip::Modern::implementation
         return winrt::hstring(Result);
     }
 
-    void CopyLocationPage::ApplyDialogFont(UINT32 Pt)
+    void LinkPage::ApplyDialogFont(UINT32 Pt)
     {
         double FontSizePx = (Pt == 0) ? 0.0 : (double)Pt * 96.0 / 72.0;
         ApplyFontToTree(*this, FontSizePx);
     }
 
-    void CopyLocationPage::ApplyFontToTree(
+    void LinkPage::ApplyFontToTree(
         winrt::Windows::UI::Xaml::DependencyObject const& Node,
         double FontSizePx)
     {
@@ -120,47 +120,61 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    winrt::Windows::Foundation::Size CopyLocationPage::PrepareForShow()
+    winrt::Windows::Foundation::Size LinkPage::PrepareForShow()
     {
         if (!this->m_Context)
         {
-            return winrt::Windows::Foundation::Size(400, 160);
+            return winrt::Windows::Foundation::Size(420, 320);
         }
 
-        PK7_COPY_DIALOG_CONTEXT Context = this->m_Context;
+        PK7_LINK_DIALOG_CONTEXT Context = this->m_Context;
 
         // Dialog title comes from the caller (it owns the language strings,
-        // e.g. LangString in the 7-Zip side), like the Win32 CCopyDialog.
+        // like the Win32 CLinkDialog caption).
         ::SetWindowTextW(this->m_WindowHandle, Context->Title);
 
-        PromptText().Text(RemoveMnemonic(
-            winrt::hstring(Context->Static)));
-        InfoText().Text(winrt::hstring(Context->Info));
-        OkButton().Content(winrt::box_value(RemoveMnemonic(Res(401, L"OK"))));
-        CancelButton().Content(winrt::box_value(RemoveMnemonic(Res(402, L"Cancel"))));
+        FromLabelText().Text(RemoveMnemonic(
+            winrt::hstring(Context->FromLabel)));
+        ToLabelText().Text(RemoveMnemonic(
+            winrt::hstring(Context->ToLabel)));
+        TypeGroupLabelText().Text(RemoveMnemonic(
+            winrt::hstring(Context->TypeGroupLabel)));
+        LinkButton().Content(winrt::box_value(RemoveMnemonic(
+            winrt::hstring(Context->LinkButtonText))));
+        CancelButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(402, L"Cancel"))));
+        HintText().Text(winrt::hstring(Context->Hint));
 
-        // Initial value and history items. The editable combo blanks its text
-        // when the drop-down opens if the text does not match any item, so
-        // the current value is also kept as the first item (same as the
-        // extract, split and combo dialogs).
-        PathCombo().Text(winrt::hstring(Context->Value));
-        if (Context->Value[0])
+        FromCombo().Text(winrt::hstring(Context->From));
+        if (Context->From[0])
         {
-            PathCombo().Items().Append(winrt::box_value(
-                winrt::hstring(Context->Value)));
+            FromCombo().Items().Append(winrt::box_value(
+                winrt::hstring(Context->From)));
         }
-        for (UINT32 i = 0; i < Context->HistoryCount; i++)
+        ToCombo().Text(winrt::hstring(Context->To));
+        if (Context->To[0])
         {
-            PathCombo().Items().Append(winrt::box_value(
-                winrt::hstring(Context->History[i])));
+            ToCombo().Items().Append(winrt::box_value(
+                winrt::hstring(Context->To)));
         }
 
-        // Guard against the editable combo blanking the text when its
-        // drop-down is opened/closed (same as the extract and split dialogs).
-        PathCombo().DropDownOpened(
-            { this, &CopyLocationPage::OnComboDropDownOpened });
-        PathCombo().DropDownClosed(
-            { this, &CopyLocationPage::OnComboDropDownClosed });
+        // Link type radio buttons: name text from the caller, initial
+        // selection from InitialLinkType (0-4).
+        winrt::Windows::UI::Xaml::Controls::RadioButton Radios[K7_LINK_MAX_TYPE_COUNT] =
+        {
+            TypeRadio0(),
+            TypeRadio1(),
+            TypeRadio2(),
+            TypeRadio3(),
+            TypeRadio4(),
+        };
+        for (UINT32 i = 0; i < K7_LINK_MAX_TYPE_COUNT; i++)
+        {
+            Radios[i].Content(winrt::box_value(RemoveMnemonic(
+                winrt::hstring(Context->TypeNames[i]))));
+            Radios[i].IsChecked(
+                (i == Context->InitialLinkType) && (Context->InitialLinkType < K7_LINK_MAX_TYPE_COUNT));
+        }
 
         ApplyDialogFont(Context->FontSizeDialog);
 
@@ -180,8 +194,8 @@ namespace winrt::NanaZip::Modern::implementation
 
         int MinClientW = (int)((Desired.Width + 32.0f) * Scale + 0.5f);
         int MinClientH = (int)((Desired.Height + 4.0f) * Scale + 0.5f);
-        if (MinClientW < 360) MinClientW = 360;
-        if (MinClientH < 140) MinClientH = 140;
+        if (MinClientW < 420) MinClientW = 420;
+        if (MinClientH < 300) MinClientH = 300;
 
         RECT rc = { 0, 0, MinClientW, MinClientH };
         {
@@ -198,19 +212,19 @@ namespace winrt::NanaZip::Modern::implementation
         return Desired;
     }
 
-    void CopyLocationPage::OnLoaded(
+    void LinkPage::OnLoaded(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
 
-        // Focus the combo like the Win32 dialog (first control).
-        PathCombo().Focus(
+        // Focus the first combo like the Win32 dialog (first control).
+        FromCombo().Focus(
             winrt::Windows::UI::Xaml::FocusState::Programmatic);
     }
 
-    void CopyLocationPage::OnUnloaded(
+    void LinkPage::OnUnloaded(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
@@ -219,39 +233,14 @@ namespace winrt::NanaZip::Modern::implementation
 
         // The window can also be closed with the X button or Alt+F4, which
         // never passes through OnCancelClicked. Treat every close that was
-        // not confirmed by OK as a cancel, otherwise the caller would use a
-        // value the user never confirmed.
+        // not confirmed by OK as a cancel.
         if (this->m_Context && !this->m_OkClicked)
         {
             this->m_Context->OK = FALSE;
         }
     }
 
-    void CopyLocationPage::OnComboDropDownOpened(
-        winrt::IInspectable const& sender,
-        winrt::IInspectable const& e)
-    {
-        UNREFERENCED_PARAMETER(sender);
-        UNREFERENCED_PARAMETER(e);
-        this->m_TextSnapshot = PathCombo().Text().c_str();
-    }
-
-    void CopyLocationPage::OnComboDropDownClosed(
-        winrt::IInspectable const& sender,
-        winrt::IInspectable const& e)
-    {
-        UNREFERENCED_PARAMETER(sender);
-        UNREFERENCED_PARAMETER(e);
-        if (!this->m_TextSnapshot.empty() &&
-            PathCombo().Text().empty())
-        {
-            PathCombo().Text(
-                winrt::hstring(this->m_TextSnapshot));
-        }
-        this->m_TextSnapshot.clear();
-    }
-
-    void CopyLocationPage::OnComboKeyDown(
+    void LinkPage::OnComboKeyDown(
         winrt::IInspectable const& sender,
         winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
     {
@@ -260,11 +249,11 @@ namespace winrt::NanaZip::Modern::implementation
         {
             // Enter confirms like the default button of the Win32 dialog.
             e.Handled(true);
-            OnOkClicked(nullptr, nullptr);
+            OnLinkClicked(nullptr, nullptr);
         }
     }
 
-    void CopyLocationPage::OnPageKeyDown(
+    void LinkPage::OnPageKeyDown(
         winrt::IInspectable const& sender,
         winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
     {
@@ -281,7 +270,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    void CopyLocationPage::OnCancelClicked(
+    void LinkPage::OnCancelClicked(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
@@ -295,7 +284,7 @@ namespace winrt::NanaZip::Modern::implementation
         ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
     }
 
-    void CopyLocationPage::OnOkClicked(
+    void LinkPage::OnLinkClicked(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
@@ -308,30 +297,76 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
 
-        PK7_COPY_DIALOG_CONTEXT Context = this->m_Context;
+        PK7_LINK_DIALOG_CONTEXT Context = this->m_Context;
 
-        // Read the typed value. Fixed-size ABI buffer: truncate before
-        // writing so an over-long value can never trigger wcscpy_s failure
-        // (which would clear the buffer silently).
-        std::wstring Value = PathCombo().Text().c_str();
-        if (Value.size() >= K7_COPY_MAX_TEXT_LENGTH)
+        // Read the typed paths. Fixed-size ABI buffers: truncate before
+        // writing so an over-long value can never trigger wcscpy_s failure.
+        std::wstring From = FromCombo().Text().c_str();
+        if (From.size() >= K7_LINK_MAX_TEXT_LENGTH)
         {
-            Value.resize(K7_COPY_MAX_TEXT_LENGTH - 1);
+            From.resize(K7_LINK_MAX_TEXT_LENGTH - 1);
         }
-        wcscpy_s(Context->Value, Value.c_str());
+        wcscpy_s(Context->From, From.c_str());
 
-        this->m_OkClicked = true;
-        Context->OK = TRUE;
-        ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        std::wstring To = ToCombo().Text().c_str();
+        if (To.size() >= K7_LINK_MAX_TEXT_LENGTH)
+        {
+            To.resize(K7_LINK_MAX_TEXT_LENGTH - 1);
+        }
+        wcscpy_s(Context->To, To.c_str());
+
+        // Read the selected link type (0-4).
+        UINT32 LinkType = 0;
+        {
+            winrt::Windows::UI::Xaml::Controls::RadioButton Radios[K7_LINK_MAX_TYPE_COUNT] =
+            {
+                TypeRadio0(),
+                TypeRadio1(),
+                TypeRadio2(),
+                TypeRadio3(),
+                TypeRadio4(),
+            };
+            for (UINT32 i = 0; i < K7_LINK_MAX_TYPE_COUNT; i++)
+            {
+                auto IsChecked = Radios[i].IsChecked();
+                if (IsChecked && IsChecked.Value())
+                {
+                    LinkType = i;
+                    break;
+                }
+            }
+        }
+        Context->LinkType = LinkType;
+
+        // Ask the 7-Zip side to create the link (the caller owns the
+        // business rules). Success closes the dialog with OK; failure keeps
+        // the dialog open with the error shown inline.
+        if (Context->CommandCallback)
+        {
+            WCHAR ErrorBuffer[K7_LINK_MAX_ERROR_LENGTH] = {};
+            if (Context->CommandCallback(
+                Context->From,
+                Context->To,
+                Context->LinkType,
+                Context->CallbackContext,
+                ErrorBuffer,
+                K7_LINK_MAX_ERROR_LENGTH))
+            {
+                this->m_OkClicked = true;
+                Context->OK = TRUE;
+                ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+                return;
+            }
+
+            this->ErrorText().Text(winrt::hstring(ErrorBuffer));
+            this->ErrorText().Visibility(
+                winrt::Windows::UI::Xaml::Visibility::Visible);
+        }
     }
 
-    void CopyLocationPage::OnBrowseClicked(
-        winrt::IInspectable const& sender,
-        winrt::RoutedEventArgs const& e)
+    void LinkPage::BrowseTo(
+        winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo)
     {
-        UNREFERENCED_PARAMETER(sender);
-        UNREFERENCED_PARAMETER(e);
-
         K7UserDarkModeWorkaroundBypassScope DarkModeWorkaroundBypass;
         winrt::com_ptr<IFileDialog> FileDialog =
             winrt::try_create_instance<IFileDialog>(
@@ -354,13 +389,13 @@ namespace winrt::NanaZip::Modern::implementation
         }
 
         FileDialog->SetTitle(Mile::WinRT::GetLocalizedString(
-            L"NanaZip.Modern/CopyLocationPage/SelectDestinationText",
-            L"Select destination folder.").c_str());
+            L"NanaZip.Modern/LinkPage/SelectFolderText",
+            L"Select a folder.").c_str());
 
         {
             IShellItem* DefaultFolder = nullptr;
             if (SUCCEEDED(::SHCreateItemFromParsingName(
-                this->PathCombo().Text().c_str(),
+                Combo.Text().c_str(),
                 nullptr,
                 IID_PPV_ARGS(&DefaultFolder))))
             {
@@ -391,11 +426,29 @@ namespace winrt::NanaZip::Modern::implementation
                     {
                         Path.append(L"\\");
                     }
-                    this->PathCombo().Text(Path);
+                    Combo.Text(Path);
                 }
 
                 Result->Release();
             }
         }
+    }
+
+    void LinkPage::OnBrowseFromClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        BrowseTo(FromCombo());
+    }
+
+    void LinkPage::OnBrowseToClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        BrowseTo(ToCombo());
     }
 }

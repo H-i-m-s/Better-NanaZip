@@ -99,6 +99,12 @@
     <Page Include="ComboPage.xaml">
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="LinkPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="BenchmarkPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="CompressPage.xaml">
       <SubType>Designer</SubType>
     </Page>
@@ -157,6 +163,12 @@
     </Midl>
     <Midl Include="ComboPage.idl">
       <DependentUpon>ComboPage.xaml</DependentUpon>
+    </Midl>
+    <Midl Include="LinkPage.idl">
+      <DependentUpon>LinkPage.xaml</DependentUpon>
+    </Midl>
+    <Midl Include="BenchmarkPage.idl">
+      <DependentUpon>BenchmarkPage.xaml</DependentUpon>
     </Midl>
     <Midl Include="CompressPage.idl">
       <DependentUpon>CompressPage.xaml</DependentUpon>
@@ -225,6 +237,12 @@
     <ClInclude Include="ComboPage.h">
       <DependentUpon>ComboPage.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="LinkPage.h">
+      <DependentUpon>LinkPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="BenchmarkPage.h">
+      <DependentUpon>BenchmarkPage.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="CompressPage.h">
       <DependentUpon>CompressPage.xaml</DependentUpon>
     </ClInclude>
@@ -290,6 +308,12 @@
     </ClCompile>
     <ClCompile Include="ComboPage.cpp">
       <DependentUpon>ComboPage.xaml</DependentUpon>
+    </ClCompile>
+    <ClCompile Include="LinkPage.cpp">
+      <DependentUpon>LinkPage.xaml</DependentUpon>
+    </ClCompile>
+    <ClCompile Include="BenchmarkPage.cpp">
+      <DependentUpon>BenchmarkPage.xaml</DependentUpon>
     </ClCompile>
     <ClCompile Include="CompressPage.cpp">
       <DependentUpon>CompressPage.xaml</DependentUpon>

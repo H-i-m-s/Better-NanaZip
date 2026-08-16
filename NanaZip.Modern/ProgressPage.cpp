@@ -5,6 +5,8 @@
 #include <Mile.Helpers.CppBase.h>
 #include <Mile.Helpers.CppWinRT.h>
 
+#include <winrt/Windows.UI.Xaml.Input.h>
+
 namespace winrt::Mile
 {
     using namespace ::Mile;
@@ -278,6 +280,27 @@ namespace winrt::NanaZip::Modern::implementation
             WM_COMMAND,
             MAKEWPARAM(IDCANCEL, BN_CLICKED),
             0);
+    }
+
+    void ProgressPage::OnPageKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() == winrt::Windows::System::VirtualKey::Escape)
+        {
+            // Esc cancels the operation immediately, like the Win32 dialog
+            // (Esc == IDCANCEL == OnCancel): forward the key to the window
+            // so the 7-Zip subclass handles it the same way regardless of
+            // whether the focus is inside the XAML content. This path skips
+            // the confirmation box that the Cancel button shows.
+            e.Handled(true);
+            ::PostMessageW(
+                this->m_WindowHandle,
+                WM_KEYDOWN,
+                VK_ESCAPE,
+                0);
+        }
     }
 
     void ProgressPage::UpdateStatus(

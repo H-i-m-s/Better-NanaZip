@@ -1183,6 +1183,29 @@ bool CProgressDialog::ModernMessageRouter(UINT message, WPARAM wParam, LPARAM lP
         }
         return false;
     }
+    case WM_KEYDOWN:
+    {
+        // Esc cancels the operation immediately, like the Win32 dialog
+        // (Esc == IDCANCEL == OnCancel), without the confirmation box
+        // that the Cancel button shows.
+        if (VK_ESCAPE == wParam)
+        {
+            if (this->_waitCloseByCancelButton)
+            {
+                // The operation already finished: just close the window
+                // (same as the Cancel/Close button in that state).
+                this->MessagesDisplayed = true;
+                this->Destroy();
+                return true;
+            }
+            // Operation still running: stop it. The window stays open
+            // until the operation finishes stopping (7-Zip closes it
+            // then).
+            this->Sync.Set_Stopped(true);
+            return true;
+        }
+        return false;
+    }
     case WM_TIMER:
     {
         if (this->Sync.Get_Paused())

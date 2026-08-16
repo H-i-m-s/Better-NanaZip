@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CopyLocationPage.g.h"
+#include "LinkPage.g.h"
 
 #include <Windows.h>
 
@@ -16,13 +16,13 @@ namespace winrt
 
 namespace winrt::NanaZip::Modern::implementation
 {
-    struct CopyLocationPage : CopyLocationPageT<CopyLocationPage>
+    struct LinkPage : LinkPageT<LinkPage>
     {
     public:
 
-        CopyLocationPage(
+        LinkPage(
             _In_opt_ HWND WindowHandle = nullptr,
-            _In_ PK7_COPY_DIALOG_CONTEXT Context = nullptr);
+            _In_ PK7_LINK_DIALOG_CONTEXT Context = nullptr);
 
         void InitializeComponent();
 
@@ -39,19 +39,11 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        void OnComboDropDownOpened(
-            winrt::IInspectable const& sender,
-            winrt::IInspectable const& e);
-
-        void OnComboDropDownClosed(
-            winrt::IInspectable const& sender,
-            winrt::IInspectable const& e);
-
         void OnComboKeyDown(
             winrt::IInspectable const& sender,
             winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
 
-        void OnOkClicked(
+        void OnLinkClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
@@ -59,7 +51,11 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        void OnBrowseClicked(
+        void OnBrowseFromClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
+        void OnBrowseToClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
@@ -82,9 +78,11 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::Windows::UI::Xaml::DependencyObject const& Node,
             double FontSizePx);
 
+        void BrowseTo(
+            winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo);
+
         HWND m_WindowHandle;
-        PK7_COPY_DIALOG_CONTEXT m_Context;
+        PK7_LINK_DIALOG_CONTEXT m_Context;
         bool m_OkClicked;
-        std::wstring m_TextSnapshot;
     };
 }

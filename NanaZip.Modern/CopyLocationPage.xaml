@@ -1,85 +1,80 @@
-﻿<Page
-  x:Class="NanaZip.Modern.CopyLocationPage"
-  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-  xmlns:local="using:NanaZip.Modern"
-  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-  mc:Ignorable="d">
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.CopyLocationPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    KeyDown="OnPageKeyDown"
+    PreviewKeyDown="OnPageKeyDown"
+    Background="Transparent">
 
-  <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
+    <Grid Padding="12,12,12,12">
+        <Grid.RowDefinitions>
+            <!-- The middle row is stretched: it absorbs sub-pixel height
+                 changes of the combo (e.g. VisualState changes when the
+                 drop-down opens), so the button row below never moves.
+                 The window height is sized to the measured content (plus a
+                 tiny margin), so the stretch row has almost no extra space
+                 and the dialog stays compact. -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="Auto" />
-    </Grid.ColumnDefinitions>
+        <TextBlock
+            x:Name="PromptText"
+            Grid.Row="0"
+            VerticalAlignment="Center"/>
 
-    <TextBlock
-      x:Name="TitleTextBlock"
-      Grid.ColumnSpan="2"
-      Margin="16,0"
-      d:Text="[Copy]"
-      FontSize="24"
-      Style="{ThemeResource BaseTextBlockStyle}"
-      TextTrimming="CharacterEllipsis"
-      TextWrapping="NoWrap" />
+        <StackPanel
+            Grid.Row="1"
+            Margin="0,8,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox
+                    x:Name="PathCombo"
+                    Grid.Column="0"
+                    IsEditable="True"
+                    MinWidth="240"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center"
+                    KeyDown="OnComboKeyDown"/>
+                <Button
+                    x:Name="BrowseButton"
+                    Grid.Column="1"
+                    MinWidth="40"
+                    Margin="6,0,0,0"
+                    VerticalAlignment="Center"
+                    Click="OnBrowseClicked"
+                    Content="..."/>
+            </Grid>
+            <TextBlock
+                x:Name="InfoText"
+                Margin="0,8,0,0"
+                MaxHeight="240"
+                TextWrapping="NoWrap"/>
+        </StackPanel>
 
-    <TextBlock
-      x:Name="SubtitleTextBlock"
-      Grid.Row="1"
-      Grid.ColumnSpan="2"
-      Margin="16,4"
-      d:Text="[Copy to:]" />
-
-    <TextBox
-      x:Name="PathTextBox"
-      Grid.Row="2"
-      Margin="16,0,4,0" />
-    <Button
-      Grid.Row="2"
-      Grid.Column="1"
-      Margin="0,0,16,0"
-      Click="BrowseButtonClick"
-      Content="..." />
-
-    <TextBlock
-      x:Name="AdditionalInformationTextBlock"
-      Grid.Row="3"
-      Margin="16,4,16,0"
-      d:Text="Files: 1" />
-
-    <Grid
-      Grid.Row="4"
-      Grid.ColumnSpan="2"
-      Background="#37C9C9C9"
-      BorderBrush="{ThemeResource CardStrokeColorDefault}"
-      BorderThickness="0,1,0,0">
-      <StackPanel
-        Grid.Column="1"
-        Padding="0,0,12,0"
-        HorizontalAlignment="Right"
-        Orientation="Horizontal">
-        <Button
-          x:Name="PauseButton"
-          x:Uid="/NanaZip.Modern/Common/OKButton"
-          Width="120"
-          Margin="0,16,4,16"
-          Click="OkButtonClick"
-          Content="[OK]" />
-        <Button
-          x:Uid="/NanaZip.Modern/Common/CancelButton"
-          Width="120"
-          Margin="4,16,4,16"
-          Click="CancelButtonClick"
-          Content="[Cancel]" />
-      </StackPanel>
+        <StackPanel
+            Grid.Row="2"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Margin="0,6,0,0">
+            <Button
+                x:Name="OkButton"
+                MinWidth="88"
+                Margin="0,0,6,0"
+                Click="OnOkClicked"/>
+            <Button
+                x:Name="CancelButton"
+                MinWidth="88"
+                Click="OnCancelClicked"/>
+        </StackPanel>
     </Grid>
-  </Grid>
 </Page>

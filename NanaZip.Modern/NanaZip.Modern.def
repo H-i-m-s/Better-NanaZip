@@ -1,4 +1,4 @@
-﻿LIBRARY
+LIBRARY
 
 EXPORTS
 
@@ -13,7 +13,6 @@ K7ModernUpdateProgressWindowStatus
 K7ModernSetProgressWindowPausedMode
 K7ModernShowProgressWindow
 K7ModernShowCopyLocationDialog
-K7ModernGetCopyLocationDialogPath
 K7ModernCreateMainWindowToolBarPage
 K7ModernShowOverwriteDialog
 K7ModernShowExtractDialog
@@ -23,3 +22,6 @@ K7ModernShowCompressOptionsDialog
 K7ModernShowSplitDialog
 K7ModernShowPasswordDialog
 K7ModernShowComboDialog
+K7ModernShowLinkDialog
+K7ModernShowBenchmarkDialog
+K7ModernUpdateBenchmarkStatus

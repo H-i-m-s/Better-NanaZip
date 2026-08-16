@@ -1,4 +1,4 @@
-﻿// BenchmarkDialog.cpp
+// BenchmarkDialog.cpp
 
 #include "StdAfx.h"
 
@@ -36,6 +36,10 @@
 
 #include "BenchmarkDialogRes.h"
 #include "BenchmarkDialog.h"
+
+// **************** NanaZip Modification Start ****************
+#include <NanaZip.Modern.h>
+// **************** NanaZip Modification End ****************
 
 using namespace NWindows;
 
@@ -324,6 +328,37 @@ private:
   void PrintRating(UInt64 rating, UINT controlID);
   void PrintUsage(UInt64 usage, UINT controlID);
   void PrintBenchRes(const CTotalBenchRes2 &info, const UINT ids[]);
+  void FormatBenchRes(
+      const CTotalBenchRes2 &info,
+      K7_BENCHMARK_STATUS &Status,
+      bool enc,
+      bool current);
+
+  // **************** NanaZip Modification Start ****************
+  HWND m_WindowHandle = nullptr;
+  bool m_FirstRun = false;
+
+  // Combo option values (index -> value) filled by FillContext, used by
+  // the option-change messages from the XAML page.
+  UInt64 m_DictSizes[K7_BENCH_MAX_COMBO_ITEMS];
+  UInt32 m_DictSizesCount = 0;
+  UInt32 m_ThreadValues[K7_BENCH_MAX_COMBO_ITEMS];
+  UInt32 m_ThreadValuesCount = 0;
+  UInt32 m_PassesValues[K7_BENCH_MAX_COMBO_ITEMS];
+  UInt32 m_PassesValuesCount = 0;
+
+  static LRESULT CALLBACK ModernWindowHandler(
+      _In_ HWND hWnd,
+      _In_ UINT uMsg,
+      _In_ WPARAM wParam,
+      _In_ LPARAM lParam,
+      _In_ UINT_PTR uIdSubclass,
+      _In_ DWORD_PTR dwRefData);
+
+  bool ModernMessageRouter(UINT message, WPARAM wParam, LPARAM lParam);
+
+  void FillContext(PK7_BENCHMARK_DIALOG_CONTEXT Context);
+  // **************** NanaZip Modification End ****************
 
   UInt32 GetNumberOfThreads();
   size_t OnChangeDictionary();
@@ -363,6 +398,10 @@ public:
 
   bool PostMsg_Finish(WPARAM wparam)
   {
+    // **************** NanaZip Modification Start ****************
+    if (this->m_WindowHandle)
+      return ::PostMessageW(this->m_WindowHandle, k_Message_Finished, wparam, 0) != FALSE;
+    // **************** NanaZip Modification End ****************
     if ((HWND)*this)
       return PostMsg(k_Message_Finished, wparam);
     // the (HWND)*this is NULL only for some internal code failure
@@ -371,8 +410,41 @@ public:
 
   INT_PTR Create(HWND wndParent = NULL)
   {
+    // **************** NanaZip Modification Start ****************
     BIG_DIALOG_SIZE(332, 228);
-    return CModalDialog::Create(TotalMode ? IDD_BENCH_TOTAL : SIZED_DIALOG(IDD_BENCH), wndParent);
+    K7_BENCHMARK_DIALOG_CONTEXT Context = {};
+
+    // Restore the last window position (persisted on WM_CLOSE below).
+    {
+      HKEY key = nullptr;
+      if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+          KEY_READ, &key) == ERROR_SUCCESS)
+      {
+        DWORD x = 0;
+        DWORD y = 0;
+        DWORD size = sizeof(DWORD);
+        const bool hasX = (::RegQueryValueExW(key, L"BenchmarkWindowX", nullptr,
+            nullptr, (LPBYTE)&x, &size) == ERROR_SUCCESS);
+        size = sizeof(DWORD);
+        const bool hasY = (::RegQueryValueExW(key, L"BenchmarkWindowY", nullptr,
+            nullptr, (LPBYTE)&y, &size) == ERROR_SUCCESS);
+        if (hasX && hasY)
+        {
+          Context.HasInitialPos = TRUE;
+          Context.InitialX = (INT32)x;
+          Context.InitialY = (INT32)y;
+        }
+        ::RegCloseKey(key);
+      }
+    }
+
+    this->FillContext(&Context);
+    return ::K7ModernShowBenchmarkDialog(
+        wndParent,
+        &Context,
+        CBenchmarkDialog::ModernWindowHandler,
+        this);
+    // **************** NanaZip Modification End ****************
   }
   void MessageBoxError(LPCWSTR message)
   {
@@ -457,6 +529,254 @@ static int ComboBox_Add_UInt32(NWindows::NControl::CComboBox &cb, UInt32 v)
   return (int)cb.AddString_SetItemData(s, (LPARAM)v);
 }
 
+
+// **************** NanaZip Modification Start ****************
+static void SaveBenchmarkWindowPosition(HWND hWnd)
+{
+  RECT rc = {};
+  if (!::GetWindowRect(hWnd, &rc))
+    return;
+  HKEY key = nullptr;
+  if (::RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+      nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) == ERROR_SUCCESS)
+  {
+    DWORD x = (DWORD)rc.left;
+    DWORD y = (DWORD)rc.top;
+    ::RegSetValueExW(key, L"BenchmarkWindowX", 0, REG_DWORD,
+        (LPBYTE)&x, sizeof(x));
+    ::RegSetValueExW(key, L"BenchmarkWindowY", 0, REG_DWORD,
+        (LPBYTE)&y, sizeof(y));
+    ::RegCloseKey(key);
+  }
+}
+
+static void CopyTruncatedStr(
+    _Out_writes_z_(MaxLen) wchar_t *Dest,
+    _In_ UINT32 MaxLen,
+    const UString &Src)
+{
+  UString s = Src;
+  if (s.Len() >= (int)MaxLen)
+  {
+    s.DeleteFrom(MaxLen - 1);
+  }
+  wcscpy_s(Dest, MaxLen, s.Ptr());
+}
+
+static void CopyTruncatedStr(
+    _Out_writes_z_(MaxLen) wchar_t *Dest,
+    _In_ UINT32 MaxLen,
+    const AString &Src)
+{
+  CopyTruncatedStr(Dest, MaxLen, MultiByteToUnicodeString(Src, CP_ACP));
+}
+
+// Prepares the XAML dialog context (system info + combo options + initial
+// values) before K7ModernShowBenchmarkDialog shows the window. The Win32
+// OnInit does the same work for the Win32 dialog; it is not called in the
+// XAML mode.
+void CBenchmarkDialog::FillContext(PK7_BENCHMARK_DIALOG_CONTEXT Context)
+{
+  // Dialog font size from the registry (mirrors the ExtractDialog font).
+  {
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          (LPBYTE)&pt, &size);
+      ::RegCloseKey(key);
+    }
+    Context->FontSizeDialog = pt;
+  }
+
+  Context->TotalMode = TotalMode ? TRUE : FALSE;
+
+  UInt32 numCPUs = 1; // process threads
+  UInt32 numCPUs_Sys = 1; // system threads
+  {
+    NSystem::CProcessAffinity threadsInfo;
+    threadsInfo.InitST();
+  #ifndef Z7_ST
+    threadsInfo.Get_and_return_NumProcessThreads_and_SysThreads(numCPUs, numCPUs_Sys);
+  #endif
+
+    AString s (" / ");
+    s.Add_UInt32(numCPUs);
+    s += GetProcessThreadsInfo(threadsInfo);
+    CopyTruncatedStr(Context->HardwareThreads,
+        Z7_ARRAY_SIZE(Context->HardwareThreads), s);
+
+    {
+      AString s2;
+      GetSysInfo(s, s2);
+      CopyTruncatedStr(Context->Sys1,
+          Z7_ARRAY_SIZE(Context->Sys1), s);
+      if (s != s2 && !s2.IsEmpty())
+        CopyTruncatedStr(Context->Sys2,
+            Z7_ARRAY_SIZE(Context->Sys2), s2);
+      GetCpuName_MultiLine(s, s2); // s2==registers
+      CopyTruncatedStr(Context->Cpu,
+          Z7_ARRAY_SIZE(Context->Cpu), s);
+    }
+    {
+      GetOsInfoText(s);
+      s += " : ";
+      AddCpuFeatures(s);
+      CopyTruncatedStr(Context->Features,
+          Z7_ARRAY_SIZE(Context->Features), s);
+    }
+    {
+      s = "NanaZip " MILE_PROJECT_VERSION_UTF8_STRING " (" MY_CPU_NAME ")";
+      CopyTruncatedStr(Context->Version,
+          Z7_ARRAY_SIZE(Context->Version), s);
+    }
+  }
+
+  // ----- Num Threads ----------
+
+  UInt32 numThreads = Sync.NumThreads;
+  if (numThreads == (UInt32)(Int32)-1)
+    numThreads = numCPUs;
+  numThreads &= ~(UInt32)1;
+  if (numThreads == 0)
+    numThreads = 1;
+  numThreads = MyMin(numThreads, (UInt32)(1u << 14));
+
+  if (numCPUs_Sys == 0)
+    numCPUs_Sys = 1;
+  const UInt32 numTheads_Combo = numCPUs_Sys * 2;
+  UInt32 v = 1;
+  UInt32 count = 0;
+  UInt32 cur = 0;
+  for (; v <= numTheads_Combo;)
+  {
+    UInt32 index = count;
+    WCHAR tmp[32];
+    ConvertUInt32ToString(v, tmp);
+    wcscpy_s(Context->ThreadItems[count], K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+    m_ThreadValues[count] = v;
+    count++;
+    const UInt32 vNext = v + (v < 2 ? 1 : 2);
+    if (v <= numThreads)
+    if (numThreads < vNext || vNext > numTheads_Combo)
+    {
+      if (v != numThreads)
+      {
+        WCHAR tmp2[32];
+        ConvertUInt32ToString(numThreads, tmp2);
+        wcscpy_s(Context->ThreadItems[count], K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp2);
+        m_ThreadValues[count] = numThreads;
+        cur = count;
+        count++;
+      }
+      else
+        cur = index;
+    }
+    v = vNext;
+  }
+  Context->ThreadItemsCount = count;
+  Context->ThreadIndex = cur;
+  m_ThreadValuesCount = count;
+  Sync.NumThreads = m_ThreadValues[cur];
+
+  // ----- Dictionary ----------
+
+  RamSize = (UInt64)(sizeof(size_t)) << 29;
+  RamSize_Defined = NSystem::GetRamSize(RamSize);
+  RamSize_Limit = RamSize / 16 * 15;
+
+  if (Sync.DictSize == (UInt64)(Int64)-1)
+  {
+    unsigned dicSizeLog = 25;
+    if (RamSize_Defined)
+    for (; dicSizeLog > kBenchMinDicLogSize; dicSizeLog--)
+      if (IsMemoryUsageOK(GetBenchMemoryUsage(
+          Sync.NumThreads, Sync.Level, (UInt64)1 << dicSizeLog, TotalMode)))
+        break;
+    Sync.DictSize = (UInt64)1 << dicSizeLog;
+  }
+
+  if (Sync.DictSize < kMinDicSize) Sync.DictSize = kMinDicSize;
+  if (Sync.DictSize > kMaxDicSize) Sync.DictSize = kMaxDicSize;
+
+  cur = 0;
+  count = 0;
+  for (unsigned i = (kMinDicLogSize - 1) * 2; i <= (32 - 1) * 2; i++)
+  {
+    const size_t dict = (size_t)(2 + (i & 1)) << (i / 2);
+    TCHAR s[32];
+    const TCHAR *post;
+    UInt32 d;
+         if (dict >= ((UInt32)1 << 31)) { d = (UInt32)(dict >> 30); post = kGB; }
+    else if (dict >= ((UInt32)1 << 21)) { d = (UInt32)(dict >> 20); post = kMB; }
+    else                                { d = (UInt32)(dict >> 10); post = kKB; }
+    ConvertUInt32ToString(d, s);
+    lstrcat(s, post);
+    wcscpy_s(Context->DictItems[count], K7_BENCH_MAX_SHORT_TEXT_LENGTH, s);
+    m_DictSizes[count] = dict;
+    {
+      UString memS;
+      Print_MemUsage(memS, GetBenchMemoryUsage(
+          Sync.NumThreads, Sync.Level, dict, TotalMode));
+      CopyTruncatedStr(Context->DictMemoryItems[count],
+          K7_BENCH_MAX_SHORT_TEXT_LENGTH, memS);
+    }
+    if (dict <= Sync.DictSize)
+      cur = count;
+    count++;
+    if (dict >= kMaxDicSize)
+      break;
+  }
+  Context->DictItemsCount = count;
+  Context->DictIndex = cur;
+  m_DictSizesCount = count;
+
+  // ----- Num Passes ----------
+
+  cur = 0;
+  count = 0;
+  v = 1;
+  for (;;)
+  {
+    UInt32 index = count;
+    WCHAR tmp[32];
+    ConvertUInt32ToString(v, tmp);
+    wcscpy_s(Context->PassesItems[count], K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+    m_PassesValues[count] = v;
+    count++;
+    const bool isLast = (v >= 10000000);
+    UInt32 vNext = v * 10;
+         if (v < 2) vNext = 2;
+    else if (v < 5) vNext = 5;
+    else if (v < 10) vNext = 10;
+
+    if (v <= Sync.NumPasses_Limit)
+    if (isLast || Sync.NumPasses_Limit < vNext)
+    {
+      if (v != Sync.NumPasses_Limit)
+      {
+        WCHAR tmp2[32];
+        ConvertUInt32ToString(Sync.NumPasses_Limit, tmp2);
+        wcscpy_s(Context->PassesItems[count], K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp2);
+        m_PassesValues[count] = Sync.NumPasses_Limit;
+        cur = count;
+        count++;
+      }
+      else
+        cur = index;
+    }
+    v = vNext;
+    if (isLast)
+      break;
+  }
+  Context->PassesItemsCount = count;
+  Context->PassesIndex = cur;
+  m_PassesValuesCount = count;
+}
+// **************** NanaZip Modification End ****************
 
 bool CBenchmarkDialog::OnInit()
 {
@@ -860,7 +1180,10 @@ void CBenchmarkDialog::MyKillTimer()
 {
   if (_timer != 0)
   {
-    KillTimer(kTimerID);
+    // **************** NanaZip Modification Start ****************
+    if (this->m_WindowHandle)
+      ::KillTimer(this->m_WindowHandle, kTimerID);
+    // **************** NanaZip Modification End ****************
     _timer = 0;
   }
 }
@@ -885,17 +1208,15 @@ void CBenchmarkDialog::StartBenchmark()
   
   MyKillTimer(); // optional code. timer was killed before
 
-  const size_t dict = OnChangeDictionary();
-  const UInt32 numThreads = GetNumberOfThreads();
-  const UInt32 numPasses = (UInt32)m_NumPasses.GetItemData_of_CurSel();
+  // **************** NanaZip Modification Start ****************
+  // XAML mode: the options come from the Sync fields (updated by the
+  // option-change messages from the XAML page); the Win32 combo controls
+  // are not created.
+  const size_t dict = (size_t)Sync.DictSize;
+  const UInt32 numThreads = Sync.NumThreads;
+  const UInt32 numPasses = Sync.NumPasses_Limit;
+  // **************** NanaZip Modification End ****************
 
-  for (unsigned i = 0; i < Z7_ARRAY_SIZE(g_IDs); i++)
-    SetItemText(g_IDs[i], kProcessingString);
-
-  SetItemText_Empty(IDT_BENCH_LOG);
-  SetItemText_Empty(IDT_BENCH_ELAPSED_VAL);
-  SetItemText_Empty(IDT_BENCH_ERROR_MESSAGE);
-  
   const UInt64 memUsage = GetBenchMemoryUsage(numThreads, Sync.Level, dict,
       false); // totalBench
   if (!IsMemoryUsageOK(memUsage))
@@ -911,11 +1232,17 @@ void CBenchmarkDialog::StartBenchmark()
     }
     UString s;
     SetErrorMessage_MemUsage(s, memUsage, RamSize, RamSize_Limit, s2);
-    MessageBoxError_Status(s);
+    // **************** NanaZip Modification Start ****************
+    if (this->m_WindowHandle)
+    {
+      K7_BENCHMARK_STATUS Status = {};
+      Status.HasError = TRUE;
+      CopyTruncatedStr(Status.Error, K7_BENCH_MAX_TEXT_LENGTH, s);
+      ::K7ModernUpdateBenchmarkStatus(this->m_WindowHandle, &Status);
+    }
+    // **************** NanaZip Modification End ****************
     return;
   }
-
-  EnableItem(IDB_STOP, true);
 
   _startTime = GetTickCount();
   _finishTime = _startTime;
@@ -929,13 +1256,29 @@ void CBenchmarkDialog::StartBenchmark()
     Sync.NumPasses_Limit = numPasses;
   }
 
-  PrintTime();
-
-  _timer = SetTimer(kTimerID, kTimerElapse);
+  // **************** NanaZip Modification Start ****************
+  if (this->m_WindowHandle)
+    _timer = ::SetTimer(this->m_WindowHandle, kTimerID, kTimerElapse, NULL);
+  // **************** NanaZip Modification End ****************
   if (_thread.Create(CThreadBenchmark::MyThreadFunction, &_threadBenchmark) != 0)
   {
     MyKillTimer();
-    MessageBoxError_Status(L"Can't create thread");
+    // **************** NanaZip Modification Start ****************
+    if (this->m_WindowHandle)
+    {
+      K7_BENCHMARK_STATUS Status = {};
+      Status.HasError = TRUE;
+      CopyTruncatedStr(Status.Error, K7_BENCH_MAX_TEXT_LENGTH,
+          UString(L"Can't create thread"));
+      ::K7ModernUpdateBenchmarkStatus(this->m_WindowHandle, &Status);
+    }
+    // **************** NanaZip Modification End ****************
+  }
+  else
+  {
+    // Reflect the running state immediately (the XAML Stop button is
+    // enabled via the Running flag).
+    UpdateGui();
   }
   return;
 }
@@ -958,13 +1301,10 @@ void CBenchmarkDialog::RestartBenchmark()
 
 void CBenchmarkDialog::Disable_Stop_Button()
 {
-  // if we disable focused button, then focus will be lost
-  if (GetFocus() == GetItem(IDB_STOP))
-  {
-    // SendMsg_NextDlgCtl_Prev();
-    SendMsg_NextDlgCtl_CtlId(IDB_RESTART);
-  }
-  EnableItem(IDB_STOP, false);
+  // **************** NanaZip Modification Start ****************
+  // XAML mode: the Stop button state is driven by the Running flag in the
+  // status refresh; there is no Win32 button to disable.
+  // **************** NanaZip Modification End ****************
 }
 
 
@@ -973,7 +1313,9 @@ void CBenchmarkDialog::OnStopButton()
   if (ExitWasAsked_in_GUI)
     return;
 
-  Disable_Stop_Button();
+  // **************** NanaZip Modification Start ****************
+  //Disable_Stop_Button();
+  // **************** NanaZip Modification End ****************
 
   WasStopped_in_GUI = true;
   if (_thread.IsCreated())
@@ -995,8 +1337,10 @@ void CBenchmarkDialog::OnCancel()
 
   if (_thread.IsCreated())
     SendExit_Status(L"Cancel ...");
-  else
-    CModalDialog::OnCancel();
+  // **************** NanaZip Modification Start ****************
+  else if (this->m_WindowHandle)
+    ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+  // **************** NanaZip Modification End ****************
 }
 
 
@@ -1223,10 +1567,11 @@ bool CBenchmarkDialog::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
       if (ExitWasAsked_in_GUI)
       {
-        // SetItemText(IDT_BENCH_ERROR_MESSAGE, "before CModalDialog::OnCancel()");
-        // Sleep (2000);
-        // MessageBoxError(L"test");
-        CModalDialog::OnCancel();
+        // **************** NanaZip Modification Start ****************
+        //CModalDialog::OnCancel();
+        if (this->m_WindowHandle)
+          ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        // **************** NanaZip Modification End ****************
         return true;
       }
     
@@ -1273,16 +1618,136 @@ bool CBenchmarkDialog::OnTimer(WPARAM timerID, LPARAM /* callback */)
 }
 
 
+// **************** NanaZip Modification Start ****************
+// Formats one bench result into the XAML status fields (the Win32
+// PrintBenchRes writes the same data into dialog controls).
+void CBenchmarkDialog::FormatBenchRes(
+    const CTotalBenchRes2 &info,
+    K7_BENCHMARK_STATUS &Status,
+    bool enc,
+    bool current)
+{
+  if (info.NumIterations2 == 0)
+    return;
+
+  WCHAR tmp[64];
+
+  // Usage
+  {
+    wchar_t w[32];
+    wchar_t *p = ConvertUInt64ToString(
+        GetUsagePercents(info.Usage / info.NumIterations2), w);
+    p[0] = '%';
+    p[1] = 0;
+    wcscpy_s(tmp, Z7_ARRAY_SIZE(tmp), w);
+  }
+  if (enc && current)
+    wcscpy_s(Status.EncUsage1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (enc)
+    wcscpy_s(Status.EncUsage2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (current)
+    wcscpy_s(Status.DecUsage1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else
+    wcscpy_s(Status.DecUsage2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+
+  // Speed
+  {
+    ConvertUInt64ToString((info.Speed >> 10) / info.NumIterations2, tmp);
+    lstrcat(tmp, kKBs);
+  }
+  if (enc && current)
+    wcscpy_s(Status.EncSpeed1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (enc)
+    wcscpy_s(Status.EncSpeed2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (current)
+    wcscpy_s(Status.DecSpeed1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else
+    wcscpy_s(Status.DecSpeed2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+
+  // Rating
+  {
+    MyStringCopy(NumberToDot3(
+        GetMips(info.Rating / info.NumIterations2), tmp), L" GIPS");
+  }
+  if (enc && current)
+    wcscpy_s(Status.EncRating1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (enc)
+    wcscpy_s(Status.EncRating2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (current)
+    wcscpy_s(Status.DecRating1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else
+    wcscpy_s(Status.DecRating2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+
+  // RPU
+  {
+    MyStringCopy(NumberToDot3(
+        GetMips(info.RPU / info.NumIterations2), tmp), L" GIPS");
+  }
+  if (enc && current)
+    wcscpy_s(Status.EncRpu1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (enc)
+    wcscpy_s(Status.EncRpu2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (current)
+    wcscpy_s(Status.DecRpu1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else
+    wcscpy_s(Status.DecRpu2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+
+  // Size
+  {
+    UInt64 val = info.UnpackSize;
+    LPCTSTR kPostfix;
+    if (val >= ((UInt64)1 << 40))
+    {
+      kPostfix = kGB;
+      val >>= 30;
+    }
+    else
+    {
+      kPostfix = kMB;
+      val >>= 20;
+    }
+    ConvertUInt64ToString(val, tmp);
+    lstrcat(tmp, kPostfix);
+  }
+  if (enc && current)
+    wcscpy_s(Status.EncSize1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (enc)
+    wcscpy_s(Status.EncSize2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else if (current)
+    wcscpy_s(Status.DecSize1, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+  else
+    wcscpy_s(Status.DecSize2, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+}
+// **************** NanaZip Modification End ****************
+
 void CBenchmarkDialog::UpdateGui()
 {
-  PrintTime();
+  // **************** NanaZip Modification Start ****************
+  K7_BENCHMARK_STATUS Status = {};
+
+  // Elapsed time (the Win32 PrintTime does the same formatting).
+  {
+    const UInt32 curTime =
+      _finishTime_WasSet ?
+        _finishTime :
+        ::GetTickCount();
+    const UInt32 elapsedTime = (curTime - _startTime);
+    WCHAR s[64];
+    WCHAR *p = ConvertUInt32ToString(elapsedTime / 1000, s);
+    if (_finishTime_WasSet)
+    {
+      *p++ = '.';
+      UINT_TO_STR_3(p, elapsedTime % 1000)
+    }
+    MyStringCopy(p, L" s");
+    wcscpy_s(Status.Elapsed, K7_BENCH_MAX_SHORT_TEXT_LENGTH, s);
+  }
 
   if (TotalMode)
   {
     bool wasChanged = false;
     {
       NWindows::NSynchronization::CCriticalSectionLock lock(Sync.CS);
-      
       if (Sync.TextWasChanged)
       {
         wasChanged = true;
@@ -1292,125 +1757,131 @@ void CBenchmarkDialog::UpdateGui()
       }
     }
     if (wasChanged)
-      _consoleEdit.SetText(Bench2Text);
-    return;
+    {
+      CopyTruncatedStr(Status.Log, K7_BENCH_MAX_LOG_LENGTH,
+          UString(Bench2Text.Ptr()));
+    }
+    Status.Running = WasStopped_in_GUI ? FALSE : TRUE;
   }
-
-  CSyncData sd;
-  CRecordVector<CBenchPassResult> RatingVector;
-
+  else
   {
-    NWindows::NSynchronization::CCriticalSectionLock lock(Sync.CS);
-    sd = Sync.sd;
+    CSyncData sd;
+    CRecordVector<CBenchPassResult> RatingVector;
+
+    {
+      NWindows::NSynchronization::CCriticalSectionLock lock(Sync.CS);
+      sd = Sync.sd;
+
+      if (sd.NeedPrint_RatingVector)
+        RatingVector = Sync.RatingVector;
+
+      if (sd.NeedPrint_Freq)
+      {
+        Sync.FreqString_GUI = Sync.FreqString_Sync;
+        sd.NeedPrint_RatingVector = true;
+      }
+
+      Sync.sd.NeedPrint_RatingVector = false;
+      Sync.sd.NeedPrint_Enc_1 = false;
+      Sync.sd.NeedPrint_Enc   = false;
+      Sync.sd.NeedPrint_Dec_1 = false;
+      Sync.sd.NeedPrint_Dec   = false;
+      Sync.sd.NeedPrint_Tot   = false;
+      Sync.sd.NeedPrint_Freq = false;
+    }
+
+    Status.PassesFinished = sd.NumPasses_Finished;
+
+    if (sd.NeedPrint_Enc_1) FormatBenchRes(sd.Enc_BenchRes_1, Status, true, true);
+    if (sd.NeedPrint_Enc)   FormatBenchRes(sd.Enc_BenchRes,   Status, true, false);
+    if (sd.NeedPrint_Dec_1) FormatBenchRes(sd.Dec_BenchRes_1, Status, false, true);
+    if (sd.NeedPrint_Dec)   FormatBenchRes(sd.Dec_BenchRes,   Status, false, false);
+
+    if (sd.BenchWasFinished && sd.NeedPrint_Tot)
+    {
+      CTotalBenchRes2 tot_BenchRes = sd.Enc_BenchRes;
+      tot_BenchRes.Update_With_Res2(sd.Dec_BenchRes);
+      if (tot_BenchRes.NumIterations2 != 0)
+      {
+        WCHAR tmp[64];
+        MyStringCopy(NumberToDot3(
+            GetMips(tot_BenchRes.Rating / tot_BenchRes.NumIterations2),
+            tmp), L" GIPS");
+        wcscpy_s(Status.TotalRating, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+        MyStringCopy(NumberToDot3(
+            GetMips(tot_BenchRes.RPU / tot_BenchRes.NumIterations2),
+            tmp), L" GIPS");
+        wcscpy_s(Status.TotalRpu, K7_BENCH_MAX_SHORT_TEXT_LENGTH, tmp);
+        {
+          wchar_t w[32];
+          wchar_t *p = ConvertUInt64ToString(
+              GetUsagePercents(tot_BenchRes.Usage / tot_BenchRes.NumIterations2),
+              w);
+          p[0] = '%';
+          p[1] = 0;
+          wcscpy_s(Status.TotalUsage, K7_BENCH_MAX_SHORT_TEXT_LENGTH, w);
+        }
+      }
+    }
 
     if (sd.NeedPrint_RatingVector)
-      RatingVector = Sync.RatingVector;
-    
-    if (sd.NeedPrint_Freq)
     {
-      Sync.FreqString_GUI = Sync.FreqString_Sync;
-      sd.NeedPrint_RatingVector = true;
-    }
-
-    Sync.sd.NeedPrint_RatingVector = false;
-    Sync.sd.NeedPrint_Enc_1 = false;
-    Sync.sd.NeedPrint_Enc   = false;
-    Sync.sd.NeedPrint_Dec_1 = false;
-    Sync.sd.NeedPrint_Dec   = false;
-    Sync.sd.NeedPrint_Tot   = false;
-    Sync.sd.NeedPrint_Freq = false;
-  }
-
-  if (sd.NumPasses_Finished != NumPasses_Finished_Prev)
-  {
-    SetItemText_Number(IDT_BENCH_PASSES_VAL, sd.NumPasses_Finished, TEXT(" /"));
-    NumPasses_Finished_Prev = sd.NumPasses_Finished;
-  }
-
-  if (sd.NeedPrint_Enc_1) PrintBenchRes(sd.Enc_BenchRes_1, k_Ids_Enc_1);
-  if (sd.NeedPrint_Enc)   PrintBenchRes(sd.Enc_BenchRes,   k_Ids_Enc);
-  if (sd.NeedPrint_Dec_1) PrintBenchRes(sd.Dec_BenchRes_1, k_Ids_Dec_1);
-  if (sd.NeedPrint_Dec)   PrintBenchRes(sd.Dec_BenchRes,   k_Ids_Dec);
- 
-  if (sd.BenchWasFinished && sd.NeedPrint_Tot)
-  {
-    CTotalBenchRes2 tot_BenchRes = sd.Enc_BenchRes;
-    tot_BenchRes.Update_With_Res2(sd.Dec_BenchRes);
-    PrintBenchRes(tot_BenchRes, k_Ids_Tot);
-  }
-
-
-  if (sd.NeedPrint_RatingVector)
-  // for (unsigned k = 0; k < 1; k++)
-  {
-    UString s;
-    s += Sync.FreqString_GUI;
-    if (!RatingVector.IsEmpty())
-    {
-      if (!s.IsEmpty())
-        s.Add_LF();
-      s += "Compr Decompr Total   CPU"
-          #ifdef PRINT_ITER_TIME
-          "   Time"
-          #endif
-          ;
-      s.Add_LF();
-    }
-    // s += "GIPS    GIPS   GIPS    %   s"; s.Add_LF();
-    for (unsigned i = 0; i < RatingVector.Size(); i++)
-    {
-      if (i != 0)
-        s.Add_LF();
-      if ((int)i == sd.RatingVector_DeletedIndex)
+      UString s;
+      s += Sync.FreqString_GUI;
+      if (!RatingVector.IsEmpty())
       {
-        s += "...";
+        if (!s.IsEmpty())
+          s.Add_LF();
+        s += "Compr Decompr Total   CPU"
+            #ifdef PRINT_ITER_TIME
+            "   Time"
+            #endif
+            ;
         s.Add_LF();
       }
-      const CBenchPassResult &pair = RatingVector[i];
-      /*
-        s += "g:"; s.Add_UInt32((UInt32)pair.EncInfo.GlobalTime);
-        s += " u:"; s.Add_UInt32((UInt32)pair.EncInfo.UserTime);
-        s.Add_Space();
-      */
-      AddRatingsLine(s, pair.Enc, pair.Dec
+      for (unsigned i = 0; i < RatingVector.Size(); i++)
+      {
+        if (i != 0)
+          s.Add_LF();
+        if ((int)i == sd.RatingVector_DeletedIndex)
+        {
+          s += "...";
+          s.Add_LF();
+        }
+        const CBenchPassResult &pair = RatingVector[i];
+        AddRatingsLine(s, pair.Enc, pair.Dec
             #ifdef PRINT_ITER_TIME
             , pair.Ticks
             #endif
             );
-      /*
-      {
-        UInt64 v = i + 1;
-        if (sd.RatingVector_DeletedIndex >= 0 && i >= (unsigned)sd.RatingVector_DeletedIndex)
-          v += sd.RatingVector_NumDeleted;
-        char temp[64];
-        ConvertUInt64ToString(v, temp);
-        s += " : ";
-        s += temp;
       }
-      */
+
+      if (sd.BenchWasFinished)
+      {
+        s.Add_LF();
+        s += "-------------";
+        s.Add_LF();
+        {
+          AddRatingsLine(s, sd.Enc_BenchRes, sd.Dec_BenchRes
+                #ifdef PRINT_ITER_TIME
+                , (DWORD)(sd.TotalTicks / (sd.NumPasses_Finished ? sd.NumPasses_Finished : 1))
+                #endif
+                );
+        }
+      }
+      CopyTruncatedStr(Status.Log, K7_BENCH_MAX_LOG_LENGTH, s);
     }
 
-    if (sd.BenchWasFinished)
-    {
-      s.Add_LF();
-      s += "-------------";
-      s.Add_LF();
-      {
-        // average time is not correct because of freq detection in first iteration
-        AddRatingsLine(s, sd.Enc_BenchRes, sd.Dec_BenchRes
-              #ifdef PRINT_ITER_TIME
-              , (DWORD)(sd.TotalTicks / (sd.NumPasses_Finished ? sd.NumPasses_Finished : 1))
-              #endif
-              );
-      }
-    }
-    // s.Add_LF(); s += "OnTimer: "; s.Add_UInt32(k_OnTimer_cnt);
-    // s.Add_LF(); s += "finished Message: "; s.Add_UInt32(k_Message_Finished_cnt);
-    // static cnt = 0; cnt++; s.Add_LF(); s += "Print: "; s.Add_UInt32(cnt);
-    // s.Add_LF(); s += "NumEncProgress: "; s.Add_UInt32((UInt32)sd.NumEncProgress);
-    // s.Add_LF(); s += "NumDecProgress: "; s.Add_UInt32((UInt32)sd.NumDecProgress);
-    SetItemText(IDT_BENCH_LOG, s);
+    Status.Running = (!sd.BenchWasFinished && !WasStopped_in_GUI) ? TRUE : FALSE;
+    Status.Finished = sd.BenchWasFinished ? TRUE : FALSE;
+    Status.Stopped = WasStopped_in_GUI ? TRUE : FALSE;
   }
+
+  if (this->m_WindowHandle)
+  {
+    ::K7ModernUpdateBenchmarkStatus(this->m_WindowHandle, &Status);
+  }
+  // **************** NanaZip Modification End ****************
 }
 
 
@@ -1949,3 +2420,142 @@ CBenchmarkDialog::~CBenchmarkDialog()
     _thread.Wait_Close();
   }
 }
+// **************** NanaZip Modification Start ****************
+bool CBenchmarkDialog::ModernMessageRouter(UINT message, WPARAM wParam, LPARAM lParam)
+{
+  switch (message)
+  {
+  case WM_COMMAND:
+  {
+    int Code = HIWORD(wParam);
+    int ItemID = LOWORD(wParam);
+    if (BN_CLICKED == Code)
+    {
+      if (K7_BENCH_WINDOW_COMMAND_RESTART == ItemID)
+      {
+        RestartBenchmark();
+        return true;
+      }
+      if (K7_BENCH_WINDOW_COMMAND_STOP == ItemID)
+      {
+        OnStopButton();
+        return true;
+      }
+      if (K7_BENCH_WINDOW_COMMAND_CANCEL == ItemID)
+      {
+        OnCancel();
+        return true;
+      }
+    }
+    return false;
+  }
+  case K7_BENCH_WINDOW_MSG_SET_DICTIONARY:
+  {
+    const UInt32 index = (UInt32)wParam;
+    if (index < m_DictSizesCount)
+    {
+      NWindows::NSynchronization::CCriticalSectionLock lock(Sync.CS);
+      Sync.DictSize = m_DictSizes[index];
+    }
+    return true;
+  }
+  case K7_BENCH_WINDOW_MSG_SET_THREADS:
+  {
+    const UInt32 index = (UInt32)wParam;
+    if (index < m_ThreadValuesCount)
+    {
+      NWindows::NSynchronization::CCriticalSectionLock lock(Sync.CS);
+      Sync.NumThreads = m_ThreadValues[index];
+    }
+    return true;
+  }
+  case K7_BENCH_WINDOW_MSG_SET_PASSES:
+  {
+    const UInt32 index = (UInt32)wParam;
+    if (index < m_PassesValuesCount)
+    {
+      NWindows::NSynchronization::CCriticalSectionLock lock(Sync.CS);
+      Sync.NumPasses_Limit = m_PassesValues[index];
+    }
+    return true;
+  }
+  case WM_KEYDOWN:
+  {
+    // Esc asks to cancel (stops the thread and closes after the cleanup,
+    // like the Win32 OnCancel).
+    if (VK_ESCAPE == wParam)
+    {
+      OnCancel();
+      return true;
+    }
+    return false;
+  }
+  case WM_TIMER:
+  {
+    if (wParam == kTimerID)
+    {
+      UpdateGui();
+      return true;
+    }
+    return false;
+  }
+  case k_Message_Finished:
+  {
+    return OnMessage(k_Message_Finished, wParam, lParam);
+  }
+  case WM_CLOSE:
+  {
+    // Esc / X: stop the thread first; the window closes after the cleanup
+    // (OnMessage posts WM_CLOSE again once the thread is gone).
+    if (_thread.IsCreated())
+    {
+      OnCancel();
+      return true;
+    }
+    // **************** NanaZip Modification Start ****************
+    // Persist the window position before the window is destroyed.
+    SaveBenchmarkWindowPosition(m_WindowHandle);
+    // **************** NanaZip Modification End ****************
+    return false;
+  }
+  default:
+    break;
+  }
+  return false;
+}
+
+LRESULT CALLBACK CBenchmarkDialog::ModernWindowHandler(
+    _In_ HWND hWnd,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam,
+    _In_ UINT_PTR uIdSubclass,
+    _In_ DWORD_PTR dwRefData)
+{
+  UNREFERENCED_PARAMETER(uIdSubclass);
+
+  CBenchmarkDialog *Instance =
+      reinterpret_cast<CBenchmarkDialog*>(dwRefData);
+
+  if (Instance)
+  {
+    if (!Instance->m_FirstRun)
+    {
+      Instance->m_FirstRun = true;
+      Instance->m_WindowHandle = hWnd;
+      // Start the refresh timer (the Win32 OnInit does the same).
+      Instance->_timer = ::SetTimer(hWnd, kTimerID, kTimerElapse, NULL);
+    }
+    if (Instance->ModernMessageRouter(uMsg, wParam, lParam))
+    {
+      return 0;
+    }
+  }
+
+  return ::DefSubclassProc(
+      hWnd,
+      uMsg,
+      wParam,
+      lParam);
+}
+// **************** NanaZip Modification End ****************

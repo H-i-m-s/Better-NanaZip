@@ -240,23 +240,6 @@ EXTERN_C INT WINAPI K7ModernShowProgressWindow(
  *                              procedure.
  * @return The message loop exit code of the dialog.
  */
-EXTERN_C INT WINAPI K7ModernShowCopyLocationDialog(
-    _In_opt_ HWND ParentWindowHandle,
-    _In_opt_ LPCWSTR Title,
-    _In_opt_ LPCWSTR Subtitle,
-    _In_opt_ LPCWSTR AdditionalInformation,
-    _In_opt_ LPCWSTR InitialPath,
-    _In_ SUBCLASSPROC WindowSubclassHandler,
-    _In_ LPVOID WindowSubclassContext);
-
-/**
- * @brief Get the path of the copy location dialog.
- * @param WindowHandle A handle to the copy location dialog.
- * @return The path currently set.
- */
-EXTERN_C LPCWSTR WINAPI K7ModernGetCopyLocationDialogPath(
-    _In_ HWND WindowHandle);
-
 /**
  * @brief Create the toolbar control for the main window.
  * @param ParentWindowHandle A handle to the owner window of the control to be
@@ -990,5 +973,294 @@ typedef struct _K7_COMBO_DIALOG_CONTEXT
 EXTERN_C INT WINAPI K7ModernShowComboDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_COMBO_DIALOG_CONTEXT Context);
+
+/**
+ * @brief The copy / move destination dialog context structure, matching
+ *        the Win32 CCopyDialog. The caller fills it with the title, the
+ *        static prompt, the initial value, the additional information text
+ *        and the optional history items before calling
+ *        K7ModernShowCopyLocationDialog; the dialog writes the user's
+ *        destination back into Value.
+ */
+#define K7_COPY_MAX_TEXT_LENGTH 512
+#define K7_COPY_MAX_HISTORY_ITEMS 16
+
+typedef struct _K7_COPY_DIALOG_CONTEXT
+{
+    // --- Input ---
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32 FontSizeDialog;
+    // Window title (the caller owns the language string, e.g. LangString).
+    WCHAR Title[K7_COPY_MAX_TEXT_LENGTH];
+    // Static prompt text above the combo ("Copy to:").
+    WCHAR Static[K7_COPY_MAX_TEXT_LENGTH];
+    // Initial value; the dialog writes the user's destination back here.
+    WCHAR Value[K7_COPY_MAX_TEXT_LENGTH];
+    // Additional information text under the input row (e.g. file count).
+    WCHAR Info[K7_COPY_MAX_TEXT_LENGTH];
+    // Optional drop-down history items (may be 0).
+    UINT32 HistoryCount;
+    WCHAR History[K7_COPY_MAX_HISTORY_ITEMS][K7_COPY_MAX_TEXT_LENGTH];
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content and read by the window subclass in
+    // WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
+
+    // --- Output ---
+    // True when the user pressed OK; false otherwise (cancel / X close).
+    BOOLEAN OK;
+} K7_COPY_DIALOG_CONTEXT, *PK7_COPY_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the copy / move destination location dialog.
+ * @param ParentWindowHandle The owner window, or nullptr.
+ * @param Context The caller-owned snapshot and result context. The caller
+ *                must keep it valid until this function returns.
+ * @return The XAML message-loop result, or -1 when Modern is unavailable.
+ */
+EXTERN_C INT WINAPI K7ModernShowCopyLocationDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_COPY_DIALOG_CONTEXT Context);
+
+/**
+ * @brief The link (hard link / symbolic link / junction / WSL) creation
+ *        callback. The XAML page calls it when the user presses the Link
+ *        button; the 7-Zip side owns the creation logic and writes a
+ *        localized error message on failure (the dialog stays open with
+ *        the error shown inline).
+ * @param From The source path (may be relative; the callback resolves it
+ *             against the context's CurDirPrefix).
+ * @param To The link target path.
+ * @param LinkType The selected link type (0 = Hard, 1 = SymFile,
+ *                 2 = SymDir, 3 = Junction, 4 = WSL).
+ * @param CallbackContext The callback context passed by the caller.
+ * @param ErrorBuffer Receives the error message on failure (empty on
+ *                    success).
+ * @param ErrorBufferSize Size of ErrorBuffer in characters.
+ * @return TRUE on success, FALSE on failure.
+ */
+#define K7_LINK_MAX_TEXT_LENGTH 512
+#define K7_LINK_MAX_ERROR_LENGTH 1024
+#define K7_LINK_MAX_TYPE_COUNT 5
+#define K7_LINK_TYPE_NAME_LENGTH 64
+
+typedef BOOL (WINAPI *K7_LINK_DIALOG_COMMAND_CALLBACK)(
+    _In_ LPCWSTR From,
+    _In_ LPCWSTR To,
+    _In_ UINT32 LinkType,
+    _In_opt_ LPVOID CallbackContext,
+    _Out_writes_z_(K7_LINK_MAX_ERROR_LENGTH) LPWSTR ErrorBuffer,
+    _In_ UINT32 ErrorBufferSize);
+
+/**
+ * @brief The link dialog context structure, matching the Win32
+ *        CLinkDialog. The caller fills it with the paths, the localized
+ *        texts and the initial link type before calling
+ *        K7ModernShowLinkDialog; the dialog writes the user's final
+ *        selection back into From / To / LinkType.
+ */
+typedef struct _K7_LINK_DIALOG_CONTEXT
+{
+    // --- Input ---
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32 FontSizeDialog;
+    // Window title (the caller owns the language string).
+    WCHAR Title[K7_LINK_TYPE_NAME_LENGTH];
+    // Source path (initial value; the dialog writes the user's input back).
+    WCHAR From[K7_LINK_MAX_TEXT_LENGTH];
+    // Link target path (initial value; output too).
+    WCHAR To[K7_LINK_MAX_TEXT_LENGTH];
+    // Prefix used by the callback to resolve a relative source path.
+    WCHAR CurDirPrefix[K7_LINK_MAX_TEXT_LENGTH];
+    // Localized label texts.
+    WCHAR FromLabel[K7_LINK_TYPE_NAME_LENGTH];
+    WCHAR ToLabel[K7_LINK_TYPE_NAME_LENGTH];
+    WCHAR TypeGroupLabel[K7_LINK_TYPE_NAME_LENGTH];
+    WCHAR LinkButtonText[K7_LINK_TYPE_NAME_LENGTH];
+    // Current link information (shown when editing an existing reparse
+    // point; may be empty).
+    WCHAR Hint[K7_LINK_MAX_TEXT_LENGTH];
+    // Localized names of the link types (indexed by LinkType).
+    WCHAR TypeNames[K7_LINK_MAX_TYPE_COUNT][K7_LINK_TYPE_NAME_LENGTH];
+    // The initially selected link type (0-4).
+    UINT32 InitialLinkType;
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content and read by the window subclass in
+    // WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
+
+    // --- Command ---
+    // The link creation callback (7-Zip side). May be null.
+    K7_LINK_DIALOG_COMMAND_CALLBACK CommandCallback;
+    // Callback context (e.g. a pointer to this context).
+    LPVOID CallbackContext;
+
+    // --- Output ---
+    // The selected link type (0-4).
+    UINT32 LinkType;
+    // True when the user pressed Link and the callback succeeded; false
+    // otherwise (cancel / X close).
+    BOOLEAN OK;
+} K7_LINK_DIALOG_CONTEXT, *PK7_LINK_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the link dialog.
+ * @param ParentWindowHandle The owner window, or nullptr.
+ * @param Context The caller-owned snapshot and result context. The caller
+ *                must keep it valid until this function returns.
+ * @return The XAML message-loop result, or -1 when Modern is unavailable.
+ */
+EXTERN_C INT WINAPI K7ModernShowLinkDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_LINK_DIALOG_CONTEXT Context);
+
+/**
+ * @brief The benchmark window command IDs sent by the XAML page to the
+ *        7-Zip window subclass (WM_COMMAND, BN_CLICKED).
+ */
+#define K7_BENCH_WINDOW_COMMAND_RESTART 1u
+#define K7_BENCH_WINDOW_COMMAND_STOP 2u
+#define K7_BENCH_WINDOW_COMMAND_CANCEL 3u
+
+/**
+ * @brief The benchmark option-change messages sent by the XAML page to
+ *        the 7-Zip window subclass (WM_APP + N). wParam carries the new
+ *        combo selection (index for the dictionary, value for threads /
+ *        passes).
+ */
+#define K7_BENCH_WINDOW_MSG_SET_DICTIONARY (WM_APP + 10u)
+#define K7_BENCH_WINDOW_MSG_SET_THREADS (WM_APP + 11u)
+#define K7_BENCH_WINDOW_MSG_SET_PASSES (WM_APP + 12u)
+
+#define K7_BENCH_MAX_TEXT_LENGTH 512
+#define K7_BENCH_MAX_SHORT_TEXT_LENGTH 64
+#define K7_BENCH_MAX_COMBO_ITEMS 32
+#define K7_BENCH_MAX_LOG_LENGTH 16384
+
+/**
+ * @brief The benchmark dialog context structure (input). The caller fills
+ *        the system information, the combo options and the initial values
+ *        before calling K7ModernShowBenchmarkDialog.
+ */
+typedef struct _K7_BENCHMARK_DIALOG_CONTEXT
+{
+    // Dialog font size in points (0 = follow system), read from the registry
+    // by the caller so the XAML page does not touch the registry.
+    UINT32 FontSizeDialog;
+    // True for the command-line total mode (log-only window).
+    BOOLEAN TotalMode;
+    // Initial values; the XAML page writes the final selections back.
+    UINT64 DictSize;
+    UINT32 NumThreads;
+    UINT32 NumPassesLimit;
+    // System information lines.
+    WCHAR Version[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR Cpu[K7_BENCH_MAX_TEXT_LENGTH];
+    WCHAR Sys1[K7_BENCH_MAX_TEXT_LENGTH];
+    WCHAR Sys2[K7_BENCH_MAX_TEXT_LENGTH];
+    WCHAR Features[K7_BENCH_MAX_TEXT_LENGTH];
+    WCHAR HardwareThreads[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Dictionary combo options with their memory-usage texts.
+    UINT32 DictItemsCount;
+    WCHAR DictItems[K7_BENCH_MAX_COMBO_ITEMS][K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DictMemoryItems[K7_BENCH_MAX_COMBO_ITEMS][K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Threads combo options.
+    UINT32 ThreadItemsCount;
+    WCHAR ThreadItems[K7_BENCH_MAX_COMBO_ITEMS][K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Passes combo options.
+    UINT32 PassesItemsCount;
+    WCHAR PassesItems[K7_BENCH_MAX_COMBO_ITEMS][K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Initial combo selections (indexes).
+    UINT32 DictIndex;
+    UINT32 ThreadIndex;
+    UINT32 PassesIndex;
+    // Minimum window track size in physical pixels, computed by the XAML
+    // page from its measured content and read by the window subclass in
+    // WM_GETMINMAXINFO. 0 = not yet set.
+    LONG MinTrackW;
+    LONG MinTrackH;
+    // Window position persistence (input): when HasInitialPos is true the
+    // host places the dialog at InitialX/InitialY (clamped to the work
+    // area) instead of centering it. The caller persists the position in
+    // its own registry (the 7-Zip side saves it on WM_CLOSE).
+    BOOLEAN HasInitialPos;
+    INT32 InitialX;
+    INT32 InitialY;
+} K7_BENCHMARK_DIALOG_CONTEXT, *PK7_BENCHMARK_DIALOG_CONTEXT;
+
+/**
+ * @brief The benchmark status structure, refreshed once per second by the
+ *        7-Zip side (the caller formats the texts).
+ */
+typedef struct _K7_BENCHMARK_STATUS
+{
+    // Runtime state.
+    BOOLEAN Running;   // benchmark is currently running
+    BOOLEAN Finished;  // all passes finished
+    BOOLEAN Stopped;   // user stopped the benchmark
+    BOOLEAN HasError;  // a fatal error occurred
+    WCHAR Error[K7_BENCH_MAX_TEXT_LENGTH];
+    // Progress.
+    UINT32 PassesFinished;
+    WCHAR Elapsed[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Compression results (1 = current, 2 = resulting).
+    WCHAR EncSpeed1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncSpeed2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncRating1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncRating2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncUsage1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncUsage2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncRpu1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncRpu2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncSize1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR EncSize2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Decompression results.
+    WCHAR DecSpeed1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecSpeed2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecRating1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecRating2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecUsage1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecUsage2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecRpu1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecRpu2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecSize1[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR DecSize2[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Totals.
+    WCHAR TotalRating[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR TotalRpu[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    WCHAR TotalUsage[K7_BENCH_MAX_SHORT_TEXT_LENGTH];
+    // Rating-vector log (full text).
+    WCHAR Log[K7_BENCH_MAX_LOG_LENGTH];
+} K7_BENCHMARK_STATUS, *PK7_BENCHMARK_STATUS;
+
+/**
+ * @brief Show the benchmark dialog.
+ * @param ParentWindowHandle The owner window, or nullptr.
+ * @param Context The caller-owned input context. The caller must keep it
+ *                valid until this function returns.
+ * @param WindowSubclassHandler The window subclass procedure for the
+ *                              benchmark window.
+ * @param WindowSubclassContext The context pointer for the window subclass
+ *                              procedure.
+ * @return The XAML message-loop result, or -1 when Modern is unavailable.
+ */
+EXTERN_C INT WINAPI K7ModernShowBenchmarkDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _Inout_ PK7_BENCHMARK_DIALOG_CONTEXT Context,
+    _In_ SUBCLASSPROC WindowSubclassHandler,
+    _In_ LPVOID WindowSubclassContext);
+
+/**
+ * @brief Refresh the benchmark window status.
+ * @param WindowHandle A handle to the benchmark window.
+ * @param Status The formatted status to apply.
+ */
+EXTERN_C VOID WINAPI K7ModernUpdateBenchmarkStatus(
+    _In_ HWND WindowHandle,
+    _In_ PK7_BENCHMARK_STATUS Status);
 
 #endif // !NANAZIP_MODERN_EXPERIENCE

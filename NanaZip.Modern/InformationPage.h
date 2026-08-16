@@ -29,6 +29,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& args);
 
+        void OnPageKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+
         // **************** SSS Modification Start ****************
         void ApplyFontSettings();
         void ApplyFontSizeToElement(

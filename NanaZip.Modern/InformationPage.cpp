@@ -4,6 +4,8 @@
 #include "InformationPage.g.cpp"
 #endif
 
+#include <winrt/Windows.UI.Xaml.Input.h>
+
 namespace winrt::NanaZip::Modern::implementation
 {
     InformationPage::InformationPage(
@@ -84,5 +86,18 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(args);
 
 		::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+    }
+
+    void InformationPage::OnPageKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() == winrt::Windows::System::VirtualKey::Escape)
+        {
+            // Esc closes the information dialog, same as the Close button.
+            e.Handled(true);
+            ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        }
     }
 }

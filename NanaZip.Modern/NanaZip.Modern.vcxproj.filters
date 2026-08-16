@@ -16,6 +16,8 @@
     <ClCompile Include="SplitPage.cpp" />
     <ClCompile Include="PasswordPage.cpp" />
     <ClCompile Include="ComboPage.cpp" />
+    <ClCompile Include="LinkPage.cpp" />
+    <ClCompile Include="BenchmarkPage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -26,6 +28,8 @@
     <ClInclude Include="SplitPage.h" />
     <ClInclude Include="PasswordPage.h" />
     <ClInclude Include="ComboPage.h" />
+    <ClInclude Include="LinkPage.h" />
+    <ClInclude Include="BenchmarkPage.h" />
     <ClInclude Include="ControlMacros.h" />
   </ItemGroup>
   <ItemGroup>
@@ -46,6 +50,8 @@
     <Page Include="SplitPage.xaml" />
     <Page Include="PasswordPage.xaml" />
     <Page Include="ComboPage.xaml" />
+    <Page Include="LinkPage.xaml" />
+    <Page Include="BenchmarkPage.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Strings">
@@ -1063,5 +1069,7 @@
     <Midl Include="SplitPage.idl" />
     <Midl Include="PasswordPage.idl" />
     <Midl Include="ComboPage.idl" />
+    <Midl Include="LinkPage.idl" />
+    <Midl Include="BenchmarkPage.idl" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.LinkPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    KeyDown="OnPageKeyDown"
+    PreviewKeyDown="OnPageKeyDown"
+    Background="Transparent">
+
+    <Grid Padding="12,12,12,12">
+        <Grid.RowDefinitions>
+            <!-- The content row is stretched: it absorbs sub-pixel height
+                 changes of the combos (e.g. VisualState changes when the
+                 drop-down opens), so the button row below never moves.
+                 The window height is sized to the measured content (plus a
+                 tiny margin), so the stretch row has almost no extra space
+                 and the dialog stays compact. -->
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <!-- Current link information (shown when editing an existing
+                 reparse point; empty for a new link). -->
+            <TextBlock
+                x:Name="HintText"
+                Margin="0,0,0,8"
+                TextWrapping="NoWrap"
+                TextTrimming="CharacterEllipsis"/>
+
+            <!-- Link from: path combo + browse button on one row -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Name="FromLabelText"
+                    Grid.Column="0"
+                    VerticalAlignment="Center"/>
+                <ComboBox
+                    x:Name="FromCombo"
+                    Grid.Column="1"
+                    Margin="6,0,0,0"
+                    IsEditable="True"
+                    MinWidth="160"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center"
+                    KeyDown="OnComboKeyDown"/>
+                <Button
+                    x:Name="BrowseFromButton"
+                    Grid.Column="2"
+                    Margin="6,0,0,0"
+                    Content="..."
+                    Click="OnBrowseFromClicked"/>
+            </Grid>
+
+            <!-- Link to: path combo + browse button on one row -->
+            <Grid Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Name="ToLabelText"
+                    Grid.Column="0"
+                    VerticalAlignment="Center"/>
+                <ComboBox
+                    x:Name="ToCombo"
+                    Grid.Column="1"
+                    Margin="6,0,0,0"
+                    IsEditable="True"
+                    MinWidth="160"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center"
+                    KeyDown="OnComboKeyDown"/>
+                <Button
+                    x:Name="BrowseToButton"
+                    Grid.Column="2"
+                    Margin="6,0,0,0"
+                    Content="..."
+                    Click="OnBrowseToClicked"/>
+            </Grid>
+
+            <!-- Link type radio group -->
+            <TextBlock
+                x:Name="TypeGroupLabelText"
+                Margin="0,12,0,4"/>
+            <StackPanel>
+                <RadioButton
+                    x:Name="TypeRadio0"
+                    Margin="8,2,0,2"
+                    VerticalContentAlignment="Center"
+                    GroupName="LinkType"/>
+                <RadioButton
+                    x:Name="TypeRadio1"
+                    Margin="8,2,0,2"
+                    VerticalContentAlignment="Center"
+                    GroupName="LinkType"/>
+                <RadioButton
+                    x:Name="TypeRadio2"
+                    Margin="8,2,0,2"
+                    VerticalContentAlignment="Center"
+                    GroupName="LinkType"/>
+                <RadioButton
+                    x:Name="TypeRadio3"
+                    Margin="8,2,0,2"
+                    VerticalContentAlignment="Center"
+                    GroupName="LinkType"/>
+                <RadioButton
+                    x:Name="TypeRadio4"
+                    Margin="8,2,0,2"
+                    VerticalContentAlignment="Center"
+                    GroupName="LinkType"/>
+            </StackPanel>
+
+            <!-- Inline error, collapsed until the link creation fails (the
+                 Win32 dialog shows a message box and stays open; here the
+                 dialog stays open with the error). -->
+            <TextBlock
+                x:Name="ErrorText"
+                Margin="0,10,0,0"
+                Foreground="#E81123"
+                TextWrapping="Wrap"
+                Visibility="Collapsed"/>
+        </StackPanel>
+
+        <StackPanel
+            Grid.Row="1"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Margin="0,6,0,0">
+            <Button
+                x:Name="LinkButton"
+                MinWidth="88"
+                Margin="0,0,6,0"
+                Click="OnLinkClicked"/>
+            <Button
+                x:Name="CancelButton"
+                MinWidth="88"
+                Click="OnCancelClicked"/>
+        </StackPanel>
+    </Grid>
+</Page>

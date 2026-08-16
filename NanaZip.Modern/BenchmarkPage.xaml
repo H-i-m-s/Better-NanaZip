@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.BenchmarkPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    KeyDown="OnPageKeyDown"
+    PreviewKeyDown="OnPageKeyDown"
+    Background="Transparent">
+
+    <Grid Padding="12,12,12,12">
+        <Grid.RowDefinitions>
+            <!-- The content row is stretched so the button row below never
+                 moves; the log area absorbs the extra space. -->
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0">
+            <StackPanel>
+                <!-- System information -->
+                <StackPanel x:Name="SystemInfoPanel">
+                    <TextBlock
+                        x:Name="VersionText"
+                        TextWrapping="NoWrap"
+                        TextTrimming="CharacterEllipsis"/>
+                    <TextBlock
+                        x:Name="CpuText"
+                        Margin="0,2,0,0"
+                        TextWrapping="NoWrap"
+                        TextTrimming="CharacterEllipsis"/>
+                    <TextBlock
+                        x:Name="Sys1Text"
+                        Margin="0,2,0,0"
+                        TextWrapping="NoWrap"
+                        TextTrimming="CharacterEllipsis"/>
+                    <TextBlock
+                        x:Name="Sys2Text"
+                        Margin="0,2,0,0"
+                        TextWrapping="NoWrap"
+                        TextTrimming="CharacterEllipsis"/>
+                    <TextBlock
+                        x:Name="FeaturesText"
+                        Margin="0,2,0,0"
+                        TextWrapping="NoWrap"
+                        TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <!-- Section divider -->
+                <Border
+                    x:Name="Divider1"
+                    Height="1"
+                    Margin="0,10,0,0"
+                    Background="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Options -->
+                <Grid x:Name="OptionsGrid" Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock
+                        x:Name="DictLabelText"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        VerticalAlignment="Center"/>
+                    <ComboBox
+                        x:Name="DictCombo"
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        MinWidth="90"
+                        Margin="6,0,0,0"
+                        HorizontalAlignment="Stretch"
+                        SelectionChanged="OnDictSelectionChanged"/>
+                    <TextBlock
+                        x:Name="ThreadsLabelText"
+                        Grid.Row="0"
+                        Grid.Column="2"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"/>
+                    <ComboBox
+                        x:Name="ThreadsCombo"
+                        Grid.Row="0"
+                        Grid.Column="3"
+                        MinWidth="70"
+                        Margin="6,0,0,0"
+                        HorizontalAlignment="Stretch"
+                        SelectionChanged="OnThreadsSelectionChanged"/>
+                    <TextBlock
+                        x:Name="PassesLabelText"
+                        Grid.Row="0"
+                        Grid.Column="4"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"/>
+                    <ComboBox
+                        x:Name="PassesCombo"
+                        Grid.Row="0"
+                        Grid.Column="5"
+                        MinWidth="70"
+                        Margin="6,0,0,0"
+                        HorizontalAlignment="Stretch"
+                        SelectionChanged="OnPassesSelectionChanged"/>
+                    <TextBlock
+                        x:Name="MemoryText"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="2"
+                        Margin="0,4,0,0"
+                        TextWrapping="NoWrap"/>
+                    <TextBlock
+                        x:Name="HardwareText"
+                        Grid.Row="1"
+                        Grid.Column="2"
+                        Grid.ColumnSpan="2"
+                        Margin="16,4,0,0"
+                        TextWrapping="NoWrap"
+                        TextTrimming="CharacterEllipsis"/>
+                    <TextBlock
+                        x:Name="ElapsedText"
+                        Grid.Row="1"
+                        Grid.Column="4"
+                        Grid.ColumnSpan="2"
+                        Margin="16,4,0,0"
+                        TextWrapping="NoWrap"/>
+                </Grid>
+
+                <!-- Section divider -->
+                <Border
+                    x:Name="Divider2"
+                    Height="1"
+                    Margin="0,10,0,0"
+                    Background="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Compression results -->
+                <StackPanel x:Name="CompressSection">
+                    <TextBlock
+                        x:Name="CompressingLabelText"
+                        Margin="0,8,0,4"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="CurrentLabelText" Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="ResultingLabelText" Grid.Row="0" Grid.Column="2" Margin="12,0,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="SpeedLabelText" Grid.Row="1" Grid.Column="0" Margin="0,2,0,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="EncSpeed1Text" Grid.Row="1" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="EncSpeed2Text" Grid.Row="1" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="RatingLabelText" Grid.Row="2" Grid.Column="0" Margin="0,2,0,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="EncRating1Text" Grid.Row="2" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="EncRating2Text" Grid.Row="2" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="UsageLabelText" Grid.Row="3" Grid.Column="0" Margin="0,2,0,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="EncUsage1Text" Grid.Row="3" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="EncUsage2Text" Grid.Row="3" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="RpuLabelText" Grid.Row="4" Grid.Column="0" Margin="0,2,0,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="EncRpu1Text" Grid.Row="4" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="EncRpu2Text" Grid.Row="4" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="SizeLabelText" Grid.Row="5" Grid.Column="0" Margin="0,2,0,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="EncSize1Text" Grid.Row="5" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="EncSize2Text" Grid.Row="5" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                </Grid>
+                </StackPanel>
+
+                <!-- Section divider -->
+                <Border
+                    x:Name="Divider3"
+                    Height="1"
+                    Margin="0,10,0,0"
+                    Background="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Decompression results -->
+                <StackPanel x:Name="DecompressSection">
+                    <TextBlock
+                        x:Name="DecompressingLabelText"
+                        Margin="0,8,0,4"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="DecSpeed1Text" Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecSpeed2Text" Grid.Row="0" Grid.Column="2" Margin="12,0,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecRating1Text" Grid.Row="1" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecRating2Text" Grid.Row="1" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecUsage1Text" Grid.Row="2" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecUsage2Text" Grid.Row="2" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecRpu1Text" Grid.Row="3" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecRpu2Text" Grid.Row="3" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecSize1Text" Grid.Row="4" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="DecSize2Text" Grid.Row="4" Grid.Column="2" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                </Grid>
+                </StackPanel>
+
+                <!-- Section divider -->
+                <Border
+                    x:Name="Divider4"
+                    Height="1"
+                    Margin="0,10,0,0"
+                    Background="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Totals -->
+                <StackPanel x:Name="TotalSection">
+                    <TextBlock
+                        x:Name="TotalRatingLabelText"
+                        Margin="0,8,0,4"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="TotalRatingText" Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="TotalRpuText" Grid.Row="1" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                    <TextBlock x:Name="TotalUsageText" Grid.Row="2" Grid.Column="1" Margin="12,2,0,0" HorizontalTextAlignment="Right"/>
+                </Grid>
+                </StackPanel>
+
+                <!-- Section divider -->
+                <Border
+                    x:Name="Divider5"
+                    Height="1"
+                    Margin="0,10,0,0"
+                    Background="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Log (rating vector) -->
+                <TextBlock
+                    x:Name="LogLabelText"
+                    Margin="0,8,0,4"/>
+                <TextBox
+                    x:Name="LogTextBox"
+                    MinHeight="80"
+                    MaxHeight="160"
+                    AcceptsReturn="True"
+                    IsReadOnly="True"
+                    FontFamily="Consolas"
+                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+
+                <!-- Inline error -->
+                <TextBlock
+                    x:Name="ErrorText"
+                    Margin="0,8,0,0"
+                    Foreground="#E81123"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel
+            Grid.Row="1"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Margin="0,6,0,0">
+            <Button
+                x:Name="StopButton"
+                MinWidth="88"
+                Margin="0,0,6,0"
+                Click="OnStopClicked"/>
+            <Button
+                x:Name="RestartButton"
+                MinWidth="88"
+                Click="OnRestartClicked"/>
+        </StackPanel>
+    </Grid>
+</Page>

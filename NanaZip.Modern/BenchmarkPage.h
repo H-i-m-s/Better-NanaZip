@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CopyLocationPage.g.h"
+#include "BenchmarkPage.g.h"
 
 #include <Windows.h>
 
@@ -16,13 +16,13 @@ namespace winrt
 
 namespace winrt::NanaZip::Modern::implementation
 {
-    struct CopyLocationPage : CopyLocationPageT<CopyLocationPage>
+    struct BenchmarkPage : BenchmarkPageT<BenchmarkPage>
     {
     public:
 
-        CopyLocationPage(
+        BenchmarkPage(
             _In_opt_ HWND WindowHandle = nullptr,
-            _In_ PK7_COPY_DIALOG_CONTEXT Context = nullptr);
+            _In_ PK7_BENCHMARK_DIALOG_CONTEXT Context = nullptr);
 
         void InitializeComponent();
 
@@ -31,35 +31,31 @@ namespace winrt::NanaZip::Modern::implementation
         // after the dialog appears). Returns the desired client size in DIPs.
         winrt::Windows::Foundation::Size PrepareForShow();
 
+        // Applies one status refresh from the 7-Zip side.
+        void ApplyStatus(
+            _In_ PK7_BENCHMARK_STATUS Status);
+
         void OnLoaded(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        void OnUnloaded(
+        void OnDictSelectionChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::SelectionChangedEventArgs const& e);
+
+        void OnThreadsSelectionChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::SelectionChangedEventArgs const& e);
+
+        void OnPassesSelectionChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::SelectionChangedEventArgs const& e);
+
+        void OnStopClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        void OnComboDropDownOpened(
-            winrt::IInspectable const& sender,
-            winrt::IInspectable const& e);
-
-        void OnComboDropDownClosed(
-            winrt::IInspectable const& sender,
-            winrt::IInspectable const& e);
-
-        void OnComboKeyDown(
-            winrt::IInspectable const& sender,
-            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
-
-        void OnOkClicked(
-            winrt::IInspectable const& sender,
-            winrt::RoutedEventArgs const& e);
-
-        void OnCancelClicked(
-            winrt::IInspectable const& sender,
-            winrt::RoutedEventArgs const& e);
-
-        void OnBrowseClicked(
+        void OnRestartClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
@@ -82,9 +78,9 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::Windows::UI::Xaml::DependencyObject const& Node,
             double FontSizePx);
 
+        void PostCommand(UINT32 CommandId);
+
         HWND m_WindowHandle;
-        PK7_COPY_DIALOG_CONTEXT m_Context;
-        bool m_OkClicked;
-        std::wstring m_TextSnapshot;
+        PK7_BENCHMARK_DIALOG_CONTEXT m_Context;
     };
 }

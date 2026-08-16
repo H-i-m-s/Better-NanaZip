@@ -1,4 +1,4 @@
-﻿// CopyDialog.cpp
+// CopyDialog.cpp
 
 #include "StdAfx.h"
 
@@ -6,7 +6,6 @@
 
 #include "../../../Windows/Control/Static.h"
 
-#include "BrowseDialog.h"
 #include "CopyDialog.h"
 
 #ifdef LANG
@@ -22,78 +21,67 @@ using namespace NWindows;
 // **************** NanaZip Modification Start ****************
 INT_PTR CCopyDialog::Create(HWND parentWindow)
 {
-    ::K7ModernShowCopyLocationDialog(
-        parentWindow,
-        this->Title.Ptr(),
-        this->Static.Ptr(),
-        this->Info.Ptr(),
-        this->Value.Ptr(),
-        &CCopyDialog::ModernWindowHandler,
-        this);
+    K7_COPY_DIALOG_CONTEXT Context = {};
 
-    return this->m_ReturnCode;
-}
-
-bool CCopyDialog::ModernMessageRouter(UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(lParam);
-
-    if (WM_COMMAND == uMsg)
+    // Dialog font size from the registry (mirrors the ExtractDialog font).
     {
-        int Code = HIWORD(wParam);
-        int ItemID = LOWORD(wParam);
-        if (BN_CLICKED == Code)
+        DWORD pt = 0;
+        HKEY key = nullptr;
+        if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+            KEY_READ, &key) == ERROR_SUCCESS)
         {
-            switch (ItemID)
-            {
-            case K7_COPY_LOCATION_DIALOG_RESULT_OK:
-                this->ModernOK();
-                return true;
-            }
+            DWORD size = sizeof(pt);
+            ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+                reinterpret_cast<LPBYTE>(&pt), &size);
+            ::RegCloseKey(key);
+        }
+        Context.FontSizeDialog = pt;
+    }
+
+    {
+        // Fixed-size ABI buffers: truncate before writing so an over-long
+        // string can never trigger wcscpy_s failure (which would clear the
+        // buffer silently).
+        UString title = Title;
+        if (title.Len() >= K7_COPY_MAX_TEXT_LENGTH)
+            title.DeleteFrom(K7_COPY_MAX_TEXT_LENGTH - 1);
+        UString staticText = Static;
+        if (staticText.Len() >= K7_COPY_MAX_TEXT_LENGTH)
+            staticText.DeleteFrom(K7_COPY_MAX_TEXT_LENGTH - 1);
+        UString value = Value;
+        if (value.Len() >= K7_COPY_MAX_TEXT_LENGTH)
+            value.DeleteFrom(K7_COPY_MAX_TEXT_LENGTH - 1);
+        UString info = Info;
+        if (info.Len() >= K7_COPY_MAX_TEXT_LENGTH)
+            info.DeleteFrom(K7_COPY_MAX_TEXT_LENGTH - 1);
+
+        wcscpy_s(Context.Title, title.Ptr());
+        wcscpy_s(Context.Static, staticText.Ptr());
+        wcscpy_s(Context.Value, value.Ptr());
+        wcscpy_s(Context.Info, info.Ptr());
+
+        // Drop-down history, bounded by the fixed ABI array.
+        Context.HistoryCount = 0;
+        FOR_VECTOR (i, Strings)
+        {
+            if (Context.HistoryCount >= K7_COPY_MAX_HISTORY_ITEMS)
+                break;
+            UString item = Strings[i];
+            if (item.Len() >= K7_COPY_MAX_TEXT_LENGTH)
+                item.DeleteFrom(K7_COPY_MAX_TEXT_LENGTH - 1);
+            wcscpy_s(Context.History[Context.HistoryCount], item.Ptr());
+            Context.HistoryCount++;
         }
     }
 
-    return false;
-}
-
-void CCopyDialog::ModernOK()
-{
-    Value = ::K7ModernGetCopyLocationDialogPath(
-        m_WindowHandle);
-    m_ReturnCode = IDOK;
-}
-
-LRESULT CALLBACK CCopyDialog::ModernWindowHandler(
-    _In_ HWND hWnd,
-    _In_ UINT uMsg,
-    _In_ WPARAM wParam,
-    _In_ LPARAM lParam,
-    _In_ UINT_PTR uIdSubclass,
-    _In_ DWORD_PTR dwRefData)
-{
-    UNREFERENCED_PARAMETER(uIdSubclass);
-
-    CCopyDialog* Instance =
-        reinterpret_cast<CCopyDialog*>(dwRefData);
-
-    if (Instance)
+    if (::K7ModernShowCopyLocationDialog(parentWindow, &Context) < 0 ||
+        !Context.OK)
     {
-        if (!Instance->m_FirstRun)
-        {
-            Instance->m_FirstRun = true;
-            Instance->m_WindowHandle = hWnd;
-        }
-        if (Instance->ModernMessageRouter(uMsg, wParam, lParam))
-        {
-            return 0;
-        }
+        return IDCLOSE;
     }
 
-    return ::DefSubclassProc(
-        hWnd,
-        uMsg,
-        wParam,
-        lParam);
+    Value = Context.Value;
+    return IDOK;
 }
 
 #if 0 // ******** Annotated 7-Zip Mainline Source Code snippet Start ********
