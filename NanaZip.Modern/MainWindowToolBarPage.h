@@ -97,6 +97,7 @@ namespace winrt::NanaZip::Modern::implementation
         INT m_ContextMenuScreenX;
         INT m_ContextMenuScreenY;
         winrt::Windows::UI::Xaml::Controls::MenuFlyout m_ContextMenuFlyout;
+        winrt::Windows::UI::Xaml::Controls::Grid m_ContextMenuAnchor;
         winrt::event_token m_ContextMenuClosedToken;
     };
 }

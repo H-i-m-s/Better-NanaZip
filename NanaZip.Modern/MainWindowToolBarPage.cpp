@@ -266,82 +266,6 @@ namespace
         return false;
     }
 
-    static LONG EstimateContextMenuHeightPixels(
-        HMENU Menu,
-        UINT32 FontSizePt,
-        UINT Dpi)
-    {
-        const double FontSizeDip = FontSizePt == 0
-            ? 14.0
-            : static_cast<double>(FontSizePt) * 96.0 / 72.0;
-        const double RowHeightDip =
-            FontSizeDip + 24.0 > 40.0 ? FontSizeDip + 24.0 : 40.0;
-        double HeightDip = 12.0;
-        const int Count = ::GetMenuItemCount(Menu);
-        for (int Position = 0; Position < Count; ++Position)
-        {
-            MENUITEMINFOW Info = {};
-            Info.cbSize = sizeof(Info);
-            Info.fMask = MIIM_FTYPE;
-            if (::GetMenuItemInfoW(Menu, Position, TRUE, &Info) &&
-                (Info.fType & MFT_SEPARATOR) != 0)
-            {
-                HeightDip += 12.0;
-            }
-            else
-            {
-                HeightDip += RowHeightDip;
-            }
-        }
-
-        return static_cast<LONG>(
-            HeightDip * static_cast<double>(Dpi) /
-                static_cast<double>(USER_DEFAULT_SCREEN_DPI) +
-            0.5);
-    }
-
-    static INT GetContextMenuPlacementScreenY(
-        HMENU Menu,
-        INT ScreenX,
-        INT ScreenY,
-        UINT32 FontSizePt,
-        HWND HostWindowHandle)
-    {
-        HMONITOR Monitor = ::MonitorFromPoint(
-            POINT{ ScreenX, ScreenY },
-            MONITOR_DEFAULTTONEAREST);
-        MONITORINFO MonitorInfo = {};
-        MonitorInfo.cbSize = sizeof(MonitorInfo);
-        if (!Monitor || !::GetMonitorInfoW(Monitor, &MonitorInfo))
-        {
-            return ScreenY;
-        }
-
-        UINT Dpi = ::GetDpiForWindow(HostWindowHandle);
-        if (Dpi == 0)
-        {
-            Dpi = USER_DEFAULT_SCREEN_DPI;
-        }
-
-        const LONG EstimatedHeight = EstimateContextMenuHeightPixels(
-            Menu,
-            FontSizePt,
-            Dpi);
-        const LONG BottomMargin = 4;
-        const LONG MaximumScreenY =
-            MonitorInfo.rcWork.bottom - BottomMargin - EstimatedHeight;
-        const LONG MinimumScreenY = MonitorInfo.rcWork.top + BottomMargin;
-
-        if (ScreenY > MaximumScreenY)
-        {
-            return static_cast<INT>(
-                MaximumScreenY > MinimumScreenY
-                    ? MaximumScreenY
-                    : MinimumScreenY);
-        }
-        return ScreenY;
-    }
-
     static void PopulateMenuFlyout(
         MenuFlyout const& Flyout,
         HMENU Menu,
@@ -422,6 +346,7 @@ namespace winrt::NanaZip::Modern::implementation
         m_ContextMenuScreenX(0),
         m_ContextMenuScreenY(0),
         m_ContextMenuFlyout(nullptr),
+        m_ContextMenuAnchor(nullptr),
         m_ContextMenuClosedToken{}
     {
 
@@ -716,10 +641,21 @@ namespace winrt::NanaZip::Modern::implementation
 
         if (this->m_ContextMenuFlyout)
             this->m_ContextMenuFlyout.Hide();
+        if (this->m_ContextMenuAnchor)
+        {
+            auto Children = this->ContextMenuAnchorLayer().Children();
+            std::uint32_t Index = 0;
+            if (Children.IndexOf(this->m_ContextMenuAnchor, Index))
+                Children.RemoveAt(Index);
+            this->m_ContextMenuAnchor = nullptr;
+        }
         this->m_ContextMenuFlyout = MenuFlyout();
         auto Flyout = this->m_ContextMenuFlyout;
-        Flyout.Placement(
-            winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::BottomEdgeAlignedLeft);
+        // The toolbar XAML island is only 48 DIP tall, while file-list right
+        // clicks can be anywhere in the main window. Use a popup HWND so the
+        // context menu is positioned against the desktop, not clipped to the
+        // toolbar island's root bounds.
+        Flyout.ShouldConstrainToRootBounds(false);
         auto Handler = [this, ContextGeneration](
             winrt::IInspectable const& Sender,
             winrt::RoutedEventArgs const&)
@@ -753,13 +689,6 @@ namespace winrt::NanaZip::Modern::implementation
             SystemMenu,
             ContextMenuFontSize,
             Handler);
-
-        const INT PlacementScreenY = GetContextMenuPlacementScreenY(
-            Menu,
-            ScreenX,
-            ScreenY,
-            ContextMenuFontSize,
-            HostWindowHandle);
 
         bool SystemMenuDetached = false;
         if (SystemMenu)
@@ -798,6 +727,14 @@ namespace winrt::NanaZip::Modern::implementation
                 const UINT PanelIndex = this->m_ContextMenuPanelIndex;
                 if (ContextGeneration != this->m_ContextMenuGeneration)
                     return;
+                if (this->m_ContextMenuAnchor)
+                {
+                    auto Children = this->ContextMenuAnchorLayer().Children();
+                    std::uint32_t Index = 0;
+                    if (Children.IndexOf(this->m_ContextMenuAnchor, Index))
+                        Children.RemoveAt(Index);
+                    this->m_ContextMenuAnchor = nullptr;
+                }
                 this->m_ContextMenuParentWindow = nullptr;
                 this->m_ContextMenuSystemMenu = nullptr;
                 this->m_ContextMenuPanelIndex = 0;
@@ -808,8 +745,11 @@ namespace winrt::NanaZip::Modern::implementation
                     static_cast<LPARAM>(ContextGeneration));
             });
 
-        auto Root = this->Content().as<winrt::Windows::UI::Xaml::FrameworkElement>();
-        POINT Point = { ScreenX, PlacementScreenY };
+        // ShowAt(nullptr, ...) is known to hang/crash in this XAML-island
+        // host. Keep both the anchor and the flyout in the existing toolbar
+        // XAML root so that its presenter, input routing, and light-dismiss
+        // behavior remain in the same island.
+        POINT Point = { ScreenX, ScreenY };
         if (!::ScreenToClient(HostWindowHandle, &Point))
         {
             if (SystemMenu && SystemMenuDetached)
@@ -826,11 +766,38 @@ namespace winrt::NanaZip::Modern::implementation
             ? 1.0
             : static_cast<double>(Dpi) /
                 static_cast<double>(USER_DEFAULT_SCREEN_DPI);
-        Flyout.ShowAt(
-            Root,
-            winrt::Windows::Foundation::Point{
-                static_cast<float>(Point.x / Scale),
-                static_cast<float>(Point.y / Scale)});
+        winrt::Windows::UI::Xaml::Controls::Grid Anchor;
+        Anchor.Width(1.0);
+        Anchor.Height(1.0);
+        winrt::Windows::UI::Xaml::Controls::Canvas::SetLeft(
+            Anchor,
+            static_cast<double>(Point.x) / Scale);
+        winrt::Windows::UI::Xaml::Controls::Canvas::SetTop(
+            Anchor,
+            static_cast<double>(Point.y) / Scale);
+        this->ContextMenuAnchorLayer().Children().Append(Anchor);
+        this->m_ContextMenuAnchor = Anchor;
+        try
+        {
+            Flyout.ShowAt(
+                Anchor,
+                winrt::Windows::Foundation::Point{ 0.0f, 0.0f });
+        }
+        catch (...)
+        {
+            auto Children = this->ContextMenuAnchorLayer().Children();
+            std::uint32_t Index = 0;
+            if (Children.IndexOf(Anchor, Index))
+                Children.RemoveAt(Index);
+            this->m_ContextMenuAnchor = nullptr;
+            if (SystemMenu && SystemMenuDetached)
+                ::DestroyMenu(SystemMenu);
+            this->m_ContextMenuParentWindow = nullptr;
+            this->m_ContextMenuSystemMenu = nullptr;
+            this->m_ContextMenuPanelIndex = 0;
+            this->m_ContextMenuGeneration = 0;
+            return FALSE;
+        }
         return TRUE;
     }
 

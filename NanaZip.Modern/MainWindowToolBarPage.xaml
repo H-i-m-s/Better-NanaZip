@@ -13,6 +13,11 @@
       <RowDefinition Height="auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
+    <!-- Kept in the toolbar island's own XAML root. It supplies a movable,
+         non-interactive placement target for the file-list context menu. -->
+    <Canvas
+      x:Name="ContextMenuAnchorLayer"
+      IsHitTestVisible="False" />
     <Grid Grid.Row="0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="auto" />
