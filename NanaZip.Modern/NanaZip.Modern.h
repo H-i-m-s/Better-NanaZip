@@ -38,6 +38,20 @@ EXTERN_C BOOL WINAPI K7ModernAvailable();
 EXTERN_C UINT32 WINAPI K7ModernGetMoreMenuFontSize();
 
 /**
+ * @brief Gets the configured FileManager context-menu font size.
+ * @return A point size, or zero when the XAML menu uses its default font size.
+ */
+EXTERN_C UINT32 WINAPI K7ModernGetContextMenuFontSize();
+
+/**
+ * @brief Message posted by the XAML file context menu for a selected command.
+ */
+#define K7ModernContextMenuCommandMessage (WM_APP + 4)
+#define K7ModernContextMenuClosedMessage (WM_APP + 5)
+#define K7ModernContextMenuSystemMessage (WM_APP + 6)
+#define K7ModernContextMenuSystemCommand 0xFFFFu
+
+/**
  * @brief Initialize NanaZip Modern Experience.
  * @return If the function succeeds, it returns S_OK. Otherwise, it returns an
  *         HRESULT error code.
@@ -257,6 +271,27 @@ EXTERN_C INT WINAPI K7ModernShowProgressWindow(
 EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(
     _In_ HWND ParentWindowHandle,
     _In_ HMENU MoreMenuHandle);
+
+/**
+ * @brief Show a file context menu through the toolbar XAML island.
+ * @param ToolBarWindowHandle The NanaZip toolbar XAML host window.
+ * @param ParentWindowHandle The FileManager main window receiving commands.
+ * @param MenuHandle A fully populated, temporary Win32 menu data source.
+ * @param ScreenX The screen x-coordinate of the menu anchor.
+ * @param ScreenY The screen y-coordinate of the menu anchor.
+ * @param ContextPanelIndex The panel that owns the menu command context.
+ * @return TRUE when the XAML menu was shown; otherwise FALSE.
+ */
+EXTERN_C BOOL WINAPI K7ModernShowContextMenu(
+    _In_ HWND ToolBarWindowHandle,
+    _In_ HWND ParentWindowHandle,
+    _In_ HMENU MenuHandle,
+    _In_opt_ HMENU SystemMenuHandle,
+    _In_ HWND HostWindowHandle,
+    _In_ INT ScreenX,
+    _In_ INT ScreenY,
+    _In_ UINT ContextPanelIndex,
+    _In_ UINT ContextGeneration);
 
 /**
  * @brief The callback invoked when the "Apply" button of the settings

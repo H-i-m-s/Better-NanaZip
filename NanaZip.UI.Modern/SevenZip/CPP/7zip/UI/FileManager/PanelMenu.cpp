@@ -37,6 +37,28 @@ LONG g_DllRefCount = 0;
 static const UINT kSevenZipStartMenuID = kMenuCmdID_Plugin_Start;
 static const UINT kSystemStartMenuID = kMenuCmdID_Plugin_Start + 400;
 
+static bool ContainsSystemMenuCommand(HMENU menu)
+{
+  if (!menu)
+    return false;
+
+  const int count = ::GetMenuItemCount(menu);
+  for (int position = 0; position < count; ++position)
+  {
+    MENUITEMINFOW info = {};
+    info.cbSize = sizeof(info);
+    info.fMask = MIIM_ID | MIIM_SUBMENU;
+    if (!::GetMenuItemInfoW(menu, position, TRUE, &info))
+      continue;
+
+    if (info.wID >= kSystemStartMenuID)
+      return true;
+    if (info.hSubMenu && ContainsSystemMenuCommand(info.hSubMenu))
+      return true;
+  }
+  return false;
+}
+
 void CPanel::InvokeSystemCommand(const char *command)
 {
   NCOM::CComInitializer comInitializer;
@@ -1119,7 +1141,8 @@ bool CPanel::InvokePluginCommand(unsigned id)
 #endif
 
 bool CPanel::InvokePluginCommand(unsigned id,
-    IContextMenu *sevenZipContextMenu, IContextMenu *systemContextMenu)
+    IContextMenu *sevenZipContextMenu, IContextMenu *systemContextMenu,
+    const UString *folderOverride, HWND ownerOverride)
 {
   UInt32 offset;
   const bool isSystemMenu = (id >= kSystemStartMenuID);
@@ -1152,12 +1175,13 @@ bool CPanel::InvokePluginCommand(unsigned id,
   #endif
     ;
 
-  commandInfo.hwnd = GetParent();
+  commandInfo.hwnd = ownerOverride ? ownerOverride : GetParent();
   commandInfo.lpVerb = (LPCSTR)(MAKEINTRESOURCE(offset));
   commandInfo.lpParameters = NULL;
   // 19.01: fixed CSysString to AString
   // MSDN suggest to send NULL: lpDirectory: This member is always NULL for menu items inserted by a Shell extension.
-  const AString currentFolderA (GetAnsiString(_currentFolderPrefix));
+  const UString &folder = folderOverride ? *folderOverride : _currentFolderPrefix;
+  const AString currentFolderA (GetAnsiString(folder));
   commandInfo.lpDirectory = (LPCSTR)(currentFolderA);
   commandInfo.nShow = SW_SHOW;
 
@@ -1177,7 +1201,7 @@ bool CPanel::InvokePluginCommand(unsigned id,
   */
   commandInfo.lpVerbW = NULL;
 
-  const UString currentFolderUnicode = _currentFolderPrefix;
+  const UString currentFolderUnicode = folder;
   commandInfo.lpDirectoryW = currentFolderUnicode;
   commandInfo.lpTitleW = L"";
   // commandInfo.ptInvoke.x = xPos;
@@ -1202,6 +1226,103 @@ bool CPanel::InvokePluginCommand(unsigned id,
   return false;
 }
 
+void CPanel::CloseXamlContextMenu(UINT generation)
+{
+  if (generation != 0 && generation != _xamlContextGeneration)
+    return;
+
+  if (_xamlContextMenu)
+  {
+    ::DestroyMenu(_xamlContextMenu);
+    _xamlContextMenu = nullptr;
+  }
+  if (_xamlContextSystemMenu && !_xamlContextSystemMenuTracking)
+  {
+    ::DestroyMenu(_xamlContextSystemMenu);
+    _xamlContextSystemMenu = nullptr;
+  }
+  _xamlContextSystemMenuTracking = false;
+  _xamlContextGeneration = 0;
+  _xamlContextX = 0;
+  _xamlContextY = 0;
+  _xamlContextFolderPrefix.Empty();
+  _xamlContextOperatedIndices.Clear();
+  _sevenZipContextMenu.Release();
+  _systemContextMenu.Release();
+}
+
+bool CPanel::ShowSystemContextMenu(UINT generation)
+{
+  if (generation != _xamlContextGeneration ||
+      !_xamlContextSystemMenu || !_systemContextMenu)
+    return false;
+
+  CMenu popupMenu;
+  popupMenu.Attach(_xamlContextSystemMenu);
+  CMenuDestroyer popupMenuDestroyer(popupMenu);
+  _xamlContextSystemMenuTracking = true;
+  _xamlContextSystemMenu = nullptr;
+  const unsigned id = popupMenu.Track(
+      TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+      _xamlContextX,
+      _xamlContextY,
+      *this);
+  _xamlContextSystemMenuTracking = false;
+  if (id != 0)
+    InvokePluginCommand(
+        id,
+        nullptr,
+        _systemContextMenu,
+        &_xamlContextFolderPrefix,
+        _mainWindow);
+  CloseXamlContextMenu();
+  return true;
+}
+
+bool CPanel::ExecuteXamlContextMenuCommand(unsigned id)
+{
+  bool result = false;
+  if (id < kMenuCmdID_Plugin_Start)
+  {
+    CRecordVector<UInt32> currentOperatedIndices;
+    GetOperatedItemIndices(currentOperatedIndices);
+    const bool contextStillMatches =
+        _currentFolderPrefix == _xamlContextFolderPrefix &&
+        currentOperatedIndices.Size() == _xamlContextOperatedIndices.Size();
+    if (contextStillMatches)
+    {
+      for (unsigned i = 0; i < currentOperatedIndices.Size(); ++i)
+      {
+        if (currentOperatedIndices[i] != _xamlContextOperatedIndices[i])
+        {
+          CloseXamlContextMenu();
+          return false;
+        }
+      }
+    }
+    else
+    {
+      CloseXamlContextMenu();
+      return false;
+    }
+  }
+  if (id >= kMenuCmdID_Plugin_Start)
+  {
+    result = InvokePluginCommand(
+        id,
+        _sevenZipContextMenu,
+        _systemContextMenu,
+        &_xamlContextFolderPrefix,
+        _mainWindow);
+  }
+  else
+  {
+    result = ExecuteFileCommand(id);
+  }
+  CloseXamlContextMenu();
+  return result;
+}
+
 bool CPanel::OnContextMenu(HANDLE windowHandle, int xPos, int yPos)
 {
   if (::GetParent((HWND)windowHandle) == _listView)
@@ -1212,6 +1333,8 @@ bool CPanel::OnContextMenu(HANDLE windowHandle, int xPos, int yPos)
 
   if (windowHandle != _listView)
     return false;
+
+  CloseXamlContextMenu();
   /*
   POINT point;
   point.x = xPos;
@@ -1261,9 +1384,7 @@ bool CPanel::OnContextMenu(HANDLE windowHandle, int xPos, int yPos)
   CMyComPtr<IContextMenu> systemContextMenu;
   CreateFileMenu(menu, sevenZipContextMenu, systemContextMenu, false);
 
-  // The Shell submenu is populated by a provider-owned IContextMenu. Locate
-  // it by command-ID range instead of assuming it is the first menu item.
-  // Its descendants retain their provider-owned item data and rendering.
+  HMENU systemMenu = nullptr;
   if (systemContextMenu)
   {
     const int itemCount = menu.GetItemCount();
@@ -1273,38 +1394,49 @@ bool CPanel::OnContextMenu(HANDLE windowHandle, int xPos, int yPos)
       systemItem.cbSize = sizeof(systemItem);
       systemItem.fMask = MIIM_ID | MIIM_SUBMENU;
       if (::GetMenuItemInfoW(menu, itemIndex, TRUE, &systemItem) &&
-          systemItem.wID >= kSystemStartMenuID && systemItem.hSubMenu)
+          systemItem.hSubMenu &&
+          (systemItem.wID >= kSystemStartMenuID ||
+           ContainsSystemMenuCommand(systemItem.hSubMenu)))
       {
-        ExcludeNanaZipMenuFont(systemItem.hSubMenu);
+        systemMenu = systemItem.hSubMenu;
         break;
       }
     }
   }
 
-  CFontSizeInfo fontSizes;
-  fontSizes.Load();
-  ApplyNanaZipMenuFontTree(menu, _listView, fontSizes.ContextMenu);
-
-  // The owner is the panel, not the list-view control. WM_MEASUREITEM and
-  // WM_DRAWITEM are delivered to this owner window for popup-menu items.
-  unsigned id = menu.Track(TPM_LEFTALIGN
-      #ifndef UNDER_CE
-      | TPM_RIGHTBUTTON
-      #endif
-      | TPM_RETURNCMD | TPM_NONOTIFY,
-    xPos, yPos, *this);
-
-  ResetNanaZipMenuFont(menu);
-
-  if (id == 0)
-    return true;
-
-  if (id >= kMenuCmdID_Plugin_Start)
+  unsigned panelIndex = 0;
+  for (unsigned index = 0; index < g_App.NumPanels; ++index)
   {
-    InvokePluginCommand(id, sevenZipContextMenu, systemContextMenu);
+    if (&g_App.Panels[index] == this)
+    {
+      panelIndex = index;
+      break;
+    }
+  }
+
+  if (K7ModernShowContextMenu(
+      g_App.m_ToolBar,
+      _mainWindow,
+      menu.Detach(),
+      systemMenu,
+      g_App.m_ToolBar,
+      xPos,
+      yPos,
+      panelIndex,
+      ++_xamlContextNextGeneration))
+  {
+    _xamlContextMenu = nullptr;
+    _xamlContextSystemMenu = systemMenu;
+    _xamlContextGeneration = _xamlContextNextGeneration;
+    _xamlContextFolderPrefix = _currentFolderPrefix;
+    _xamlContextOperatedIndices = operatedIndices;
+    _xamlContextX = xPos;
+    _xamlContextY = yPos;
+    _sevenZipContextMenu = sevenZipContextMenu;
+    _systemContextMenu = systemContextMenu;
+    menuDestroyer.Disable();
     return true;
   }
-  if (ExecuteFileCommand(id))
-    return true;
+
   return true;
 }

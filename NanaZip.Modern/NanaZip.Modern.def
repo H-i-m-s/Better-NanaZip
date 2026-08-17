@@ -5,6 +5,7 @@ EXPORTS
 K7ModernGetLegacyStringResource
 K7ModernAvailable
 K7ModernGetMoreMenuFontSize
+K7ModernGetContextMenuFontSize
 K7ModernInitialize
 K7ModernUninitialize
 K7ModernShowSponsorDialog
@@ -15,6 +16,7 @@ K7ModernSetProgressWindowPausedMode
 K7ModernShowProgressWindow
 K7ModernShowCopyLocationDialog
 K7ModernCreateMainWindowToolBarPage
+K7ModernShowContextMenu
 K7ModernShowOverwriteDialog
 K7ModernShowExtractDialog
 K7ModernShowCompressDialog

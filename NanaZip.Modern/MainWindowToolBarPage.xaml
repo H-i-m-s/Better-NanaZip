@@ -119,7 +119,9 @@
           Icon="More"
           ToolTipService.ToolTip="[More]">
           <AppBarButton.Flyout>
-            <MenuFlyout x:Name="MoreMenuFlyout" />
+            <MenuFlyout
+              x:Name="MoreMenuFlyout"
+              Placement="BottomEdgeAlignedLeft" />
           </AppBarButton.Flyout>
         </AppBarButton>
       </CommandBar>

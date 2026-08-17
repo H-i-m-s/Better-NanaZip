@@ -149,6 +149,31 @@ EXTERN_C UINT32 WINAPI K7ModernGetMoreMenuFontSize()
     return (valueType == REG_DWORD && value <= 36) ? value : 0;
 }
 
+EXTERN_C UINT32 WINAPI K7ModernGetContextMenuFontSize()
+{
+    DWORD value = 0;
+    DWORD valueType = 0;
+    DWORD valueSize = sizeof(value);
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(
+        HKEY_CURRENT_USER,
+        L"Software\\NanaZip\\Options",
+        0,
+        KEY_QUERY_VALUE,
+        &key) == ERROR_SUCCESS)
+    {
+        ::RegQueryValueExW(
+            key,
+            L"FontSizeContextMenu",
+            nullptr,
+            &valueType,
+            reinterpret_cast<LPBYTE>(&value),
+            &valueSize);
+        ::RegCloseKey(key);
+    }
+    return (valueType == REG_DWORD && value <= 36) ? value : 0;
+}
+
 EXTERN_C HRESULT WINAPI K7ModernInitialize()
 {
     if (g_AppInstance)

@@ -10,6 +10,8 @@
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Windows.UI.Xaml.Hosting.h>
 
 #include <string>
 #include <utility>
@@ -25,6 +27,7 @@ namespace winrt::Mile
 namespace winrt
 {
     using Windows::UI::Xaml::Automation::AutomationProperties;
+    using Windows::UI::Xaml::Hosting::DesktopWindowXamlSource;
     using Windows::UI::Xaml::Controls::AppBarButton;
     using Windows::UI::Xaml::Controls::MenuFlyout;
     using Windows::UI::Xaml::Controls::MenuFlyoutItem;
@@ -132,6 +135,7 @@ namespace
 
     static void AddMenuItems(
         HMENU Menu,
+        HMENU SystemMenu,
         MenuFlyoutItemBaseVector const& Items,
         winrt::Windows::UI::Xaml::RoutedEventHandler const& Handler)
     {
@@ -156,10 +160,21 @@ namespace
             const winrt::hstring Label = StripMenuPrefix(RawText);
             if (Info.hSubMenu)
             {
+                if (SystemMenu && Info.hSubMenu == SystemMenu)
+                {
+                    MenuFlyoutItem SystemItem;
+                    SystemItem.Text(Label);
+                    SystemItem.IsEnabled((Info.fState & (MFS_DISABLED | MFS_GRAYED)) == 0);
+                    SetMenuCommandTag(SystemItem, K7ModernContextMenuSystemCommand);
+                    SystemItem.Click(Handler);
+                    Items.Append(SystemItem);
+                    continue;
+                }
+
                 MenuFlyoutSubItem SubItem;
                 SubItem.Text(Label);
                 SubItem.IsEnabled((Info.fState & (MFS_DISABLED | MFS_GRAYED)) == 0);
-                AddMenuItems(Info.hSubMenu, SubItem.Items(), Handler);
+                AddMenuItems(Info.hSubMenu, SystemMenu, SubItem.Items(), Handler);
                 Items.Append(SubItem);
                 continue;
             }
@@ -227,16 +242,16 @@ namespace
         }
     }
 
-    static void PopulateMoreMenuFlyout(
+    static void PopulateMenuFlyout(
         MenuFlyout const& Flyout,
         HMENU Menu,
-        HWND WindowHandle,
-        UINT32 FontSizePt)
+        HMENU SystemMenu,
+        UINT32 FontSizePt,
+        winrt::Windows::UI::Xaml::RoutedEventHandler const& Handler)
     {
         auto Items = Flyout.Items();
         Items.Clear();
-        auto Handler = CreateMenuClickHandler(WindowHandle);
-        AddMenuItems(Menu, Items, Handler);
+        AddMenuItems(Menu, SystemMenu, Items, Handler);
 
         if (FontSizePt != 0 && FontSizePt <= 36)
         {
@@ -247,6 +262,20 @@ namespace
                 ApplyMenuFontSize(Item, FontSize);
             }
         }
+    }
+
+    static void PopulateMoreMenuFlyout(
+        MenuFlyout const& Flyout,
+        HMENU Menu,
+        HWND WindowHandle,
+        UINT32 FontSizePt)
+    {
+        PopulateMenuFlyout(
+            Flyout,
+            Menu,
+            nullptr,
+            FontSizePt,
+            CreateMenuClickHandler(WindowHandle));
     }
 
     namespace ToolBarCommandID
@@ -285,7 +314,15 @@ namespace winrt::NanaZip::Modern::implementation
         _In_ HWND WindowHandle,
         _In_ HMENU MoreMenu) :
         m_WindowHandle(WindowHandle),
-        m_MoreMenu(MoreMenu)
+        m_MoreMenu(MoreMenu),
+        m_ContextMenuParentWindow(nullptr),
+        m_ContextMenuSystemMenu(nullptr),
+        m_ContextMenuPanelIndex(0),
+        m_ContextMenuGeneration(0),
+        m_ContextMenuScreenX(0),
+        m_ContextMenuScreenY(0),
+        m_ContextMenuFlyout(nullptr),
+        m_ContextMenuClosedToken{}
     {
 
     }
@@ -556,6 +593,174 @@ namespace winrt::NanaZip::Modern::implementation
             ::K7ModernGetMoreMenuFontSize());
     }
 
+    BOOL MainWindowToolBarPage::ShowContextMenu(
+        HMENU Menu,
+        HMENU SystemMenu,
+        HWND HostWindowHandle,
+        HWND ParentWindowHandle,
+        INT ScreenX,
+        INT ScreenY,
+        UINT ContextPanelIndex,
+        UINT ContextGeneration)
+    {
+        if (!Menu || !ParentWindowHandle)
+        {
+            if (Menu)
+                ::DestroyMenu(Menu);
+            return FALSE;
+        }
+
+        if (this->m_ContextMenuFlyout)
+            this->m_ContextMenuFlyout.Hide();
+        this->m_ContextMenuFlyout = MenuFlyout();
+        auto Flyout = this->m_ContextMenuFlyout;
+        auto Handler = [this, ContextGeneration](
+            winrt::IInspectable const& Sender,
+            winrt::RoutedEventArgs const&)
+        {
+            auto Item = Sender.try_as<MenuFlyoutItemBase>();
+            if (!Item || !this->m_ContextMenuParentWindow ||
+                ContextGeneration != this->m_ContextMenuGeneration)
+                return;
+
+            const UINT Command = GetMenuCommandTag(Item);
+            if (Command != 0)
+            {
+                const WPARAM Value = MAKEWPARAM(
+                    static_cast<WORD>(Command),
+                    static_cast<WORD>(this->m_ContextMenuPanelIndex));
+                ::SendMessageW(
+                    this->m_ContextMenuParentWindow,
+                    Command == K7ModernContextMenuSystemCommand
+                        ? K7ModernContextMenuSystemMessage
+                        : K7ModernContextMenuCommandMessage,
+                    Value,
+                    static_cast<LPARAM>(ContextGeneration));
+            }
+        };
+
+        PopulateMenuFlyout(
+            Flyout,
+            Menu,
+            SystemMenu,
+            ::K7ModernGetContextMenuFontSize(),
+            Handler);
+
+        if (SystemMenu)
+        {
+            const int Count = ::GetMenuItemCount(Menu);
+            for (int Position = 0; Position < Count; ++Position)
+            {
+                MENUITEMINFOW Info = {};
+                Info.cbSize = sizeof(Info);
+                Info.fMask = MIIM_SUBMENU;
+                if (::GetMenuItemInfoW(Menu, Position, TRUE, &Info) &&
+                    Info.hSubMenu == SystemMenu)
+                {
+                    ::RemoveMenu(Menu, Position, MF_BYPOSITION);
+                    break;
+                }
+            }
+        }
+        ::DestroyMenu(Menu);
+
+        this->m_ContextMenuParentWindow = ParentWindowHandle;
+        this->m_ContextMenuSystemMenu = SystemMenu;
+        this->m_ContextMenuPanelIndex = ContextPanelIndex;
+        this->m_ContextMenuGeneration = ContextGeneration;
+        this->m_ContextMenuScreenX = ScreenX;
+        this->m_ContextMenuScreenY = ScreenY;
+        this->m_ContextMenuClosedToken = Flyout.Closed(
+            [this, ContextGeneration](auto const&, auto const&)
+            {
+                const UINT PanelIndex = this->m_ContextMenuPanelIndex;
+                if (ContextGeneration != this->m_ContextMenuGeneration)
+                    return;
+                this->m_ContextMenuParentWindow = nullptr;
+                this->m_ContextMenuSystemMenu = nullptr;
+                this->m_ContextMenuPanelIndex = 0;
+                ::PostMessageW(
+                    this->m_WindowHandle,
+                    K7ModernContextMenuClosedMessage,
+                    PanelIndex,
+                    static_cast<LPARAM>(ContextGeneration));
+            });
+
+        auto Root = this->Content().as<winrt::Windows::UI::Xaml::UIElement>();
+        POINT Point = { ScreenX, ScreenY };
+        if (!::ScreenToClient(HostWindowHandle, &Point))
+        {
+            if (SystemMenu)
+                ::DestroyMenu(SystemMenu);
+            return FALSE;
+        }
+
+        const double Scale = static_cast<double>(
+            ::GetDpiForWindow(HostWindowHandle)) /
+            static_cast<double>(USER_DEFAULT_SCREEN_DPI);
+        Flyout.ShowAt(
+            Root,
+            winrt::Windows::Foundation::Point{
+                static_cast<float>(Point.x / Scale),
+                static_cast<float>(Point.y / Scale)});
+        return TRUE;
+    }
+
+}
+
+EXTERN_C BOOL WINAPI K7ModernShowContextMenu(
+    _In_ HWND ToolBarWindowHandle,
+    _In_ HWND ParentWindowHandle,
+    _In_ HMENU MenuHandle,
+    _In_opt_ HMENU SystemMenuHandle,
+    _In_ HWND HostWindowHandle,
+    _In_ INT ScreenX,
+    _In_ INT ScreenY,
+    _In_ UINT ContextPanelIndex,
+    _In_ UINT ContextGeneration)
+{
+    if (!ToolBarWindowHandle || !MenuHandle)
+    {
+        if (MenuHandle)
+            ::DestroyMenu(MenuHandle);
+        if (SystemMenuHandle)
+            ::DestroyMenu(SystemMenuHandle);
+        return FALSE;
+    }
+
+    winrt::DesktopWindowXamlSource XamlSource = nullptr;
+    winrt::copy_from_abi(
+        XamlSource,
+        ::GetPropW(ToolBarWindowHandle, L"XamlWindowSource"));
+    if (!XamlSource)
+    {
+        ::DestroyMenu(MenuHandle);
+        if (SystemMenuHandle)
+            ::DestroyMenu(SystemMenuHandle);
+        return FALSE;
+    }
+
+    auto Page = XamlSource.Content().try_as<
+        winrt::NanaZip::Modern::MainWindowToolBarPage>();
+    if (!Page)
+    {
+        ::DestroyMenu(MenuHandle);
+        if (SystemMenuHandle)
+            ::DestroyMenu(SystemMenuHandle);
+        return FALSE;
+    }
+
+    return winrt::get_self<
+        winrt::NanaZip::Modern::implementation::MainWindowToolBarPage>(Page)
+        ->ShowContextMenu(
+            MenuHandle,
+            SystemMenuHandle,
+            HostWindowHandle,
+            ParentWindowHandle,
+            ScreenX,
+            ScreenY,
+            ContextPanelIndex,
+            ContextGeneration);
 }
 
 EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(

@@ -1080,6 +1080,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       return 0;
     }
 
+    case K7ModernContextMenuCommandMessage:
+    {
+      const unsigned command = static_cast<unsigned>(LOWORD(wParam));
+      const unsigned panelIndex = static_cast<unsigned>(HIWORD(wParam));
+      if (panelIndex < g_App.NumPanels &&
+          static_cast<UINT>(lParam) == g_App.Panels[panelIndex]._xamlContextGeneration)
+      {
+        g_App.SetFocusedPanel(panelIndex);
+        g_App.Panels[panelIndex].ExecuteXamlContextMenuCommand(command);
+      }
+      return 0;
+    }
+
+    case K7ModernContextMenuSystemMessage:
+    {
+      const unsigned panelIndex = static_cast<unsigned>(HIWORD(wParam));
+      if (panelIndex < g_App.NumPanels &&
+          static_cast<UINT>(lParam) == g_App.Panels[panelIndex]._xamlContextGeneration)
+      {
+        g_App.SetFocusedPanel(panelIndex);
+        g_App.Panels[panelIndex].ShowSystemContextMenu(
+            static_cast<UINT>(lParam));
+      }
+      return 0;
+    }
+
+    case K7ModernContextMenuClosedMessage:
+    {
+      const unsigned panelIndex = static_cast<unsigned>(wParam);
+      if (panelIndex < g_App.NumPanels)
+        g_App.Panels[panelIndex].CloseXamlContextMenu(
+            static_cast<UINT>(lParam));
+      return 0;
+    }
+
     case WM_COMMAND:
     {
       unsigned wmId    = LOWORD(wParam);

@@ -677,9 +677,21 @@ public:
   void OnTimer();
   void OnReload();
   bool OnContextMenu(HANDLE windowHandle, int xPos, int yPos);
+  bool ShowSystemContextMenu(UINT generation);
+  void CloseXamlContextMenu(UINT generation = 0);
+  bool ExecuteXamlContextMenuCommand(unsigned id);
 
   CMyComPtr<IContextMenu> _sevenZipContextMenu;
   CMyComPtr<IContextMenu> _systemContextMenu;
+  HMENU _xamlContextMenu = nullptr;
+  HMENU _xamlContextSystemMenu = nullptr;
+  bool _xamlContextSystemMenuTracking = false;
+  UINT _xamlContextGeneration = 0;
+  UINT _xamlContextNextGeneration = 0;
+  int _xamlContextX = 0;
+  int _xamlContextY = 0;
+  UString _xamlContextFolderPrefix;
+  CRecordVector<UInt32> _xamlContextOperatedIndices;
   HRESULT CreateShellContextMenu(
       const CRecordVector<UInt32> &operatedIndices,
       CMyComPtr<IContextMenu> &systemContextMenu);
@@ -696,7 +708,9 @@ public:
   void CreateFileMenu(HMENU menu);
   bool InvokePluginCommand(unsigned id);
   bool InvokePluginCommand(unsigned id, IContextMenu *sevenZipContextMenu,
-      IContextMenu *systemContextMenu);
+      IContextMenu *systemContextMenu,
+      const UString *folderOverride = nullptr,
+      HWND ownerOverride = nullptr);
 
   void InvokeSystemCommand(const char *command);
   void Properties();

@@ -71,6 +71,7 @@ static const int StatusBarHeight = 32;
 void CPanel::Release()
 {
   // It's for unloading COM dll's: don't change it.
+  CloseXamlContextMenu();
   CloseOpenFolders();
   _sevenZipContextMenu.Release();
   _systemContextMenu.Release();
@@ -78,6 +79,7 @@ void CPanel::Release()
 
 CPanel::~CPanel()
 {
+  CloseXamlContextMenu();
   CloseOpenFolders();
 }
 

@@ -7,6 +7,7 @@
 #include "NanaZip.Modern.h"
 
 #include <winrt/Windows.UI.Xaml.Documents.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 
 #include <Mile.Project.Version.h>
 
@@ -98,5 +99,17 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(e);
 
         ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+    }
+
+    void AboutPage::OnPageKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() == winrt::Windows::System::VirtualKey::Escape)
+        {
+            e.Handled(true);
+            ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        }
     }
 }

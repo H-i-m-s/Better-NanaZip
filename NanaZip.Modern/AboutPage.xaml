@@ -6,6 +6,8 @@
   xmlns:local="using:NanaZip.Modern"
   xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
   IsTextScaleFactorEnabled="False"
+  KeyDown="OnPageKeyDown"
+  PreviewKeyDown="OnPageKeyDown"
   mc:Ignorable="d">
   <Grid>
     <Grid.RowDefinitions>

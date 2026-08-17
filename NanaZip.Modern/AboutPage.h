@@ -34,6 +34,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        void OnPageKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+
     private:
 
         HWND m_WindowHandle;

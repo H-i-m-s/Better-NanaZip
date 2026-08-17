@@ -98,6 +98,30 @@ EXTERN_C BOOL WINAPI K7ModernAvailable()
     return FALSE;
 }
 
+EXTERN_C UINT32 WINAPI K7ModernGetContextMenuFontSize()
+{
+    using ProcType = decltype(::K7ModernGetContextMenuFontSize)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernGetContextMenuFontSize");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress();
+    }
+
+    return 0;
+}
+
 EXTERN_C HRESULT WINAPI K7ModernInitialize()
 {
     using ProcType = decltype(::K7ModernInitialize)*;
@@ -329,6 +353,50 @@ EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(
     }
 
     return nullptr;
+}
+
+EXTERN_C BOOL WINAPI K7ModernShowContextMenu(
+    _In_ HWND ToolBarWindowHandle,
+    _In_ HWND ParentWindowHandle,
+    _In_ HMENU MenuHandle,
+    _In_opt_ HMENU SystemMenuHandle,
+    _In_ HWND HostWindowHandle,
+    _In_ INT ScreenX,
+    _In_ INT ScreenY,
+    _In_ UINT ContextPanelIndex,
+    _In_ UINT ContextGeneration)
+{
+    using ProcType = decltype(::K7ModernShowContextMenu)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowContextMenu");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(
+            ToolBarWindowHandle,
+            ParentWindowHandle,
+            MenuHandle,
+            SystemMenuHandle,
+            HostWindowHandle,
+            ScreenX,
+            ScreenY,
+            ContextPanelIndex,
+            ContextGeneration);
+    }
+
+    if (MenuHandle)
+        ::DestroyMenu(MenuHandle);
+    return FALSE;
 }
 
 EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
