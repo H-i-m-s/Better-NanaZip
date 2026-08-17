@@ -656,6 +656,10 @@ namespace winrt::NanaZip::Modern::implementation
         // context menu is positioned against the desktop, not clipped to the
         // toolbar island's root bounds.
         Flyout.ShouldConstrainToRootBounds(false);
+        // The target below is a 1x1 anchor at the right-click point, so this
+        // placement now has its intended meaning: open downward from it.
+        Flyout.Placement(
+            winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::BottomEdgeAlignedLeft);
         auto Handler = [this, ContextGeneration](
             winrt::IInspectable const& Sender,
             winrt::RoutedEventArgs const&)
@@ -779,9 +783,10 @@ namespace winrt::NanaZip::Modern::implementation
         this->m_ContextMenuAnchor = Anchor;
         try
         {
-            Flyout.ShowAt(
-                Anchor,
-                winrt::Windows::Foundation::Point{ 0.0f, 0.0f });
+            // Use FlyoutBase's target-based overload. MenuFlyout's point
+            // overload chooses context-menu placement automatically, which
+            // can override the requested downward placement.
+            Flyout.ShowAt(Anchor);
         }
         catch (...)
         {
