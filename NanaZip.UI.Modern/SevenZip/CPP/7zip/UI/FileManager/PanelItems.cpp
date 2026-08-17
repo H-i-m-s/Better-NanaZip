@@ -17,6 +17,7 @@
 
 #include "LangUtils.h"
 #include "Panel.h"
+#include "MenuFont.h"
 #include "PropertyName.h"
 #include "RootFolder.h"
 
@@ -1275,7 +1276,12 @@ void CPanel::ShowColumnsContextMenu(int x, int y)
     menu.AppendItem(flags, kCommandStart + i, prop.Name);
   }
 
-  int menuResult = menu.Track(TPM_LEFTALIGN | TPM_RETURNCMD | TPM_NONOTIFY, x, y, _listView);
+  CFontSizeInfo fontSizes;
+  fontSizes.Load();
+  ApplyNanaZipMenuFontTree(menu, _listView, fontSizes.ContextMenu);
+  // Owner-draw menu messages are routed to the panel window.
+  int menuResult = menu.Track(TPM_LEFTALIGN | TPM_RETURNCMD | TPM_NONOTIFY, x, y, *this);
+  ResetNanaZipMenuFont(menu);
 
   if (menuResult >= kCommandStart && menuResult <= kCommandStart + (int)_columns.Size())
   {

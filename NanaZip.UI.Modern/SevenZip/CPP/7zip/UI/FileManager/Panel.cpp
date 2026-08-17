@@ -22,6 +22,7 @@
 #include "../Common/CompressCall.h"
 #include "../Common/ZipRegistry.h"
 #include "FontUtils.h"
+#include "MenuFont.h"
 
 #include "../Agent/IFolderArchive.h"
 
@@ -232,6 +233,13 @@ LRESULT CPanel::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CONTEXTMENU:
       if (OnContextMenu(HANDLE(wParam), GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
         return 0;
+    case WM_MEASUREITEM:
+      if (MeasureNanaZipMenuItem(reinterpret_cast<MEASUREITEMSTRUCT *>(lParam)))
+        return TRUE;
+      break;
+    case WM_DRAWITEM:
+      if (DrawNanaZipMenuItem(reinterpret_cast<DRAWITEMSTRUCT *>(lParam)))
+        return TRUE;
       break;
     /*
     case WM_DROPFILES:

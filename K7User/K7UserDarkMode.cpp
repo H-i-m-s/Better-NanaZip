@@ -182,6 +182,15 @@ namespace
             this->ShouldAppsUseDarkMode =
                 ::MileShouldAppsUseDarkMode() &&
                 !::MileShouldAppsUseHighContrastMode();
+
+            // AUTO does not reliably theme the popup-menu window class
+            // (#32768) on every supported Windows build. Select the concrete
+            // mode before FileManager creates any popup, so its native border
+            // uses the same color family as our owner-drawn menu items.
+            ::MileSetPreferredAppMode(
+                this->ShouldAppsUseDarkMode
+                ? MILE_PREFERRED_APP_MODE_DARK
+                : MILE_PREFERRED_APP_MODE_LIGHT);
         }
 
         ~ThreadContext()
@@ -319,6 +328,80 @@ namespace
         return (0 == std::wcscmp(ClassName, L"NanaZip::Panel"));
     }
 
+    static bool IsPopupMenuWindow(
+        _In_ HWND WindowHandle)
+    {
+        wchar_t ClassName[256] = {};
+        return 0 != ::GetClassNameW(
+            WindowHandle,
+            ClassName,
+            MO_ARRAY_SIZE(ClassName)) &&
+            0 == std::wcscmp(ClassName, L"#32768");
+    }
+
+    static void ConfigurePopupMenuWindow(
+        _In_ HWND WindowHandle)
+    {
+        if (!::IsPopupMenuWindow(WindowHandle) ||
+            !g_ThreadContext.ShouldAppsUseDarkMode)
+        {
+            return;
+        }
+
+        ::MileAllowDarkModeForWindow(WindowHandle, TRUE);
+        ::MileEnableImmersiveDarkModeForWindow(WindowHandle, TRUE);
+
+        const COLORREF BorderColor = g_DarkModeBackgroundColor;
+        ::DwmSetWindowAttribute(
+            WindowHandle,
+            DWMWA_BORDER_COLOR,
+            &BorderColor,
+            sizeof(BorderColor));
+    }
+
+    static void PaintPopupMenuNonClient(
+        _In_ HWND WindowHandle)
+    {
+        HDC DeviceContextHandle = ::GetWindowDC(WindowHandle);
+        if (!DeviceContextHandle)
+        {
+            return;
+        }
+
+        WINDOWINFO WindowInfo = {};
+        WindowInfo.cbSize = sizeof(WindowInfo);
+        if (::GetWindowInfo(WindowHandle, &WindowInfo))
+        {
+            RECT WindowRect = {
+                0,
+                0,
+                WindowInfo.rcWindow.right - WindowInfo.rcWindow.left,
+                WindowInfo.rcWindow.bottom - WindowInfo.rcWindow.top};
+            RECT ClientRect = WindowInfo.rcClient;
+            ::OffsetRect(
+                &ClientRect,
+                -WindowInfo.rcWindow.left,
+                -WindowInfo.rcWindow.top);
+
+            // Preserve the system-managed client surface. It includes the
+            // Windows 11 popup material, rounded clipping and shadow rules.
+            int SavedState = ::SaveDC(DeviceContextHandle);
+            ::ExcludeClipRect(
+                DeviceContextHandle,
+                ClientRect.left,
+                ClientRect.top,
+                ClientRect.right,
+                ClientRect.bottom);
+            ::FillRect(
+                DeviceContextHandle,
+                &WindowRect,
+                ::GetDarkModeBackgroundBrush());
+            ::RestoreDC(DeviceContextHandle, SavedState);
+        }
+
+        ::ReleaseDC(WindowHandle, DeviceContextHandle);
+    }
+
     static bool IsFileManagerWindow(
         _In_ HWND WindowHandle)
     {
@@ -352,6 +435,21 @@ namespace
                 uMsg,
                 wParam,
                 lParam);
+        }
+
+        if (::IsPopupMenuWindow(hWnd) &&
+            g_ThreadContext.ShouldAppsUseDarkMode &&
+            (WM_NCPAINT == uMsg ||
+             WM_NCACTIVATE == uMsg ||
+             WM_UAHNCPAINTMENUPOPUP == uMsg))
+        {
+            LRESULT Result = ::DefSubclassProc(
+                hWnd,
+                uMsg,
+                wParam,
+                lParam);
+            ::PaintPopupMenuNonClient(hWnd);
+            return Result;
         }
 
         switch (uMsg)
@@ -404,6 +502,10 @@ namespace
                 g_ThreadContext.ShouldAppsUseDarkMode =
                     ::MileShouldAppsUseDarkMode() &&
                     !::MileShouldAppsUseHighContrastMode();
+                ::MileSetPreferredAppMode(
+                    g_ThreadContext.ShouldAppsUseDarkMode
+                    ? MILE_PREFERRED_APP_MODE_DARK
+                    : MILE_PREFERRED_APP_MODE_LIGHT);
 
                 ::MileEnableImmersiveDarkModeForWindow(
                     hWnd,
@@ -820,6 +922,10 @@ namespace
                         ::WindowSubclassCallback,
                         0,
                         0);
+                }
+                if (::IsPopupMenuWindow(WndProcStruct->hwnd))
+                {
+                    ::ConfigurePopupMenuWindow(WndProcStruct->hwnd);
                 }
                 break;
             }
@@ -1523,6 +1629,11 @@ EXTERN_C VOID WINAPI K7UserEndDarkModeWorkaroundBypass()
     {
         --g_ThreadContext.DarkModeWorkaroundBypassDepth;
     }
+}
+
+EXTERN_C BOOL WINAPI K7UserShouldAppsUseDarkMode()
+{
+    return g_ThreadContext.ShouldAppsUseDarkMode ? TRUE : FALSE;
 }
 
 EXTERN_C MO_RESULT MOAPI K7UserUninitializeDarkModeSupport()

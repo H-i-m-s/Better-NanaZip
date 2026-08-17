@@ -54,8 +54,15 @@ static HFONT CreateAppFont(unsigned pt, unsigned dpi)
 
   NONCLIENTMETRICSW ncm = {};
   ncm.cbSize = sizeof(ncm);
-  if (::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0) && ncm.lfMessageFont.lfFaceName[0])
-    wcscpy_s(lf.lfFaceName, ncm.lfMessageFont.lfFaceName);
+  if (::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0) && ncm.lfMenuFont.lfFaceName[0])
+  {
+    // Keep the system's native menu face, weight and charset; only the user
+    // setting controls the physical point size.
+    lf = ncm.lfMenuFont;
+    lf.lfHeight = height;
+    lf.lfCharSet = DEFAULT_CHARSET;
+    lf.lfQuality = CLEARTYPE_QUALITY;
+  }
   else
     wcscpy_s(lf.lfFaceName, L"Segoe UI");
 

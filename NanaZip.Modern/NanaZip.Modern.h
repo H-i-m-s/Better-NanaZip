@@ -32,6 +32,12 @@ EXTERN_C LPCWSTR WINAPI K7ModernGetLegacyStringResource(
 EXTERN_C BOOL WINAPI K7ModernAvailable();
 
 /**
+ * @brief Gets the configured FileManager top-level More-menu font size.
+ * @return A point size, or zero when the XAML menu uses its default font size.
+ */
+EXTERN_C UINT32 WINAPI K7ModernGetMoreMenuFontSize();
+
+/**
  * @brief Initialize NanaZip Modern Experience.
  * @return If the function succeeds, it returns S_OK. Otherwise, it returns an
  *         HRESULT error code.
@@ -288,6 +294,8 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     UINT32 FontSizeList;
     UINT32 FontSizeStatusBar;
     UINT32 FontSizeDialog;
+    UINT32 FontSizeMoreMenu;
+    UINT32 FontSizeContextMenu;
     UINT32 DefaultUiFontPt;
 
     // --- Integration (menu) page ---

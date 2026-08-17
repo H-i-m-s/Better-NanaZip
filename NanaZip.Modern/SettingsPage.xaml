@@ -286,6 +286,8 @@
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
               x:Name="FontAddressBarLabel"
@@ -331,6 +333,28 @@
               Grid.Column="1"
               Margin="6,2,0,2"
               SelectionChanged="FontDialogComboChanged" />
+            <TextBlock
+              x:Name="FontMoreMenuLabel"
+              Grid.Row="4"
+              Grid.Column="0"
+              VerticalAlignment="Center" />
+            <ComboBox
+              x:Name="FontMoreMenuCombo"
+              Grid.Row="4"
+              Grid.Column="1"
+              Margin="6,2,0,2"
+              SelectionChanged="FontComboChanged" />
+            <TextBlock
+              x:Name="FontContextMenuLabel"
+              Grid.Row="5"
+              Grid.Column="0"
+              VerticalAlignment="Center" />
+            <ComboBox
+              x:Name="FontContextMenuCombo"
+              Grid.Row="5"
+              Grid.Column="1"
+              Margin="6,2,0,2"
+              SelectionChanged="FontComboChanged" />
           </Grid>
         </StackPanel>
       </ScrollViewer>

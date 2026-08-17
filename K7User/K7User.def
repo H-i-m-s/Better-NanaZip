@@ -5,6 +5,7 @@ EXPORTS
 K7UserInitializeDarkModeSupport
 K7UserBeginDarkModeWorkaroundBypass
 K7UserEndDarkModeWorkaroundBypass
+K7UserShouldAppsUseDarkMode
 
 K7UserModernMessageBoxW
 K7UserModernSHBrowseForFolderW

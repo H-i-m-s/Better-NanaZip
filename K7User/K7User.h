@@ -42,6 +42,11 @@ EXTERN_C VOID WINAPI K7UserBeginDarkModeWorkaroundBypass();
  */
 EXTERN_C VOID WINAPI K7UserEndDarkModeWorkaroundBypass();
 
+/**
+ * @brief Returns whether NanaZip's current UI thread uses dark mode.
+ */
+EXTERN_C BOOL WINAPI K7UserShouldAppsUseDarkMode();
+
 #ifdef __cplusplus
 class K7UserDarkModeWorkaroundBypassScope final
 {

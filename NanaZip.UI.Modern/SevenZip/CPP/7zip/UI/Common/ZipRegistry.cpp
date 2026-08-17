@@ -621,6 +621,8 @@ static LPCTSTR const kFontSizeAddressBar = TEXT("FontSizeAddressBar");
 static LPCTSTR const kFontSizeList = TEXT("FontSizeList");
 static LPCTSTR const kFontSizeStatusBar = TEXT("FontSizeStatusBar");
 static LPCTSTR const kFontSizeDialog = TEXT("FontSizeDialog");
+static LPCTSTR const kFontSizeMoreMenu = TEXT("FontSizeMoreMenu");
+static LPCTSTR const kFontSizeContextMenu = TEXT("FontSizeContextMenu");
 
 void CFontSizeInfo::Save() const
 {
@@ -632,6 +634,8 @@ void CFontSizeInfo::Save() const
   Key_Set_UInt32(key, kFontSizeList, List);
   Key_Set_UInt32(key, kFontSizeStatusBar, StatusBar);
   Key_Set_UInt32(key, kFontSizeDialog, Dialog);
+  Key_Set_UInt32(key, kFontSizeMoreMenu, MoreMenu);
+  Key_Set_UInt32(key, kFontSizeContextMenu, ContextMenu);
 }
 
 void CFontSizeInfo::Load()
@@ -640,6 +644,8 @@ void CFontSizeInfo::Load()
   List = 0;
   StatusBar = 0;
   Dialog = 0;
+  MoreMenu = 0;
+  ContextMenu = 0;
 
   CS_LOCK
 
@@ -651,6 +657,8 @@ void CFontSizeInfo::Load()
   Key_Get_UInt32(key, kFontSizeList, List);
   Key_Get_UInt32(key, kFontSizeStatusBar, StatusBar);
   Key_Get_UInt32(key, kFontSizeDialog, Dialog);
+  Key_Get_UInt32(key, kFontSizeMoreMenu, MoreMenu);
+  Key_Get_UInt32(key, kFontSizeContextMenu, ContextMenu);
 
   // **************** SSS Modification Start (defensive) ****************
   // Clamp absurd font sizes: corrupt registry values would otherwise blow up
@@ -659,6 +667,8 @@ void CFontSizeInfo::Load()
   if (List > 36) List = 0;
   if (StatusBar > 36) StatusBar = 0;
   if (Dialog > 36) Dialog = 0;
+  if (MoreMenu > 36) MoreMenu = 0;
+  if (ContextMenu > 36) ContextMenu = 0;
   // **************** SSS Modification End (defensive) ****************
 }
 // **************** SSS Modification End ****************

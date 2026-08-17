@@ -36,6 +36,8 @@
 #include "MyLoadMenu.h"
 #include "Panel.h"
 #include "FontUtils.h"
+#include "MenuFont.h"
+#include <NanaZip.Modern.h>
 #include "RegistryUtils.h"
 #include "StringUtils.h"
 #include "ViewSettings.h"
@@ -1095,6 +1097,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     case WM_INITMENUPOPUP:
       OnMenuActivating(hWnd, HMENU(wParam), LOWORD(lParam));
+      break;
+    case WM_MEASUREITEM:
+      if (MeasureNanaZipMenuItem(reinterpret_cast<MEASUREITEMSTRUCT *>(lParam)))
+        return TRUE;
+      break;
+    case WM_DRAWITEM:
+      if (DrawNanaZipMenuItem(reinterpret_cast<DRAWITEMSTRUCT *>(lParam)))
+        return TRUE;
       break;
 
     /*

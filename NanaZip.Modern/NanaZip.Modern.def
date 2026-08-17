@@ -4,6 +4,7 @@ EXPORTS
 
 K7ModernGetLegacyStringResource
 K7ModernAvailable
+K7ModernGetMoreMenuFontSize
 K7ModernInitialize
 K7ModernUninitialize
 K7ModernShowSponsorDialog

@@ -412,11 +412,15 @@ namespace winrt::NanaZip::Modern::implementation
         FontListLabel().Text(Res(2519, L"File list:"));
         FontStatusBarLabel().Text(Res(2521, L"Status bar:"));
         FontDialogLabel().Text(Res(2523, L"Dialogs:"));
+        FontMoreMenuLabel().Text(L"顶部更多菜单:");
+        FontContextMenuLabel().Text(L"右键菜单:");
 
         InitFontCombo(FontAddressBarCombo(), this->m_Context->FontSizeAddressBar);
         InitFontCombo(FontListCombo(), this->m_Context->FontSizeList);
         InitFontCombo(FontStatusBarCombo(), this->m_Context->FontSizeStatusBar);
         InitFontCombo(FontDialogCombo(), this->m_Context->FontSizeDialog);
+        InitFontCombo(FontMoreMenuCombo(), this->m_Context->FontSizeMoreMenu);
+        InitFontCombo(FontContextMenuCombo(), this->m_Context->FontSizeContextMenu);
 
         // ============ Integration (menu) page ============
         MenuAssociateButton().Content(winrt::box_value(Res(12201, L"Open Windows Settings app to associate files with NanaZip")));
@@ -1064,6 +1068,10 @@ namespace winrt::NanaZip::Modern::implementation
             this->m_Context->FontSizeList = Pt;
         else if (sender == FontStatusBarCombo())
             this->m_Context->FontSizeStatusBar = Pt;
+        else if (sender == FontMoreMenuCombo())
+            this->m_Context->FontSizeMoreMenu = Pt;
+        else if (sender == FontContextMenuCombo())
+            this->m_Context->FontSizeContextMenu = Pt;
     }
 
     void SettingsPage::FontDialogComboChanged(

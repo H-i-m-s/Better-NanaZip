@@ -253,6 +253,8 @@ static void FillSettingsDialogContext(
   ctx.FontSizeList = fs.List;
   ctx.FontSizeStatusBar = fs.StatusBar;
   ctx.FontSizeDialog = fs.Dialog;
+  ctx.FontSizeMoreMenu = fs.MoreMenu;
+  ctx.FontSizeContextMenu = fs.ContextMenu;
   ctx.DefaultUiFontPt = GetDefaultUiFontPt(hwndOwner);
 
   // --- Integration (menu) page ---
@@ -435,6 +437,8 @@ static void SaveSettingsDialogContext(
   fs.List = ctx.FontSizeList;
   fs.StatusBar = ctx.FontSizeStatusBar;
   fs.Dialog = ctx.FontSizeDialog;
+  fs.MoreMenu = ctx.FontSizeMoreMenu;
+  fs.ContextMenu = ctx.FontSizeContextMenu;
   fs.Save();
 
   // Ask the main window to re-apply the font settings to the live controls.

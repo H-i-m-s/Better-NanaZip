@@ -218,6 +218,8 @@ struct CFontSizeInfo
   UInt32 List;
   UInt32 StatusBar;
   UInt32 Dialog;
+  UInt32 MoreMenu;
+  UInt32 ContextMenu;
 
   void Save() const;
   void Load();

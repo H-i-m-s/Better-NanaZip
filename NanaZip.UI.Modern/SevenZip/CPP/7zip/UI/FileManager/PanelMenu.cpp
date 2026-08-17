@@ -22,6 +22,7 @@
 #include <NanaZip.Modern.h>
 // **************** NanaZip Modification End ****************
 #include "MyLoadMenu.h"
+#include "MenuFont.h"
 #include "PropertyName.h"
 
 #include "resource.h"
@@ -1260,12 +1261,40 @@ bool CPanel::OnContextMenu(HANDLE windowHandle, int xPos, int yPos)
   CMyComPtr<IContextMenu> systemContextMenu;
   CreateFileMenu(menu, sevenZipContextMenu, systemContextMenu, false);
 
+  // The Shell submenu is populated by a provider-owned IContextMenu. Locate
+  // it by command-ID range instead of assuming it is the first menu item.
+  // Its descendants retain their provider-owned item data and rendering.
+  if (systemContextMenu)
+  {
+    const int itemCount = menu.GetItemCount();
+    for (int itemIndex = 0; itemIndex < itemCount; itemIndex++)
+    {
+      MENUITEMINFOW systemItem = {};
+      systemItem.cbSize = sizeof(systemItem);
+      systemItem.fMask = MIIM_ID | MIIM_SUBMENU;
+      if (::GetMenuItemInfoW(menu, itemIndex, TRUE, &systemItem) &&
+          systemItem.wID >= kSystemStartMenuID && systemItem.hSubMenu)
+      {
+        ExcludeNanaZipMenuFont(systemItem.hSubMenu);
+        break;
+      }
+    }
+  }
+
+  CFontSizeInfo fontSizes;
+  fontSizes.Load();
+  ApplyNanaZipMenuFontTree(menu, _listView, fontSizes.ContextMenu);
+
+  // The owner is the panel, not the list-view control. WM_MEASUREITEM and
+  // WM_DRAWITEM are delivered to this owner window for popup-menu items.
   unsigned id = menu.Track(TPM_LEFTALIGN
       #ifndef UNDER_CE
       | TPM_RIGHTBUTTON
       #endif
       | TPM_RETURNCMD | TPM_NONOTIFY,
-    xPos, yPos, _listView);
+    xPos, yPos, *this);
+
+  ResetNanaZipMenuFont(menu);
 
   if (id == 0)
     return true;
