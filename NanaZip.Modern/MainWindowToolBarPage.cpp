@@ -242,6 +242,106 @@ namespace
         }
     }
 
+    static bool MenuContainsSubMenu(
+        HMENU Menu,
+        HMENU SubMenu)
+    {
+        if (!Menu || !SubMenu)
+        {
+            return false;
+        }
+
+        const int Count = ::GetMenuItemCount(Menu);
+        for (int Position = 0; Position < Count; ++Position)
+        {
+            MENUITEMINFOW Info = {};
+            Info.cbSize = sizeof(Info);
+            Info.fMask = MIIM_SUBMENU;
+            if (::GetMenuItemInfoW(Menu, Position, TRUE, &Info) &&
+                Info.hSubMenu == SubMenu)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static LONG EstimateContextMenuHeightPixels(
+        HMENU Menu,
+        UINT32 FontSizePt,
+        UINT Dpi)
+    {
+        const double FontSizeDip = FontSizePt == 0
+            ? 14.0
+            : static_cast<double>(FontSizePt) * 96.0 / 72.0;
+        const double RowHeightDip =
+            FontSizeDip + 24.0 > 40.0 ? FontSizeDip + 24.0 : 40.0;
+        double HeightDip = 12.0;
+        const int Count = ::GetMenuItemCount(Menu);
+        for (int Position = 0; Position < Count; ++Position)
+        {
+            MENUITEMINFOW Info = {};
+            Info.cbSize = sizeof(Info);
+            Info.fMask = MIIM_FTYPE;
+            if (::GetMenuItemInfoW(Menu, Position, TRUE, &Info) &&
+                (Info.fType & MFT_SEPARATOR) != 0)
+            {
+                HeightDip += 12.0;
+            }
+            else
+            {
+                HeightDip += RowHeightDip;
+            }
+        }
+
+        return static_cast<LONG>(
+            HeightDip * static_cast<double>(Dpi) /
+                static_cast<double>(USER_DEFAULT_SCREEN_DPI) +
+            0.5);
+    }
+
+    static INT GetContextMenuPlacementScreenY(
+        HMENU Menu,
+        INT ScreenX,
+        INT ScreenY,
+        UINT32 FontSizePt,
+        HWND HostWindowHandle)
+    {
+        HMONITOR Monitor = ::MonitorFromPoint(
+            POINT{ ScreenX, ScreenY },
+            MONITOR_DEFAULTTONEAREST);
+        MONITORINFO MonitorInfo = {};
+        MonitorInfo.cbSize = sizeof(MonitorInfo);
+        if (!Monitor || !::GetMonitorInfoW(Monitor, &MonitorInfo))
+        {
+            return ScreenY;
+        }
+
+        UINT Dpi = ::GetDpiForWindow(HostWindowHandle);
+        if (Dpi == 0)
+        {
+            Dpi = USER_DEFAULT_SCREEN_DPI;
+        }
+
+        const LONG EstimatedHeight = EstimateContextMenuHeightPixels(
+            Menu,
+            FontSizePt,
+            Dpi);
+        const LONG BottomMargin = 4;
+        const LONG MaximumScreenY =
+            MonitorInfo.rcWork.bottom - BottomMargin - EstimatedHeight;
+        const LONG MinimumScreenY = MonitorInfo.rcWork.top + BottomMargin;
+
+        if (ScreenY > MaximumScreenY)
+        {
+            return static_cast<INT>(
+                MaximumScreenY > MinimumScreenY
+                    ? MaximumScreenY
+                    : MinimumScreenY);
+        }
+        return ScreenY;
+    }
+
     static void PopulateMenuFlyout(
         MenuFlyout const& Flyout,
         HMENU Menu,
@@ -605,8 +705,12 @@ namespace winrt::NanaZip::Modern::implementation
     {
         if (!Menu || !ParentWindowHandle)
         {
+            const bool SystemMenuBelongsToMenu =
+                MenuContainsSubMenu(Menu, SystemMenu);
             if (Menu)
                 ::DestroyMenu(Menu);
+            if (SystemMenu && !SystemMenuBelongsToMenu)
+                ::DestroyMenu(SystemMenu);
             return FALSE;
         }
 
@@ -614,6 +718,8 @@ namespace winrt::NanaZip::Modern::implementation
             this->m_ContextMenuFlyout.Hide();
         this->m_ContextMenuFlyout = MenuFlyout();
         auto Flyout = this->m_ContextMenuFlyout;
+        Flyout.Placement(
+            winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::BottomEdgeAlignedLeft);
         auto Handler = [this, ContextGeneration](
             winrt::IInspectable const& Sender,
             winrt::RoutedEventArgs const&)
@@ -639,13 +745,23 @@ namespace winrt::NanaZip::Modern::implementation
             }
         };
 
+        const UINT32 ContextMenuFontSize =
+            ::K7ModernGetContextMenuFontSize();
         PopulateMenuFlyout(
             Flyout,
             Menu,
             SystemMenu,
-            ::K7ModernGetContextMenuFontSize(),
+            ContextMenuFontSize,
             Handler);
 
+        const INT PlacementScreenY = GetContextMenuPlacementScreenY(
+            Menu,
+            ScreenX,
+            ScreenY,
+            ContextMenuFontSize,
+            HostWindowHandle);
+
+        bool SystemMenuDetached = false;
         if (SystemMenu)
         {
             const int Count = ::GetMenuItemCount(Menu);
@@ -658,11 +774,17 @@ namespace winrt::NanaZip::Modern::implementation
                     Info.hSubMenu == SystemMenu)
                 {
                     ::RemoveMenu(Menu, Position, MF_BYPOSITION);
+                    SystemMenuDetached = true;
                     break;
                 }
             }
         }
         ::DestroyMenu(Menu);
+        if (SystemMenu && !SystemMenuDetached)
+        {
+            ::DestroyMenu(SystemMenu);
+            SystemMenu = nullptr;
+        }
 
         this->m_ContextMenuParentWindow = ParentWindowHandle;
         this->m_ContextMenuSystemMenu = SystemMenu;
@@ -686,18 +808,24 @@ namespace winrt::NanaZip::Modern::implementation
                     static_cast<LPARAM>(ContextGeneration));
             });
 
-        auto Root = this->Content().as<winrt::Windows::UI::Xaml::UIElement>();
-        POINT Point = { ScreenX, ScreenY };
+        auto Root = this->Content().as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        POINT Point = { ScreenX, PlacementScreenY };
         if (!::ScreenToClient(HostWindowHandle, &Point))
         {
-            if (SystemMenu)
+            if (SystemMenu && SystemMenuDetached)
                 ::DestroyMenu(SystemMenu);
+            this->m_ContextMenuParentWindow = nullptr;
+            this->m_ContextMenuSystemMenu = nullptr;
+            this->m_ContextMenuPanelIndex = 0;
+            this->m_ContextMenuGeneration = 0;
             return FALSE;
         }
 
-        const double Scale = static_cast<double>(
-            ::GetDpiForWindow(HostWindowHandle)) /
-            static_cast<double>(USER_DEFAULT_SCREEN_DPI);
+        const UINT Dpi = ::GetDpiForWindow(HostWindowHandle);
+        const double Scale = Dpi == 0
+            ? 1.0
+            : static_cast<double>(Dpi) /
+                static_cast<double>(USER_DEFAULT_SCREEN_DPI);
         Flyout.ShowAt(
             Root,
             winrt::Windows::Foundation::Point{
