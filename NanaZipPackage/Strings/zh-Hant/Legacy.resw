@@ -759,6 +759,12 @@
   <data name="Resource2556" xml:space="preserve">
     <value>比對本地密碼</value>
   </data>
+  <data name="Resource2557" xml:space="preserve">
+    <value>密碼簿中沒有相符的密碼</value>
+  </data>
+  <data name="Resource2558" xml:space="preserve">
+    <value>取消比對</value>
+  </data>
 
 
 

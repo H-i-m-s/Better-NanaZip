@@ -1,5 +1,16 @@
 ﻿// ProgressDialog2.cpp
 
+// CoGetApartmentType is declared by the Windows SDK only when the SDK
+// target is Windows 7 or newer.  7-Zip's compatibility precompiled header
+// intentionally uses a lower target, so expose the API for this translation
+// unit before including Windows headers.
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT _WIN32_WINNT_WIN10
+#endif
+#ifndef NTDDI_VERSION
+#define NTDDI_VERSION NTDDI_WIN10
+#endif
+
 #include "StdAfx.h"
 
 #ifdef Z7_OLD_WIN_SDK
@@ -273,18 +284,38 @@ CProgressDialog::CProgressDialog():
     _numMessages(0),
     _timer(0),
     IconID(-1),
-    MainWindow(NULL)
+    MainWindow(NULL),
+    // SSS: the taskbar progress state is only valid after the window was
+    // created (OnInit assigns _hwndForTaskbar). Stack-allocated progress
+    // dialogs that are never created must not pass a garbage HWND to the
+    // taskbar COM interface in the destructor.
+    _hwndForTaskbar(NULL)
 {
 
   if (_dialogCreatedEvent.Create() != S_OK)
     throw 1334987;
   if (_createDialogEvent.Create() != S_OK)
     throw 1334987;
-  // #ifdef __ITaskbarList3_INTERFACE_DEFINED__
-  CoCreateInstance(CLSID_TaskbarList, NULL, CLSCTX_INPROC_SERVER, IID_ITaskbarList3, (void**)&_taskbarList);
-  if (_taskbarList)
-    _taskbarList->HrInit();
-  // #endif
+  // SSS: the taskbar progress COM object is registered as an Apartment
+  // (STA) component. Instantiating it from an MTA / raw worker thread is
+  // undefined behavior (observed as heap corruption, 0xc0000374, when a
+  // stack-allocated progress dialog is constructed on a match worker
+  // thread), so only create it on STA threads. UI threads that own a
+  // progress window are always STA; worker-only progress dialogs simply
+  // skip the taskbar list and stay safe.
+  {
+    APTTYPE apartmentType = APTTYPE_CURRENT;
+    APTTYPEQUALIFIER apartmentQualifier = APTTYPEQUALIFIER_NONE;
+    if (::CoGetApartmentType(&apartmentType, &apartmentQualifier) == S_OK &&
+        (apartmentType == APTTYPE_MAINSTA || apartmentType == APTTYPE_STA))
+    {
+      // #ifdef __ITaskbarList3_INTERFACE_DEFINED__
+      CoCreateInstance(CLSID_TaskbarList, NULL, CLSCTX_INPROC_SERVER, IID_ITaskbarList3, (void**)&_taskbarList);
+      if (_taskbarList)
+        _taskbarList->HrInit();
+      // #endif
+    }
+  }
 }
 
 #ifndef Z7_SFX

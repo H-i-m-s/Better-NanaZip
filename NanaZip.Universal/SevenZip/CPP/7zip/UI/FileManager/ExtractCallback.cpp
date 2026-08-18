@@ -3,7 +3,6 @@
 #include "StdAfx.h"
 
 #include <string>
-#include <vector>
 
 #include "../../../Common/ComTry.h"
 #include "../../../Common/IntToString.h"
@@ -40,6 +39,21 @@ namespace
   {
     if (!password || passwordCapacity == 0)
       return FALSE;
+    if (source != 1)
+    {
+      if (source == 2)
+      {
+        // No local password book support on this host: post a silent
+        // cancellation so the page leaves its cancelling state instead of
+        // waiting forever for a worker result.
+        ::PostMessageW(
+            ::GetActiveWindow(),
+            K7_PASSWORD_MATCH_DONE_MESSAGE,
+            K7_PASSWORD_MATCH_STATUS_CANCELLED,
+            NULL);
+      }
+      return FALSE;
+    }
     const std::wstring *fullArchivePath =
         static_cast<const std::wstring *>(context);
     const std::wstring path = fullArchivePath ? *fullArchivePath
@@ -47,18 +61,10 @@ namespace
     if (path.empty())
       return FALSE;
     std::wstring value;
-    if (source == 1)
-    {
-      if (!NanaZipPassword::QueryCloudPassword(path, value))
-        return FALSE;
-    }
-    else
-    {
-      std::vector<NanaZipPassword::Candidate> candidates;
-      if (!NanaZipPassword::LoadLocalCandidates(candidates) || candidates.empty())
-        return FALSE;
-      value = candidates.front().Value;
-    }
+    if (!NanaZipPassword::QueryCloudPassword(path, value))
+      return FALSE;
+    if (value.size() >= passwordCapacity)
+      return FALSE;
     wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
     return TRUE;
   }
@@ -113,6 +119,7 @@ void CExtractCallbackImp::Init()
 
   NumArchiveErrors = 0;
   ThereAreMessageErrors = false;
+  EncryptedFileWasVerified = false;
   #ifndef Z7_SFX
   NumFolders = NumFiles = 0;
   NeedAddFile = false;
@@ -455,6 +462,8 @@ Z7_COM7F_IMF(CExtractCallbackImp::SetOperationResult(Int32 opRes, Int32 encrypte
   switch (opRes)
   {
     case NArchive::NExtract::NOperationResult::kOK:
+      if (encrypted)
+        EncryptedFileWasVerified = true;
       break;
     default:
     {
@@ -771,8 +780,11 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
     std::wstring queryArchivePath(PasswordArchivePath.Ptr());
     {
       wcsncpy_s(Context.ArchivePath, queryArchivePath.c_str(), _TRUNCATE);
-      Context.QueryCallback = QueryPasswordForDialog;
-      Context.QueryContext = &queryArchivePath;
+      Context.QueryCallback = PasswordQueryCallback
+          ? PasswordQueryCallback : QueryPasswordForDialog;
+      Context.QueryContext = PasswordQueryContext
+          ? PasswordQueryContext : &queryArchivePath;
+      Context.QueryCancelCallback = PasswordQueryCancelCallback;
       Context.PasswordSource = 0;
     }
     {

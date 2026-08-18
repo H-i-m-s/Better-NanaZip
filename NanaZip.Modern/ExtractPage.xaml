@@ -178,6 +178,10 @@
                         <PasswordBox
                             x:Name="PasswordBox"
                             Margin="0,6,0,0"
+                            Background="{ThemeResource TextControlBackground}"
+                            Foreground="{ThemeResource TextControlForeground}"
+                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                            BorderThickness="{ThemeResource TextControlBorderThemeThickness}"
                             PasswordChanged="OnPasswordChanged"/>
                         <!-- Cloud / local password lookup buttons: UI only
                              for now, the handlers are placeholders. -->
@@ -190,6 +194,14 @@
                                 Margin="6,0,0,0"
                                 Click="OnLocalPasswordClicked"/>
                         </StackPanel>
+                        <!-- Inline local-match result (no nested modal
+                             window; theme font size and colors are
+                             inherited from the dialog). -->
+                        <TextBlock
+                            x:Name="MatchStatusText"
+                            Margin="0,6,0,0"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed"/>
                         <CheckBox
                             x:Name="SharePasswordCheck"
                             Margin="0,8,0,0"

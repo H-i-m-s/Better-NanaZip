@@ -759,6 +759,12 @@
   <data name="Resource2556" xml:space="preserve">
     <value>匹配本地密码</value>
   </data>
+  <data name="Resource2557" xml:space="preserve">
+    <value>密码簿中没有匹配的密码</value>
+  </data>
+  <data name="Resource2558" xml:space="preserve">
+    <value>取消匹配</value>
+  </data>
   <data name="Resource2582" xml:space="preserve">
     <value>协议版本:</value>
   </data>

@@ -694,12 +694,29 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
  */
 #define K7_PASSWORD_MAX_PASSWORD_LENGTH 512
 
+// Local password match completion, posted from the match worker thread to the
+// extract dialog window. wParam is one of the K7_PASSWORD_MATCH_STATUS_*
+// values; lParam is a heap-allocated
+// wchar_t[K7_PASSWORD_MAX_PASSWORD_LENGTH] holding the accepted password when
+// the status is MATCHED (the receiver must delete[] it) and NULL otherwise.
+// The message is only sent while the dialog window still exists.
+#define K7_PASSWORD_MATCH_DONE_MESSAGE (WM_APP + 0x4A)
+#define K7_PASSWORD_MATCH_STATUS_NOMATCH 0
+#define K7_PASSWORD_MATCH_STATUS_MATCHED 1
+#define K7_PASSWORD_MATCH_STATUS_CANCELLED 2
+
 typedef BOOLEAN (WINAPI *K7_PASSWORD_QUERY_CALLBACK)(
     _In_ LPCWSTR ArchivePath,
     _In_ UINT32 Source,
     _In_opt_ LPVOID CallbackContext,
     _Out_writes_z_(K7_PASSWORD_MAX_PASSWORD_LENGTH) LPWSTR Password,
     _In_ UINT32 PasswordCapacity);
+
+// Cancels an in-flight local password match. The host owns the match state;
+// the XAML page only forwards the click while its button is in the
+// "cancelling" state.
+typedef VOID (WINAPI *K7_PASSWORD_QUERY_CANCEL_CALLBACK)(
+    _In_opt_ LPVOID CallbackContext);
 
 typedef struct _K7_EXTRACT_DIALOG_CONTEXT
 {
@@ -710,7 +727,7 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // is moved into the "file name" field when SplitDest is enabled).
     WCHAR DirPath[MAX_PATH];
     // The initial password (may be empty).
-    WCHAR Password[256];
+    WCHAR Password[K7_PASSWORD_MAX_PASSWORD_LENGTH];
     // 0 = Full paths, 1 = No paths, 2 = Absolute paths.
     UINT32 PathMode;
     // 0 = Ask, 1 = Overwrite, 2 = Skip existing, 3 = Rename, 4 = Rename existing.
@@ -751,6 +768,10 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // requests a password and writes a successful result into its input box.
     K7_PASSWORD_QUERY_CALLBACK QueryCallback;
     LPVOID QueryContext;
+    // Optional: cancels an in-flight local password match started through
+    // QueryCallback with Source == 2. May be NULL when the host has no
+    // match state.
+    K7_PASSWORD_QUERY_CANCEL_CALLBACK QueryCancelCallback;
     // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
     // 3 = command-line password.
     UINT32 PasswordSource;
@@ -1007,6 +1028,10 @@ typedef struct _K7_PASSWORD_DIALOG_CONTEXT
     WCHAR ArchivePath[MAX_PATH];
     K7_PASSWORD_QUERY_CALLBACK QueryCallback;
     LPVOID QueryContext;
+    // Optional: cancels an in-flight local password match started through
+    // QueryCallback with Source == 2. May be NULL when the host has no
+    // match state.
+    K7_PASSWORD_QUERY_CANCEL_CALLBACK QueryCancelCallback;
     // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
     // 3 = command-line password.
     UINT32 PasswordSource;

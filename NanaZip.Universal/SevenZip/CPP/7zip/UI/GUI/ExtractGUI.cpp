@@ -4,6 +4,8 @@
 
 #include <vector>
 #include <string>
+#include <thread>
+#include <mutex>
 
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -36,6 +38,7 @@
 #include <NanaZip.Password.h>
 
 #include "../FileManager/PropertyNameRes.h"
+#include "../Common/OpenArchive.h"
 
 // **************** SSS Modification Start ****************
 #include "../../../Windows/Registry.h"
@@ -58,7 +61,10 @@ static void ExtractFlowDiagLog(const wchar_t *message)
   if (length == 0 || length >= MAX_PATH)
     return;
   wcscat_s(path, L"k7extract_flow_diag.log");
-  HANDLE file = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+  // FILE_SHARE_WRITE so concurrent writers (the match worker thread and the
+  // UI thread) do not silently drop diagnostics.
+  HANDLE file = ::CreateFileW(path, FILE_APPEND_DATA,
+      FILE_SHARE_READ | FILE_SHARE_WRITE,
       NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (file == INVALID_HANDLE_VALUE)
     return;
@@ -84,34 +90,422 @@ static void ExtractFlowDiagLogResult(const wchar_t *stage, HRESULT result)
   ExtractFlowDiagLog(message);
 }
 
+struct SssPasswordQueryContext
+{
+  std::wstring ArchivePath;
+  CCodecs *Codecs;
+  const CObjectVector<COpenType> *FormatIndices;
+  const CIntVector *ExcludedFormatIndices;
+  const UStringVector *ArchivePaths;
+  const UStringVector *ArchivePathsFull;
+  const NWildcard::CCensorNode *WildcardCensor;
+  const CExtractOptions *Options;
+};
+
+// Throw-away output stream: the engine's normal extract path (testMode=0)
+// writes decoded bytes into it and they are simply discarded, so the
+// verification decodes real data (CRC is validated) but never touches the
+// disk. This intentionally avoids the engine's test-mode path (testMode=1)
+// which crashes on this build, while staying zero-side-effect.
+struct CNullOutStream final :
+    public ISequentialOutStream,
+    public CMyUnknownImp
+{
+  UInt64 Written;
+
+  CNullOutStream():
+      Written(0)
+  {}
+
+  Z7_COM_UNKNOWN_IMP_1(ISequentialOutStream)
+  Z7_COM7F_IMP(Write(const void *data, UInt32 size, UInt32 *processedSize))
+};
+
+Z7_COM7F_IMF(CNullOutStream::Write(
+    const void * /* data */, UInt32 size, UInt32 *processedSize))
+{
+  Written += size;
+  if (processedSize)
+    *processedSize = size;
+  return S_OK;
+}
+
+// Minimal archive test callback. GetStream returns a discarding stream
+// instead of NULL: with a NULL stream the engine switches to its test-mode
+// path (testMode=1), which crashes on this build; with a real (discarding)
+// stream it takes the normal, well-tested extraction path and simply
+// discards the decoded bytes. Zero side effects either way.
+struct CTestExtractCallback final :
+    public IArchiveExtractCallback,
+    public ICryptoGetTextPassword,
+    public CMyUnknownImp
+{
+  UString Password;
+  bool PasswordWasAsked;
+  bool HadError;
+
+  CTestExtractCallback():
+      PasswordWasAsked(false),
+      HadError(false)
+  {}
+
+  Z7_COM_UNKNOWN_IMP_2(IArchiveExtractCallback, ICryptoGetTextPassword)
+
+  Z7_COM7F_IMP(SetTotal(UInt64 total))
+  Z7_COM7F_IMP(SetCompleted(const UInt64 *completeValue))
+  Z7_COM7F_IMP(GetStream(
+      UInt32 index, ISequentialOutStream **outStream, Int32 askExtractMode))
+  Z7_COM7F_IMP(PrepareOperation(Int32 askExtractMode))
+  Z7_COM7F_IMP(SetOperationResult(Int32 opRes))
+  Z7_COM7F_IMP(CryptoGetTextPassword(BSTR *password))
+};
+
+Z7_COM7F_IMF(CTestExtractCallback::SetTotal(UInt64 /* total */))
+{
+  ExtractFlowDiagLog(L"[C] SetTotal");
+  return S_OK;
+}
+
+Z7_COM7F_IMF(CTestExtractCallback::SetCompleted(
+    const UInt64 * /* completeValue */))
+{
+  ExtractFlowDiagLog(L"[C] SetCompleted");
+  return S_OK;
+}
+
+Z7_COM7F_IMF(CTestExtractCallback::GetStream(
+    UInt32 /* index */, ISequentialOutStream **outStream,
+    Int32 /* askExtractMode */))
+{
+  ExtractFlowDiagLog(L"[C] GetStream");
+  // Return a throw-away stream instead of NULL: with NULL the engine
+  // switches to its test-mode path (testMode=1), which crashes on this
+  // build; with a real (discarding) stream it takes the normal extraction
+  // path and discards the decoded bytes. Zero side effects.
+  CMyComPtr<ISequentialOutStream> nullStream = new CNullOutStream;
+  *outStream = nullStream.Detach();
+  return S_OK;
+}
+
+Z7_COM7F_IMF(CTestExtractCallback::PrepareOperation(
+    Int32 /* askExtractMode */))
+{
+  ExtractFlowDiagLog(L"[C] PrepareOperation");
+  return S_OK;
+}
+
+Z7_COM7F_IMF(CTestExtractCallback::SetOperationResult(Int32 opRes))
+{
+  ExtractFlowDiagLog(L"[C] SetOperationResult");
+  if (opRes != NArchive::NExtract::NOperationResult::kOK)
+    HadError = true;
+  return S_OK;
+}
+
+Z7_COM7F_IMF(CTestExtractCallback::CryptoGetTextPassword(BSTR *password))
+{
+  ExtractFlowDiagLog(L"[C] CryptoGetTextPassword");
+  PasswordWasAsked = true;
+  if (Password.IsEmpty())
+    return E_ABORT;
+  *password = ::SysAllocString(Password.Ptr());
+  return (*password ? S_OK : E_OUTOFMEMORY);
+}
+
+static bool TestArchivePassword(
+    const std::wstring &password,
+    const SssPasswordQueryContext &context)
+{
+  ExtractFlowDiagLog(L"[T] enter");
+  if (context.ArchivePaths->IsEmpty())
+    return false;
+
+  CProgressDialog progress;
+  CExtractCallbackImp openCallback;
+  openCallback.ProgressDialog = &progress;
+  openCallback.PasswordIsDefined = true;
+  openCallback.Password = password.c_str();
+  openCallback.TestMode = true;
+  openCallback.Init();
+  ExtractFlowDiagLog(L"[T] callback ready");
+
+  // Open the archive with the candidate password (head decryption).
+  CArchiveLink arcLink;
+  COpenOptions op;
+  #ifndef Z7_SFX
+  op.props = NULL;
+  #endif
+  op.codecs = context.Codecs;
+  op.types = context.FormatIndices;
+  op.excludedFormats = context.ExcludedFormatIndices;
+  op.stdInMode = false;
+  op.stream = NULL;
+  op.seqStream = NULL;
+  op.callback = NULL;
+  op.callbackSpec = NULL;
+  op.filePath = context.ArchivePaths->Front();
+  ExtractFlowDiagLog(L"[T] calling Open");
+  const HRESULT openRes = arcLink.Open_Strict(op, &openCallback);
+  ExtractFlowDiagLogResult(L"[T] Open returned", openRes);
+  if (openRes != S_OK)
+  {
+    // Not opened: the candidate cannot be a verified match. Note that a
+    // 7z archive may encrypt file data without encrypting the header, so
+    // the engine legitimately asks no password during Open; the password
+    // is only needed when the encrypted items are extracted below.
+    ExtractFlowDiagLog(L"[T] open rejected");
+    return false;
+  }
+  ExtractFlowDiagLog(L"[T] open ok");
+
+  // Test-extract only the encrypted items: they are the verdict for the
+  // candidate password. Unencrypted items decode fine with any password
+  // and must not influence the result.
+  IInArchive *archive = arcLink.GetArchive();
+  UInt32 numItems = 0;
+  if (archive->GetNumberOfItems(&numItems) != S_OK)
+    return false;
+  CRecordVector<UInt32> indices;
+  for (UInt32 i = 0; i < numItems; i++)
+  {
+    bool isEncrypted = false;
+    if (Archive_GetItemBoolProp(archive, i, kpidEncrypted, isEncrypted) == S_OK &&
+        isEncrypted)
+    {
+      indices.Add(i);
+      break; // one encrypted item is enough to verify the password
+    }
+  }
+  if (indices.IsEmpty())
+  {
+    // No encrypted content at all: local password matching is meaningless.
+    ExtractFlowDiagLog(L"[T] no encrypted items");
+    return false;
+  }
+  CTestExtractCallback testCallback;
+  testCallback.Password = password.c_str();
+  ExtractFlowDiagLog(L"[T] calling Extract");
+  const HRESULT extractRes = archive->Extract(
+      &indices[0],
+      indices.Size(),
+      0, // normal extract path (testMode=0): the engine writes into the
+         // discarding stream, so nothing touches disk
+      &testCallback);
+  ExtractFlowDiagLogResult(L"[T] Extract returned", extractRes);
+  // The password is correct when every encrypted item decoded cleanly.
+  // A wrong password fails CRC/data validation and sets HadError.
+  const bool ok = extractRes == S_OK && !testCallback.HadError;
+  ExtractFlowDiagLog(ok ? L"[T] accepted" : L"[T] rejected");
+  return ok;
+}
+
+// Async local password match. The XAML page starts it through
+// QueryPasswordForDialog (Source == 2) and receives the outcome as
+// K7_PASSWORD_MATCH_DONE_MESSAGE posted to the dialog window, so no nested
+// modal window is ever created (nested XAML ContentWindow message loops are
+// unsafe on this architecture). The worker owns a snapshot of the extraction
+// parameters, so it never touches the caller's dialog-owned objects and can
+// outlive the dialog safely.
+struct SssLocalPasswordMatchJob
+{
+  CCodecs *Codecs = nullptr;
+  CObjectVector<COpenType> FormatIndices;
+  CIntVector ExcludedFormatIndices;
+  UStringVector ArchivePaths;
+  UStringVector ArchivePathsFull;
+  CExtractOptions Options;
+};
+
+static struct SssLocalPasswordMatchState
+{
+  std::mutex Mutex;
+  bool Running = false;
+  bool Cancelled = false;
+  HWND NotifyWindow = NULL;
+  SssLocalPasswordMatchJob Job;
+} g_LocalMatch;
+
+static void LocalPasswordMatchWorker()
+{
+  int status = K7_PASSWORD_MATCH_STATUS_NOMATCH;
+  std::wstring acceptedPassword;
+  try
+  {
+    SssLocalPasswordMatchJob job;
+    {
+      std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+      job = g_LocalMatch.Job;
+    }
+
+    // CCensorNode is not copyable; rebuild the equivalent "include
+    // everything" wildcard so the worker never touches the caller's censor.
+    NWildcard::CCensorNode wildcardCensor;
+    wildcardCensor.Add_Wildcard();
+
+    bool accepted = false;
+    bool cancelled = false;
+    std::vector<NanaZipPassword::Candidate> candidates;
+    if (NanaZipPassword::LoadLocalCandidates(candidates) &&
+        !candidates.empty())
+    {
+      for (size_t i = 0; i < candidates.size(); ++i)
+      {
+        {
+          std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+          if (g_LocalMatch.Cancelled)
+          {
+            cancelled = true;
+            ExtractFlowDiagLog(L"[Q3] match cancelled");
+            break;
+          }
+        }
+        ExtractFlowDiagLogIndex(L"[Q3] local candidate begin", i);
+        SssPasswordQueryContext ctx;
+        ctx.ArchivePath.clear();
+        ctx.Codecs = job.Codecs;
+        ctx.FormatIndices = &job.FormatIndices;
+        ctx.ExcludedFormatIndices = &job.ExcludedFormatIndices;
+        ctx.ArchivePaths = &job.ArchivePaths;
+        ctx.ArchivePathsFull = &job.ArchivePathsFull;
+        ctx.WildcardCensor = &wildcardCensor;
+        ctx.Options = &job.Options;
+        if (TestArchivePassword(candidates[i].Value, ctx))
+        {
+          accepted = true;
+          acceptedPassword = candidates[i].Value;
+          ExtractFlowDiagLog(L"[Q3] local candidate accepted");
+          break;
+        }
+        ExtractFlowDiagLog(L"[Q3] local candidate rejected");
+      }
+    }
+    else
+    {
+      ExtractFlowDiagLog(L"[Q3] local candidates empty");
+    }
+
+    if (!accepted && !cancelled)
+    {
+      std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+      cancelled = g_LocalMatch.Cancelled;
+    }
+
+    status = accepted
+        ? K7_PASSWORD_MATCH_STATUS_MATCHED
+        : (cancelled ? K7_PASSWORD_MATCH_STATUS_CANCELLED
+                     : K7_PASSWORD_MATCH_STATUS_NOMATCH);
+  }
+  catch (...)
+  {
+    // The 7-Zip engine can throw (bad archive, allocation failure, ...).
+    // A bare std::thread would terminate the whole process on an uncaught
+    // exception, so everything is guarded and the page is told "no match"
+    // instead of crashing.
+    ExtractFlowDiagLog(L"[Q3] match worker exception");
+    status = K7_PASSWORD_MATCH_STATUS_NOMATCH;
+  }
+
+  wchar_t *passwordCopy =
+      new (std::nothrow) wchar_t[K7_PASSWORD_MAX_PASSWORD_LENGTH]();
+  if (passwordCopy)
+  {
+    if (status == K7_PASSWORD_MATCH_STATUS_MATCHED)
+    {
+      wcsncpy_s(passwordCopy, K7_PASSWORD_MAX_PASSWORD_LENGTH,
+          acceptedPassword.c_str(), _TRUNCATE);
+    }
+    else
+    {
+      passwordCopy[0] = L'\0';
+    }
+  }
+  ExtractFlowDiagLogResult(L"[Q3] match worker notify", status);
+  HWND notifyWindow = NULL;
+  {
+    std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+    // Send to the latest extract dialog: if the dialog that started this
+    // match was already closed and a new one opened, the result still
+    // reaches a live page (which restores its button / shows the notice).
+    notifyWindow = g_LocalMatch.NotifyWindow;
+  }
+  if (!::PostMessageW(notifyWindow, K7_PASSWORD_MATCH_DONE_MESSAGE,
+      static_cast<WPARAM>(status), reinterpret_cast<LPARAM>(passwordCopy)))
+  {
+    delete[] passwordCopy;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+    g_LocalMatch.Running = false;
+    g_LocalMatch.Cancelled = false;
+    g_LocalMatch.Job = SssLocalPasswordMatchJob();
+  }
+}
+
+static VOID WINAPI CancelLocalPasswordMatch(LPVOID)
+{
+  std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+  g_LocalMatch.Cancelled = true;
+}
+
 static BOOLEAN WINAPI QueryPasswordForDialog(
     LPCWSTR archivePath,
     UINT32 source,
-    LPVOID context,
+    LPVOID callbackContext,
     LPWSTR password,
     UINT32 passwordCapacity)
 {
   if (!password || passwordCapacity == 0)
     return FALSE;
-  const std::wstring *fullArchivePath =
-      static_cast<const std::wstring *>(context);
-  const std::wstring path = fullArchivePath ? *fullArchivePath
+  const SssPasswordQueryContext *context =
+      static_cast<const SssPasswordQueryContext *>(callbackContext);
+  const std::wstring path = context && !context->ArchivePath.empty()
+      ? context->ArchivePath
       : (archivePath ? archivePath : L"");
   if (path.empty())
     return FALSE;
+
   std::wstring value;
+  bool found = false;
   if (source == 1)
   {
     if (!NanaZipPassword::QueryCloudPassword(path, value))
       return FALSE;
+    found = true;
+  }
+  else if (source == 2)
+  {
+    if (!context)
+      return FALSE;
+
+    // Start the match on a background thread. The page switches its button
+    // to the "cancelling" state and receives the outcome as a posted
+    // K7_PASSWORD_MATCH_DONE_MESSAGE; nothing here blocks the UI thread and
+    // no nested modal window is created.
+    {
+      std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
+      if (g_LocalMatch.Running)
+        return FALSE; // a match is already in flight
+      g_LocalMatch.Running = true;
+      g_LocalMatch.Cancelled = false;
+      g_LocalMatch.NotifyWindow = ::GetActiveWindow();
+      g_LocalMatch.Job.Codecs = context->Codecs;
+      g_LocalMatch.Job.FormatIndices = *context->FormatIndices;
+      g_LocalMatch.Job.ExcludedFormatIndices =
+          *context->ExcludedFormatIndices;
+      g_LocalMatch.Job.ArchivePaths = *context->ArchivePaths;
+      g_LocalMatch.Job.ArchivePathsFull = *context->ArchivePathsFull;
+      g_LocalMatch.Job.Options = *context->Options;
+    }
+    ExtractFlowDiagLog(L"[Q3] local match started async");
+    std::thread(LocalPasswordMatchWorker).detach();
+    return FALSE; // async: the XAML page switches to the cancelling state
   }
   else
   {
-    std::vector<NanaZipPassword::Candidate> candidates;
-    if (!NanaZipPassword::LoadLocalCandidates(candidates) || candidates.empty())
-      return FALSE;
-    value = candidates.front().Value;
+    return FALSE;
   }
+  if (!found || value.size() >= passwordCapacity)
+    return FALSE;
   wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
   return TRUE;
 }
@@ -206,7 +600,8 @@ static bool TryAutomaticPasswordCandidates(
     ExtractFlowDiagLogResult(L"[F2] candidate extract returned", result);
     if (result == S_OK && testCallback.IsOK())
     {
-      if (!testCallback.PasswordWasAsked || stat.NumFiles == 0)
+      if (!testCallback.PasswordWasAsked ||
+          !testCallback.EncryptedFileWasVerified)
       {
         ExtractFlowDiagLog(L"[F2] candidate rejected no verified content");
         return false; // no password-protected archive content was verified
@@ -751,6 +1146,21 @@ HRESULT ExtractGUI(
   bool OpnTrgFold = false;
 #endif
   // **************** 7-Zip ZS Modification End ****************
+  SssPasswordQueryContext queryContext = {};
+  queryContext.ArchivePath = archivePathsFull.Size() == 1
+      ? std::wstring(archivePathsFull[0].Ptr()) : std::wstring();
+  queryContext.Codecs = codecs;
+  queryContext.FormatIndices = &formatIndices;
+  queryContext.ExcludedFormatIndices = &excludedFormatIndices;
+  queryContext.ArchivePaths = &archivePaths;
+  queryContext.ArchivePathsFull = &archivePathsFull;
+  queryContext.WildcardCensor = &wildcardCensor;
+  queryContext.Options = &options;
+#ifdef NANAZIP_MODERN
+  extractCallback->PasswordQueryCallback = QueryPasswordForDialog;
+  extractCallback->PasswordQueryContext = &queryContext;
+  extractCallback->PasswordQueryCancelCallback = CancelLocalPasswordMatch;
+#endif
   if (!options.TestMode)
   {
     FString outputDir = options.OutputDir;
@@ -817,10 +1227,9 @@ HRESULT ExtractGUI(
         K7_EXTRACT_DIALOG_CONTEXT ctx = {};
         wcsncpy_s(ctx.DirPath, dialog.DirPath.Ptr(), _TRUNCATE);
         wcsncpy_s(ctx.ArcPath, dialog.ArcPath.Ptr(), _TRUNCATE);
-        std::wstring queryArchivePath = archivePathsFull.Size() == 1
-            ? std::wstring(archivePathsFull[0].Ptr()) : std::wstring();
         ctx.QueryCallback = QueryPasswordForDialog;
-        ctx.QueryContext = &queryArchivePath;
+        ctx.QueryContext = &queryContext;
+        ctx.QueryCancelCallback = CancelLocalPasswordMatch;
         ctx.PasswordSource = extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Cloud ? 1
             : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Local ? 2
             : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::CommandLine ? 3 : 0));

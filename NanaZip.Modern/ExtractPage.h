@@ -82,6 +82,14 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        // Called by the window subclass (UI thread) when the async local
+        // password match finishes. Status is one of the
+        // K7_PASSWORD_MATCH_STATUS_* values; Password is the accepted
+        // candidate for MATCHED, otherwise empty.
+        void SetPasswordFromMatch(
+            INT Status,
+            LPCWSTR Password);
+
         void OnOkClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -155,5 +163,8 @@ namespace winrt::NanaZip::Modern::implementation
         // labels; computed from the wrapped layout in RecalcMinTrack.
         double m_WrapThresholdW;
         bool m_ProgrammaticPasswordChange;
+        // True while the async local password match is running; the button
+        // switches to the cancelling state while it is set.
+        bool m_PasswordMatchRunning;
     };
 }

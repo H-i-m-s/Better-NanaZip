@@ -28,6 +28,9 @@
 
 #include "ProgressDialog2.h"
 #include <NanaZip.Password.h>
+#ifdef NANAZIP_MODERN
+#include <NanaZip.Modern.h>
+#endif
 
 #ifndef Z7_SFX
 
@@ -241,10 +244,18 @@ public:
   bool StreamMode; // set to true, if you want the callee to call GetStream7()
   bool ThereAreMessageErrors;
   bool Src_Is_IO_FS_Folder;
+  bool EncryptedFileWasVerified;
 
 #ifndef Z7_NO_CRYPTO
   bool PasswordIsDefined;
   bool PasswordWasAsked;
+#ifdef NANAZIP_MODERN
+  K7_PASSWORD_QUERY_CALLBACK PasswordQueryCallback;
+  LPVOID PasswordQueryContext;
+  // Cancels an in-flight local password match (the ExtractGUI host wires
+  // this to its match state).
+  K7_PASSWORD_QUERY_CANCEL_CALLBACK PasswordQueryCancelCallback;
+#endif
 #endif
 
 private:
@@ -315,9 +326,15 @@ public:
     , StreamMode(false)
     , ThereAreMessageErrors(false)
     , Src_Is_IO_FS_Folder(false)
+    , EncryptedFileWasVerified(false)
 #ifndef Z7_NO_CRYPTO
     , PasswordIsDefined(false)
     , PasswordWasAsked(false)
+#ifdef NANAZIP_MODERN
+    , PasswordQueryCallback(nullptr)
+    , PasswordQueryContext(nullptr)
+    , PasswordQueryCancelCallback(nullptr)
+#endif
     , PasswordSource(NanaZipPassword::PasswordSource::None)
     , SharePasswordAuthorized(false)
 #endif

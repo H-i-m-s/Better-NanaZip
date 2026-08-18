@@ -21,7 +21,8 @@ namespace winrt::NanaZip::Modern::implementation
         m_WindowHandle(WindowHandle),
         m_Context(Context),
         m_OkClicked(false),
-        m_ProgrammaticPasswordChange(false)
+        m_ProgrammaticPasswordChange(false),
+        m_PasswordMatchRunning(false)
     {
         this->Loaded({ this, &PasswordPage::OnLoaded });
         this->Unloaded({ this, &PasswordPage::OnUnloaded });
@@ -240,6 +241,14 @@ namespace winrt::NanaZip::Modern::implementation
         {
             this->m_Context->OK = FALSE;
         }
+        // Cancel any in-flight local password match so the worker stops
+        // promptly (its data is a snapshot, so it can also finish alone
+        // and its posted result is simply ignored).
+        if (this->m_PasswordMatchRunning && this->m_Context &&
+            this->m_Context->QueryCancelCallback)
+        {
+            this->m_Context->QueryCancelCallback(this->m_Context->QueryContext);
+        }
     }
 
     void PasswordPage::OnShowPasswordClicked(
@@ -286,6 +295,21 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
+        if (this->m_PasswordMatchRunning)
+        {
+            // Second click while matching: cancel the worker.
+            if (this->m_Context->QueryCancelCallback)
+            {
+                this->m_Context->QueryCancelCallback(
+                    this->m_Context->QueryContext);
+            }
+            return;
+        }
+        this->m_PasswordMatchRunning = true;
+        this->MatchStatusText().Visibility(
+            winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        this->LocalPasswordButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(2558, L"Cancel matching"))));
         wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
         if (this->m_Context->QueryCallback(
             this->m_Context->ArchivePath,
@@ -294,10 +318,58 @@ namespace winrt::NanaZip::Modern::implementation
             Password,
             ARRAYSIZE(Password)))
         {
+            // Synchronous success (unexpected for the local match path, but
+            // harmless): fill and restore the button immediately.
+            this->m_PasswordMatchRunning = false;
+            this->LocalPasswordButton().Content(winrt::box_value(
+                RemoveMnemonic(Res(2556, L"Match local password"))));
             this->m_ProgrammaticPasswordChange = true;
             PasswordInput().Password(winrt::hstring(Password));
             this->m_ProgrammaticPasswordChange = false;
             this->m_Context->PasswordSource = 2;
+        }
+        // else: the match runs in the background; the result arrives through
+        // SetPasswordFromMatch (K7_PASSWORD_MATCH_DONE_MESSAGE) while the
+        // button stays in the cancelling state.
+    }
+
+    void PasswordPage::SetPasswordFromMatch(
+        INT Status,
+        LPCWSTR Password)
+    {
+        this->m_PasswordMatchRunning = false;
+        this->LocalPasswordButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(2556, L"Match local password"))));
+        if (Status == K7_PASSWORD_MATCH_STATUS_MATCHED && Password)
+        {
+            this->m_ProgrammaticPasswordChange = true;
+            PasswordInput().Password(winrt::hstring(Password));
+            this->m_ProgrammaticPasswordChange = false;
+            if (this->m_Context)
+            {
+                this->m_Context->PasswordSource = 2;
+            }
+            this->MatchStatusText().Visibility(
+                winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        }
+        else if (Status == K7_PASSWORD_MATCH_STATUS_NOMATCH)
+        {
+            // Inline notice instead of a popup: nested XAML modal windows
+            // cannot be shown from inside the dialog (Mile.Xaml posts
+            // WM_QUIT when a ContentWindow is destroyed, which would close
+            // the dialog too), and a native MessageBox cannot follow the
+            // dialog theme. The text inherits the dialog font size and
+            // theme colors.
+            this->MatchStatusText().Text(Res(
+                2557, L"No matching password found in the password book"));
+            this->MatchStatusText().Visibility(
+                winrt::Windows::UI::Xaml::Visibility::Visible);
+        }
+        else
+        {
+            // K7_PASSWORD_MATCH_STATUS_CANCELLED: silent restore.
+            this->MatchStatusText().Visibility(
+                winrt::Windows::UI::Xaml::Visibility::Collapsed);
         }
     }
 

@@ -270,6 +270,35 @@ namespace
                 }
                 break;
             }
+            case K7_PASSWORD_MATCH_DONE_MESSAGE:
+            {
+                // Local password match finished on a worker thread. The
+                // message is posted to the dialog window only, so one of
+                // the props is always set when this window is one; the
+                // guards keep other ContentWindows (which share this
+                // subclass) unaffected.
+                auto *ExtractPagePtr =
+                    static_cast<winrt::NanaZip::Modern::implementation::ExtractPage *>(
+                        ::GetPropW(hWnd, L"K7ExtractPageImpl"));
+                auto *PasswordPagePtr =
+                    static_cast<winrt::NanaZip::Modern::implementation::PasswordPage *>(
+                        ::GetPropW(hWnd, L"K7PasswordPageImpl"));
+                wchar_t *Password = reinterpret_cast<wchar_t *>(lParam);
+                if (ExtractPagePtr)
+                {
+                    ExtractPagePtr->SetPasswordFromMatch(
+                        static_cast<int>(wParam),
+                        Password ? Password : L"");
+                }
+                else if (PasswordPagePtr)
+                {
+                    PasswordPagePtr->SetPasswordFromMatch(
+                        static_cast<int>(wParam),
+                        Password ? Password : L"");
+                }
+                delete[] Password;
+                return 0;
+            }
             default:
                 break;
             }
@@ -1030,6 +1059,15 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
         WindowHandle,
         Context);
     ExtractDiagLog(L"[E4] ExtractPage make ok");
+
+    // Remember the page instance so the window subclass can forward the
+    // async local-password-match result (K7_PASSWORD_MATCH_DONE_MESSAGE)
+    // back to it. The prop is removed automatically when the window is
+    // destroyed, which happens before the page object is released.
+    ::SetPropW(
+        WindowHandle,
+        L"K7ExtractPageImpl",
+        reinterpret_cast<HANDLE>(winrt::get_self<Implementation>(Window)));
 
     ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
 
@@ -2481,6 +2519,15 @@ EXTERN_C INT WINAPI K7ModernShowPasswordDialog(
     Interface Window = winrt::make<Implementation>(
         WindowHandle,
         Context);
+
+    // Remember the page instance so the window subclass can forward the
+    // async local-password-match result (K7_PASSWORD_MATCH_DONE_MESSAGE)
+    // back to it. The prop is removed automatically when the window is
+    // destroyed, which happens before the page object is released.
+    ::SetPropW(
+        WindowHandle,
+        L"K7PasswordPageImpl",
+        reinterpret_cast<HANDLE>(winrt::get_self<Implementation>(Window)));
 
     ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
 

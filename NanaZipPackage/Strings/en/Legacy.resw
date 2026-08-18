@@ -759,6 +759,12 @@
   <data name="Resource2556" xml:space="preserve">
     <value>Match local password</value>
   </data>
+  <data name="Resource2557" xml:space="preserve">
+    <value>No matching password found in the password book</value>
+  </data>
+  <data name="Resource2558" xml:space="preserve">
+    <value>Cancel matching</value>
+  </data>
   <data name="Resource2582" xml:space="preserve">
     <value>Protocol version:</value>
   </data>

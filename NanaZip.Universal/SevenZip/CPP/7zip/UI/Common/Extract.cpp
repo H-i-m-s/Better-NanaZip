@@ -268,7 +268,7 @@ static HRESULT DecompressArchive(
   else if (NName::IsAltPathPrefix(outDir)) {}
   #endif
   */
-  else if (!CreateComplexDir(ecs->OutDir))
+  else if (!options.TestMode && !CreateComplexDir(ecs->OutDir))
   {
     const HRESULT res = GetLastError_noZero_HRESULT();
     SetErrorMessage("Cannot create output directory", ecs->OutDir, res, errorMessage);
