@@ -49,6 +49,8 @@ EXTERN_C UINT32 WINAPI K7ModernGetContextMenuFontSize();
 #define K7ModernContextMenuCommandMessage (WM_APP + 4)
 #define K7ModernContextMenuClosedMessage (WM_APP + 5)
 #define K7ModernContextMenuSystemMessage (WM_APP + 6)
+#define K7ModernColumnsContextMenuCommandMessage (WM_APP + 7)
+#define K7ModernColumnsContextMenuClosedMessage (WM_APP + 8)
 #define K7ModernContextMenuSystemCommand 0xFFFFu
 
 /**
@@ -287,6 +289,29 @@ EXTERN_C BOOL WINAPI K7ModernShowContextMenu(
     _In_ HWND ParentWindowHandle,
     _In_ HMENU MenuHandle,
     _In_opt_ HMENU SystemMenuHandle,
+    _In_ HWND HostWindowHandle,
+    _In_ INT ScreenX,
+    _In_ INT ScreenY,
+    _In_ UINT ContextPanelIndex,
+    _In_ UINT ContextGeneration);
+
+/**
+ * @brief Show a file-list header column menu through the toolbar XAML island.
+ * @param ToolBarWindowHandle The NanaZip toolbar XAML host window.
+ * @param ParentWindowHandle The FileManager main window receiving commands.
+ * @param MenuHandle The caller-owned column visibility menu. Ownership is
+ *        transferred regardless of success.
+ * @param HostWindowHandle The window that defines the screen-to-client map.
+ * @param ScreenX The screen x coordinate where the menu opens.
+ * @param ScreenY The screen y coordinate where the menu opens.
+ * @param ContextPanelIndex The panel that owns the column settings.
+ * @param ContextGeneration The column-menu session generation.
+ * @return TRUE when the XAML menu was shown; otherwise FALSE.
+ */
+EXTERN_C BOOL WINAPI K7ModernShowColumnsContextMenu(
+    _In_ HWND ToolBarWindowHandle,
+    _In_ HWND ParentWindowHandle,
+    _In_ HMENU MenuHandle,
     _In_ HWND HostWindowHandle,
     _In_ INT ScreenX,
     _In_ INT ScreenY,

@@ -1093,6 +1093,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       return 0;
     }
 
+    case K7ModernColumnsContextMenuCommandMessage:
+    {
+      const unsigned command = static_cast<unsigned>(LOWORD(wParam));
+      const unsigned panelIndex = static_cast<unsigned>(HIWORD(wParam));
+      if (panelIndex < g_App.NumPanels)
+      {
+        g_App.Panels[panelIndex].ExecuteColumnsContextMenuCommand(
+            command,
+            static_cast<UINT>(lParam));
+      }
+      return 0;
+    }
+
+    case K7ModernColumnsContextMenuClosedMessage:
+    {
+      const unsigned panelIndex = static_cast<unsigned>(wParam);
+      if (panelIndex < g_App.NumPanels)
+        g_App.Panels[panelIndex].CloseColumnsContextMenu(
+            static_cast<UINT>(lParam));
+      return 0;
+    }
+
     case K7ModernContextMenuSystemMessage:
     {
       const unsigned panelIndex = static_cast<unsigned>(HIWORD(wParam));

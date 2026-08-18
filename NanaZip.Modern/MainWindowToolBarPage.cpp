@@ -807,6 +807,133 @@ namespace winrt::NanaZip::Modern::implementation
         return TRUE;
     }
 
+    BOOL MainWindowToolBarPage::ShowColumnsContextMenu(
+        HMENU Menu,
+        HWND HostWindowHandle,
+        HWND ParentWindowHandle,
+        INT ScreenX,
+        INT ScreenY,
+        UINT ContextPanelIndex,
+        UINT ContextGeneration)
+    {
+        if (!Menu || !ParentWindowHandle)
+        {
+            if (Menu)
+                ::DestroyMenu(Menu);
+            return FALSE;
+        }
+
+        try
+        {
+        if (this->m_ColumnsContextMenuFlyout)
+            this->m_ColumnsContextMenuFlyout.Hide();
+        if (this->m_ColumnsContextMenuAnchor)
+        {
+            auto Children = this->ContextMenuAnchorLayer().Children();
+            std::uint32_t Index = 0;
+            if (Children.IndexOf(this->m_ColumnsContextMenuAnchor, Index))
+                Children.RemoveAt(Index);
+            this->m_ColumnsContextMenuAnchor = nullptr;
+        }
+
+        this->m_ColumnsContextMenuFlyout = MenuFlyout();
+        auto Flyout = this->m_ColumnsContextMenuFlyout;
+        Flyout.ShouldConstrainToRootBounds(false);
+        Flyout.Placement(
+            winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::BottomEdgeAlignedLeft);
+
+        auto Handler = [ParentWindowHandle, ContextPanelIndex, ContextGeneration](
+            winrt::IInspectable const& Sender,
+            winrt::RoutedEventArgs const&)
+        {
+            auto Item = Sender.try_as<MenuFlyoutItemBase>();
+            if (!Item)
+                return;
+
+            const UINT Command = GetMenuCommandTag(Item);
+            if (Command != 0)
+            {
+                ::SendMessageW(
+                    ParentWindowHandle,
+                    K7ModernColumnsContextMenuCommandMessage,
+                    MAKEWPARAM(
+                        static_cast<WORD>(Command),
+                        static_cast<WORD>(ContextPanelIndex)),
+                    static_cast<LPARAM>(ContextGeneration));
+            }
+        };
+
+        PopulateMenuFlyout(
+            Flyout,
+            Menu,
+            nullptr,
+            ::K7ModernGetContextMenuFontSize(),
+            Handler);
+        ::DestroyMenu(Menu);
+        Menu = nullptr;
+
+        POINT Point = { ScreenX, ScreenY };
+        if (!::ScreenToClient(HostWindowHandle, &Point))
+        {
+            return FALSE;
+        }
+
+        const UINT Dpi = ::GetDpiForWindow(HostWindowHandle);
+        const double Scale = Dpi == 0
+            ? 1.0
+            : static_cast<double>(Dpi) /
+                static_cast<double>(USER_DEFAULT_SCREEN_DPI);
+        winrt::Windows::UI::Xaml::Controls::Grid Anchor;
+        Anchor.Width(1.0);
+        Anchor.Height(1.0);
+        winrt::Windows::UI::Xaml::Controls::Canvas::SetLeft(
+            Anchor,
+            static_cast<double>(Point.x) / Scale);
+        winrt::Windows::UI::Xaml::Controls::Canvas::SetTop(
+            Anchor,
+            static_cast<double>(Point.y) / Scale);
+        this->ContextMenuAnchorLayer().Children().Append(Anchor);
+        this->m_ColumnsContextMenuAnchor = Anchor;
+        this->m_ColumnsContextMenuClosedToken = Flyout.Closed(
+            [this, Anchor, ParentWindowHandle, ContextPanelIndex, ContextGeneration](
+                auto const&, auto const&)
+            {
+                auto Children = this->ContextMenuAnchorLayer().Children();
+                std::uint32_t Index = 0;
+                if (Children.IndexOf(Anchor, Index))
+                    Children.RemoveAt(Index);
+                if (this->m_ColumnsContextMenuAnchor == Anchor)
+                    this->m_ColumnsContextMenuAnchor = nullptr;
+                ::PostMessageW(
+                    ParentWindowHandle,
+                    K7ModernColumnsContextMenuClosedMessage,
+                    ContextPanelIndex,
+                    static_cast<LPARAM>(ContextGeneration));
+            });
+
+        try
+        {
+            Flyout.ShowAt(Anchor);
+        }
+        catch (...)
+        {
+            auto Children = this->ContextMenuAnchorLayer().Children();
+            std::uint32_t Index = 0;
+            if (Children.IndexOf(Anchor, Index))
+                Children.RemoveAt(Index);
+            this->m_ColumnsContextMenuAnchor = nullptr;
+            return FALSE;
+        }
+        return TRUE;
+        }
+        catch (...)
+        {
+            if (Menu)
+                ::DestroyMenu(Menu);
+            return FALSE;
+        }
+    }
+
 }
 
 EXTERN_C BOOL WINAPI K7ModernShowContextMenu(
@@ -862,6 +989,61 @@ EXTERN_C BOOL WINAPI K7ModernShowContextMenu(
             ScreenY,
             ContextPanelIndex,
             ContextGeneration);
+}
+
+EXTERN_C BOOL WINAPI K7ModernShowColumnsContextMenu(
+    _In_ HWND ToolBarWindowHandle,
+    _In_ HWND ParentWindowHandle,
+    _In_ HMENU MenuHandle,
+    _In_ HWND HostWindowHandle,
+    _In_ INT ScreenX,
+    _In_ INT ScreenY,
+    _In_ UINT ContextPanelIndex,
+    _In_ UINT ContextGeneration)
+{
+    if (!ToolBarWindowHandle || !MenuHandle)
+    {
+        if (MenuHandle)
+            ::DestroyMenu(MenuHandle);
+        return FALSE;
+    }
+
+    try
+    {
+        winrt::DesktopWindowXamlSource XamlSource = nullptr;
+        winrt::copy_from_abi(
+            XamlSource,
+            ::GetPropW(ToolBarWindowHandle, L"XamlWindowSource"));
+        if (!XamlSource)
+        {
+            ::DestroyMenu(MenuHandle);
+            return FALSE;
+        }
+
+        auto Page = XamlSource.Content().try_as<
+            winrt::NanaZip::Modern::MainWindowToolBarPage>();
+        if (!Page)
+        {
+            ::DestroyMenu(MenuHandle);
+            return FALSE;
+        }
+
+        return winrt::get_self<
+            winrt::NanaZip::Modern::implementation::MainWindowToolBarPage>(Page)
+            ->ShowColumnsContextMenu(
+                MenuHandle,
+                HostWindowHandle,
+                ParentWindowHandle,
+                ScreenX,
+                ScreenY,
+                ContextPanelIndex,
+                ContextGeneration);
+    }
+    catch (...)
+    {
+        ::DestroyMenu(MenuHandle);
+        return FALSE;
+    }
 }
 
 EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(

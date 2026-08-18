@@ -122,6 +122,50 @@ EXTERN_C UINT32 WINAPI K7ModernGetContextMenuFontSize()
     return 0;
 }
 
+EXTERN_C BOOL WINAPI K7ModernShowColumnsContextMenu(
+    _In_ HWND ToolBarWindowHandle,
+    _In_ HWND ParentWindowHandle,
+    _In_ HMENU MenuHandle,
+    _In_ HWND HostWindowHandle,
+    _In_ INT ScreenX,
+    _In_ INT ScreenY,
+    _In_ UINT ContextPanelIndex,
+    _In_ UINT ContextGeneration)
+{
+    using ProcType = decltype(::K7ModernShowColumnsContextMenu)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowColumnsContextMenu");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(
+            ToolBarWindowHandle,
+            ParentWindowHandle,
+            MenuHandle,
+            HostWindowHandle,
+            ScreenX,
+            ScreenY,
+            ContextPanelIndex,
+            ContextGeneration);
+    }
+
+    if (MenuHandle)
+    {
+        ::DestroyMenu(MenuHandle);
+    }
+    return FALSE;
+}
+
 EXTERN_C HRESULT WINAPI K7ModernInitialize()
 {
     using ProcType = decltype(::K7ModernInitialize)*;

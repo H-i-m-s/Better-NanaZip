@@ -86,6 +86,15 @@ namespace winrt::NanaZip::Modern::implementation
             UINT ContextPanelIndex,
             UINT ContextGeneration);
 
+        BOOL ShowColumnsContextMenu(
+            HMENU Menu,
+            HWND HostWindowHandle,
+            HWND ParentWindowHandle,
+            INT ScreenX,
+            INT ScreenY,
+            UINT ContextPanelIndex,
+            UINT ContextGeneration);
+
     private:
 
         HWND m_WindowHandle;
@@ -99,6 +108,9 @@ namespace winrt::NanaZip::Modern::implementation
         winrt::Windows::UI::Xaml::Controls::MenuFlyout m_ContextMenuFlyout;
         winrt::Windows::UI::Xaml::Controls::Grid m_ContextMenuAnchor;
         winrt::event_token m_ContextMenuClosedToken;
+        winrt::Windows::UI::Xaml::Controls::MenuFlyout m_ColumnsContextMenuFlyout;
+        winrt::Windows::UI::Xaml::Controls::Grid m_ColumnsContextMenuAnchor;
+        winrt::event_token m_ColumnsContextMenuClosedToken;
     };
 }
 

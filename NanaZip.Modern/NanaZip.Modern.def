@@ -17,6 +17,7 @@ K7ModernShowProgressWindow
 K7ModernShowCopyLocationDialog
 K7ModernCreateMainWindowToolBarPage
 K7ModernShowContextMenu
+K7ModernShowColumnsContextMenu
 K7ModernShowOverwriteDialog
 K7ModernShowExtractDialog
 K7ModernShowCompressDialog

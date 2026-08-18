@@ -673,6 +673,8 @@ public:
   void OnLeftClick(MY_NMLISTVIEW_NMITEMACTIVATE *itemActivate);
   bool OnRightClick(MY_NMLISTVIEW_NMITEMACTIVATE *itemActivate, LRESULT &result);
   void ShowColumnsContextMenu(int x, int y);
+  bool ExecuteColumnsContextMenuCommand(unsigned id, UINT generation);
+  void CloseColumnsContextMenu(UINT generation = 0);
 
   void OnTimer();
   void OnReload();
@@ -688,6 +690,8 @@ public:
   bool _xamlContextSystemMenuTracking = false;
   UINT _xamlContextGeneration = 0;
   UINT _xamlContextNextGeneration = 0;
+  UINT _xamlColumnsContextGeneration = 0;
+  UINT _xamlColumnsContextNextGeneration = 0;
   int _xamlContextX = 0;
   int _xamlContextY = 0;
   UString _xamlContextFolderPrefix;

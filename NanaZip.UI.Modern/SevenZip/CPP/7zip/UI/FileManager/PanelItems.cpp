@@ -16,6 +16,7 @@
 #include "resource.h"
 
 #include "LangUtils.h"
+#include "App.h"
 #include "Panel.h"
 #include "MenuFont.h"
 #include "PropertyName.h"
@@ -1257,6 +1258,48 @@ bool CPanel::OnRightClick(MY_NMLISTVIEW_NMITEMACTIVATE *itemActiveate, LRESULT &
   return true;
 }
 
+void CPanel::CloseColumnsContextMenu(UINT generation)
+{
+  if (generation != 0 && generation != _xamlColumnsContextGeneration)
+    return;
+  _xamlColumnsContextGeneration = 0;
+}
+
+bool CPanel::ExecuteColumnsContextMenuCommand(unsigned id, UINT generation)
+{
+  const int kCommandStart = 100;
+  if (generation != _xamlColumnsContextGeneration ||
+      id < kCommandStart || id >= kCommandStart + _columns.Size())
+  {
+    return false;
+  }
+
+  const int index = static_cast<int>(id) - kCommandStart;
+  CPropColumn &prop = _columns[index];
+  prop.IsVisible = !prop.IsVisible;
+
+  if (prop.IsVisible)
+  {
+    prop.Order = _visibleColumns.Size();
+    AddColumn(prop);
+  }
+  else
+  {
+    int visibleIndex = _visibleColumns.FindItem_for_PropID(prop.ID);
+    if (visibleIndex >= 0)
+    {
+      if (_sortID == prop.ID)
+      {
+        _sortID = kpidName;
+        _ascending = true;
+      }
+      DeleteColumn(visibleIndex);
+    }
+  }
+  CloseColumnsContextMenu(generation);
+  return true;
+}
+
 void CPanel::ShowColumnsContextMenu(int x, int y)
 {
   CMenu menu;
@@ -1276,45 +1319,52 @@ void CPanel::ShowColumnsContextMenu(int x, int y)
     menu.AppendItem(flags, kCommandStart + i, prop.Name);
   }
 
+  unsigned panelIndex = 0;
+  for (unsigned index = 0; index < g_App.NumPanels; ++index)
+  {
+    if (&g_App.Panels[index] == this)
+    {
+      panelIndex = index;
+      break;
+    }
+  }
+
+  const UINT generation = ++_xamlColumnsContextNextGeneration;
+  _xamlColumnsContextGeneration = generation;
+  if (K7ModernShowColumnsContextMenu(
+      g_App.m_ToolBar,
+      _mainWindow,
+      menu.Detach(),
+      g_App.m_ToolBar,
+      x,
+      y,
+      panelIndex,
+      generation))
+  {
+    menuDestroyer.Disable();
+    return;
+  }
+
+  menu.CreatePopup();
+  FOR_VECTOR (i, _columns)
+  {
+    const CPropColumn &prop = _columns[i];
+    UINT flags = MF_STRING;
+    if (prop.IsVisible)
+      flags |= MF_CHECKED;
+    if (i == 0)
+      flags |= MF_GRAYED;
+    menu.AppendItem(flags, kCommandStart + i, prop.Name);
+  }
+
   CFontSizeInfo fontSizes;
   fontSizes.Load();
   ApplyNanaZipMenuFontTree(menu, _listView, fontSizes.ContextMenu);
   // Owner-draw menu messages are routed to the panel window.
-  int menuResult = menu.Track(TPM_LEFTALIGN | TPM_RETURNCMD | TPM_NONOTIFY, x, y, *this);
+  const int menuResult = menu.Track(
+      TPM_LEFTALIGN | TPM_RETURNCMD | TPM_NONOTIFY, x, y, *this);
   ResetNanaZipMenuFont(menu);
-
-  if (menuResult >= kCommandStart && menuResult <= kCommandStart + (int)_columns.Size())
-  {
-    int index = menuResult - kCommandStart;
-    CPropColumn &prop = _columns[index];
-    prop.IsVisible = !prop.IsVisible;
-
-    if (prop.IsVisible)
-    {
-      prop.Order = _visibleColumns.Size();
-      AddColumn(prop);
-    }
-    else
-    {
-      int visibleIndex = _visibleColumns.FindItem_for_PropID(prop.ID);
-      if (visibleIndex >= 0)
-      {
-        /*
-        if (_sortIndex == index)
-        {
-        _sortIndex = 0;
-        _ascending = true;
-        }
-        */
-        if (_sortID == prop.ID)
-        {
-          _sortID = kpidName;
-          _ascending = true;
-        }
-        DeleteColumn(visibleIndex);
-      }
-    }
-  }
+  ExecuteColumnsContextMenuCommand(menuResult, generation);
 }
 
 void CPanel::OnReload()
