@@ -1455,8 +1455,12 @@ void CApp::MoveSubWindows()
           0,
           0,
           ClientRect.right - ClientRect.left,
-          MainWindowToolBarScaledHeight,
+          ClientRect.bottom - ClientRect.top,
           SWP_SHOWWINDOW);
+      SetToolBarWindowRegion(
+          this->m_ToolBar,
+          ClientRect.right - ClientRect.left,
+          ClientRect.bottom - ClientRect.top);
 
       headerSize += MainWindowToolBarScaledHeight;
   }

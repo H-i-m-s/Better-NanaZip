@@ -2,6 +2,8 @@
 
 #include "StdAfx.h"
 
+#include <windowsx.h>
+
 #include "resource.h"
 
 #include "../../../Windows/FileName.h"
@@ -47,6 +49,30 @@ extern DWORD g_ComCtl32Version;
 extern HINSTANCE g_hInstance;
 
 #define kTempDirPrefix FTEXT("7zE")
+
+bool SetToolBarWindowRegion(HWND hWnd, int width, int height)
+{
+  const UINT dpi = ::GetDpiForWindow(hWnd);
+  const int toolBarHeight = ::MulDiv(
+      48,
+      dpi == 0 ? USER_DEFAULT_SCREEN_DPI : dpi,
+      USER_DEFAULT_SCREEN_DPI);
+  HRGN region = ::CreateRectRgn(
+      0,
+      0,
+      MyMax(width, 0),
+      MyMin(MyMax(height, 0), toolBarHeight));
+  if (!region)
+    return false;
+
+  // The full-size XAML island supplies the file-list anchor. Its window
+  // region reserves pointer input for the visible toolbar strip only.
+  if (::SetWindowRgn(hWnd, region, FALSE))
+    return true;
+
+  ::DeleteObject(region);
+  return false;
+}
 
 void CPanelCallbackImp::OnTab()
 {
@@ -187,9 +213,6 @@ HRESULT CApp::Create(HWND hwnd, const UString &mainPath, const UString &arcForma
 
   extern HMENU g_MoreMenu;
 
-  UINT DpiValue = ::GetDpiForWindow(hwnd);
-  int ToolBarControlHeight = ::MulDiv(48, DpiValue, USER_DEFAULT_SCREEN_DPI);
-
   RECT ClientRect = {};
   ::GetClientRect(hwnd, &ClientRect);
 
@@ -201,11 +224,24 @@ HRESULT CApp::Create(HWND hwnd, const UString &mainPath, const UString &arcForma
       0,
       0,
       ClientRect.right - ClientRect.left,
-      ToolBarControlHeight,
+      ClientRect.bottom - ClientRect.top,
       hwnd,
       nullptr,
       nullptr,
       ::K7ModernCreateMainWindowToolBarPage(hwnd, g_MoreMenu));
+  if (!this->m_ToolBar)
+    return HRESULT_FROM_WIN32(::GetLastError());
+
+  if (!SetToolBarWindowRegion(
+      this->m_ToolBar,
+      ClientRect.right - ClientRect.left,
+      ClientRect.bottom - ClientRect.top))
+  {
+    const DWORD error = ::GetLastError();
+    ::DestroyWindow(this->m_ToolBar);
+    this->m_ToolBar = nullptr;
+    return HRESULT_FROM_WIN32(error);
+  }
 
   g_K7ControlList.insert(g_K7ControlList.begin(), this->m_ToolBar);
 

@@ -22,6 +22,8 @@ const unsigned kNumPanelsMax = 2;
 
 extern bool g_IsSmallScreen;
 
+bool SetToolBarWindowRegion(HWND hWnd, int width, int height);
+
 // must be larger than context menu IDs
 const int kMenuCmdID_Toolbar_Start = 1070;
 const int kMenuCmdID_Plugin_Start = 1100;
