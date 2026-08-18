@@ -282,19 +282,24 @@ static bool TestArchivePassword(
     ExtractFlowDiagLog(L"[T] no encrypted items");
     return false;
   }
-  CTestExtractCallback testCallback;
-  testCallback.Password = password.c_str();
+  // 7-Zip COM 约定：传给引擎的回调必须是堆对象。
+  // CMyUnknownImp 初始引用计数为 0，引擎在 Extract 返回前 AddRef/Release
+  // 归零后执行 delete this；栈对象会被 delete 栈内存 -> 堆损坏 0xc0000374。
+  // （正式提取的 CArchiveExtractCallback 一直是堆对象，所以从不触发。）
+  CTestExtractCallback *testCallbackSpec = new CTestExtractCallback;
+  CMyComPtr<IArchiveExtractCallback> testCallback = testCallbackSpec;
+  testCallbackSpec->Password = password.c_str();
   ExtractFlowDiagLog(L"[T] calling Extract");
   const HRESULT extractRes = archive->Extract(
       &indices[0],
       indices.Size(),
       0, // normal extract path (testMode=0): the engine writes into the
          // discarding stream, so nothing touches disk
-      &testCallback);
+      testCallback);
   ExtractFlowDiagLogResult(L"[T] Extract returned", extractRes);
   // The password is correct when every encrypted item decoded cleanly.
   // A wrong password fails CRC/data validation and sets HadError.
-  const bool ok = extractRes == S_OK && !testCallback.HadError;
+  const bool ok = extractRes == S_OK && !testCallbackSpec->HadError;
   ExtractFlowDiagLog(ok ? L"[T] accepted" : L"[T] rejected");
   return ok;
 }
