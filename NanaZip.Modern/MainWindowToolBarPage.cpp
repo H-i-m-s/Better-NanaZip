@@ -66,7 +66,8 @@ namespace
 
         std::vector<wchar_t> Buffer(Info.cch + 1, L'\0');
         Info.dwTypeData = Buffer.data();
-        Info.cch = static_cast<UINT>(Buffer.size() - 1);
+        // cch is the capacity of dwTypeData, including its terminator.
+        Info.cch = static_cast<UINT>(Buffer.size());
         if (!::GetMenuItemInfoW(Menu, Position, TRUE, &Info))
         {
             return {};
