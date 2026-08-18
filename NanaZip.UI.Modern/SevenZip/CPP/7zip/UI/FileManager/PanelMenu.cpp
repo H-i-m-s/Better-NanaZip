@@ -22,6 +22,7 @@
 #include <NanaZip.Modern.h>
 // **************** NanaZip Modification End ****************
 #include "MyLoadMenu.h"
+#include "RegistryUtils.h"
 #include "MenuFont.h"
 #include "PropertyName.h"
 
@@ -1123,10 +1124,37 @@ void CPanel::CreateFileMenu(HMENU menuSpec,
   // **************** SSS Modification Start ****************
   if (IsSssBatchFolder())
   {
-    menu.AppendItem(MF_SEPARATOR, 0, (LPCTSTR)0);
-    menu.AppendItem(MF_STRING, IDM_SSS_EXTRACT_ONE, L"逐个提取…(&O)");
-    menu.AppendItem(MF_STRING, IDM_SSS_EXTRACT_ALL, L"全部解压到各自文件夹(&E)");
-    menu.AppendItem(MF_STRING, IDM_SSS_EXTRACT_ALL_DLG, L"全部解压到…(&A)");
+    const UInt32 contextMenuFlags = programMenu
+        ? kFileContextMenuAllFlags
+        : ReadFileContextMenuFlags();
+    struct CBatchExtractMenuItem
+    {
+      unsigned Command;
+      unsigned VisibilityItem;
+    };
+    static const CBatchExtractMenuItem kBatchExtractMenuItems[] =
+    {
+      { IDM_SSS_EXTRACT_ONE, kFileContextMenuItemExtractOneByOne },
+      { IDM_SSS_EXTRACT_ALL, kFileContextMenuItemExtractAll },
+      { IDM_SSS_EXTRACT_ALL_DLG, kFileContextMenuItemExtractAllDialog }
+    };
+
+    bool hasVisibleItem = false;
+    for (unsigned index = 0; index < ARRAY_SIZE(kBatchExtractMenuItems); ++index)
+    {
+      const CBatchExtractMenuItem &item = kBatchExtractMenuItems[index];
+      if (!IsFileContextMenuItemVisible(contextMenuFlags, item.VisibilityItem))
+        continue;
+      if (!hasVisibleItem)
+      {
+        if (menu.GetItemCount() != 0)
+          menu.AppendItem(MF_SEPARATOR, 0, (LPCTSTR)0);
+        hasVisibleItem = true;
+      }
+      UString text;
+      GetFileContextMenuItemText(item.VisibilityItem, text);
+      menu.AppendItem(MF_STRING, item.Command, text);
+    }
   }
   // **************** SSS Modification End ****************
 }

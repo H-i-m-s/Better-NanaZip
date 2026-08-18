@@ -144,6 +144,7 @@ namespace winrt::NanaZip::Modern::implementation
         bool m_InitGuard;
 
         winrt::Windows::UI::Xaml::Controls::CheckBox m_MenuChecks[13];
+        winrt::Windows::UI::Xaml::Controls::CheckBox m_FileContextMenuChecks[28];
 
         static winrt::hstring Res(UINT32 ResourceId, LPCWSTR Fallback);
         void ApplyDialogFont(UINT32 Pt);

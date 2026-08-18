@@ -347,6 +347,16 @@ static void FillSettingsDialogContext(
     wcsncpy_s(ctx.ContextNames[i], s, _TRUNCATE);
   }
 
+  const UInt32 fileContextMenuFlags = ReadFileContextMenuFlags();
+  for (unsigned i = 0; i < kFileContextMenuItemCount; i++)
+  {
+    ctx.FileContextMenuFlags[i] =
+        IsFileContextMenuItemVisible(fileContextMenuFlags, i);
+    UString name;
+    GetFileContextMenuItemName(i, name);
+    wcsncpy_s(ctx.FileContextMenuNames[i], name, _TRUNCATE);
+  }
+
   // --- Folders page ---
   NWorkDir::CInfo wd;
   wd.Load();
@@ -481,6 +491,12 @@ static void SaveSettingsDialogContext(
       ci.Flags |= kMenuItems[i].Flag;
   ci.Flags_Def = true;
   ci.Save();
+
+  UInt32 fileContextMenuFlags = 0;
+  for (unsigned i = 0; i < kFileContextMenuItemCount; i++)
+    if (ctx.FileContextMenuFlags[i])
+      fileContextMenuFlags |= ((UInt32)1 << i);
+  SaveFileContextMenuFlags(fileContextMenuFlags);
 
   // --- Folders page ---
   NWorkDir::CInfo wd;

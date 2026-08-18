@@ -1486,5 +1486,29 @@ Are you sure you want to split archive into such volumes?</value>
   <data name="Resource12201" xml:space="preserve">
     <value>Open Windows Settings app to associate files with NanaZip</value>
   </data>
+  <data name="Resource2560" xml:space="preserve">
+    <value>File Manager context menu:</value>
+  </data>
+  <data name="Resource2561" xml:space="preserve">
+    <value>Extract one by one... (&amp;O)</value>
+  </data>
+  <data name="Resource2562" xml:space="preserve">
+    <value>Extract all to separate folders (&amp;E)</value>
+  </data>
+  <data name="Resource2563" xml:space="preserve">
+    <value>Extract all to... (&amp;A)</value>
+  </data>
+  <data name="Resource2564" xml:space="preserve">
+    <value>Version Control Edit (&amp;1)</value>
+  </data>
+  <data name="Resource2565" xml:space="preserve">
+    <value>Version Control Commit</value>
+  </data>
+  <data name="Resource2566" xml:space="preserve">
+    <value>Version Control Revert</value>
+  </data>
+  <data name="Resource2567" xml:space="preserve">
+    <value>Version Control Diff (&amp;0)</value>
+  </data>
 
 </root>

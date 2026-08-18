@@ -56,6 +56,9 @@ static LPCTSTR const kAutoShowPassword = TEXT("AutoShowPassword");
 static LPCTSTR const kAutoSharePassword = TEXT("AutoSharePassword");
 // **************** SSS Modification End ****************
 
+static LPCTSTR const kFileContextMenuFlags = TEXT("FileContextMenuFlags");
+static const UInt32 kFileContextMenuAllFlags = 0x0FFFFFFF;
+
 static LPCTSTR const kFlatViewName = TEXT("FlatViewArc");
 // static LPCTSTR const kShowDeletedFiles = TEXT("ShowDeleted");
 
@@ -277,6 +280,26 @@ UInt32 ReadMatchPriority()
 bool WantAutoShowPassword() { return ReadFMOption(kAutoShowPassword); }
 bool WantAutoSharePassword() { return ReadFMOption(kAutoSharePassword); }
 // **************** SSS Modification End ****************
+
+UInt32 ReadFileContextMenuFlags()
+{
+  UInt32 flags = kFileContextMenuAllFlags;
+  CKey key;
+  if (key.Open(HKEY_CURRENT_USER, kCU_FMPath, KEY_READ) == ERROR_SUCCESS)
+  {
+    UInt32 value = 0;
+    if (key.QueryValue(kFileContextMenuFlags, value) == ERROR_SUCCESS)
+      flags = value & kFileContextMenuAllFlags;
+  }
+  return flags;
+}
+
+void SaveFileContextMenuFlags(UInt32 flags)
+{
+  CKey key;
+  key.Create(HKEY_CURRENT_USER, kCU_FMPath);
+  key.SetValue(kFileContextMenuFlags, flags & kFileContextMenuAllFlags);
+}
 
 static CSysString GetFlatViewName(UInt32 panelIndex)
 {

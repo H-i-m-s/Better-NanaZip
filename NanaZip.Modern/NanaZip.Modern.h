@@ -340,6 +340,8 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     UINT32 WriteZone;
     BOOLEAN ContextFlags[13];
     WCHAR ContextNames[13][192];
+    BOOLEAN FileContextMenuFlags[28];
+    WCHAR FileContextMenuNames[28][192];
     UINT32 ZoneSel;
     WCHAR ZoneItems[4][64];
 

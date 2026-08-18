@@ -449,13 +449,152 @@ static const unsigned g_Zvc_IDs[] =
   IDM_VER_DIFF
 };
 
-static const char * const g_Zvc_Strings[] =
+static const UInt32 g_Zvc_ResourceIds[] =
 {
-    "Ver Edit (&1)"
-  , "Ver Commit"
-  , "Ver Revert"
-  , "Ver Diff (&0)"
+  kFileContextMenuResourceVerEdit,
+  kFileContextMenuResourceVerCommit,
+  kFileContextMenuResourceVerRevert,
+  kFileContextMenuResourceVerDiff
 };
+
+static const unsigned kFileContextMenuStaticIds[] =
+{
+  IDM_OPEN,
+  IDM_OPEN_INSIDE,
+  IDM_OPEN_INSIDE_ONE,
+  IDM_OPEN_INSIDE_PARSER,
+  IDM_OPEN_OUTSIDE,
+  IDM_FILE_VIEW,
+  IDM_FILE_EDIT,
+  IDM_RENAME,
+  IDM_COPY_TO,
+  IDM_MOVE_TO,
+  IDM_DELETE,
+  IDM_SPLIT,
+  IDM_COMBINE,
+  IDM_PROPERTIES,
+  IDM_COMMENT,
+  0, // CRC is a submenu root and has no command ID.
+  IDM_DIFF,
+  IDM_CREATE_FOLDER,
+  IDM_CREATE_FILE,
+  IDM_LINK,
+  IDM_ALT_STREAMS
+};
+
+static bool IsStaticFileContextMenuItemVisible(UInt32 flags, const CMenuItem &item)
+{
+  if (item.hSubMenu)
+  {
+    // The static File menu currently has CRC as its only root submenu.
+    return item.StringValue == L"CRC"
+        ? IsFileContextMenuItemVisible(flags, kFileContextMenuItemCrc)
+        : true;
+  }
+
+  for (unsigned i = 0; i < ARRAY_SIZE(kFileContextMenuStaticIds); ++i)
+  {
+    if (kFileContextMenuStaticIds[i] == item.wID)
+      return IsFileContextMenuItemVisible(flags, i);
+  }
+  return true;
+}
+
+bool IsFileContextMenuItemVisible(UInt32 flags, unsigned itemIndex)
+{
+  return itemIndex < kFileContextMenuItemCount &&
+      (flags & ((UInt32)1 << itemIndex)) != 0;
+}
+
+static void NormalizeFileContextMenuItemName(UString &name)
+{
+  UString normalized;
+  for (unsigned i = 0; i < name.Len(); ++i)
+  {
+    const wchar_t c = name[i];
+    if (c == L'\t')
+      break;
+    if (c == L'&')
+    {
+      if (i + 1 < name.Len() && name[i + 1] == L'&')
+      {
+        normalized += c;
+        ++i;
+      }
+      continue;
+    }
+    normalized += c;
+  }
+  name = normalized;
+}
+
+void GetFileContextMenuItemText(unsigned itemIndex, UString &text)
+{
+  text.Empty();
+  switch (itemIndex)
+  {
+    case kFileContextMenuItemExtractOneByOne:
+      AddLangString(text, kFileContextMenuResourceExtractOneByOne);
+      break;
+    case kFileContextMenuItemExtractAll:
+      AddLangString(text, kFileContextMenuResourceExtractAll);
+      break;
+    case kFileContextMenuItemExtractAllDialog:
+      AddLangString(text, kFileContextMenuResourceExtractAllDialog);
+      break;
+    case kFileContextMenuItemVerEdit:
+    case kFileContextMenuItemVerCommit:
+    case kFileContextMenuItemVerRevert:
+    case kFileContextMenuItemVerDiff:
+      AddLangString(
+          text,
+          g_Zvc_ResourceIds[itemIndex - kFileContextMenuItemVerEdit]);
+      break;
+  }
+}
+
+void GetFileContextMenuItemName(unsigned itemIndex, UString &name)
+{
+  name.Empty();
+  if (itemIndex < kFileContextMenuItemExtractOneByOne)
+  {
+    for (unsigned position = 0;; ++position)
+    {
+      CMenuItem item;
+      item.fMask = MIIM_SUBMENU | MIIM_ID | Get_fMask_for_FType_and_String();
+      item.fType = MFT_STRING;
+      if (!g_FileMenu.GetItem(position, true, item))
+        break;
+
+      if (item.hSubMenu)
+      {
+        // The static File menu currently has CRC as its only root submenu.
+        if (itemIndex == kFileContextMenuItemCrc && item.StringValue == L"CRC")
+        {
+          name = item.StringValue;
+          break;
+        }
+        continue;
+      }
+
+      for (unsigned i = 0; i < ARRAY_SIZE(kFileContextMenuStaticIds); ++i)
+      {
+        if (kFileContextMenuStaticIds[i] == item.wID && i == itemIndex)
+        {
+          name = item.StringValue;
+          break;
+        }
+      }
+      if (!name.IsEmpty())
+        break;
+    }
+  }
+  else
+  {
+    GetFileContextMenuItemText(itemIndex, name);
+  }
+  NormalizeFileContextMenuItemName(name);
+}
 
 void CFileMenu::Load(HMENU hMenu, unsigned startPos)
 {
@@ -466,6 +605,14 @@ void CFileMenu::Load(HMENU hMenu, unsigned startPos)
   ReadRegDiff(diffPath);
 
   unsigned numRealItems = startPos;
+  // The File menu keeps its full contents; this preference is scoped to
+  // the file-list context menu where programMenu is false.
+  const bool filterContextMenu = !programMenu;
+  const UInt32 contextMenuFlags = filterContextMenu
+      ? ReadFileContextMenuFlags()
+      : kFileContextMenuAllFlags;
+  bool haveFileContextMenuItem = false;
+  bool pendingSeparator = false;
 
   const bool isBigScreen = NControl::IsDialogSizeOK(40, 200, g_HWND);
 
@@ -550,8 +697,34 @@ void CFileMenu::Load(HMENU hMenu, unsigned startPos)
       if (item.wID == IDM_ALT_STREAMS)
         disable = !isAltStreamsSupported;
 
-      if (!isBigScreen && (disable || item.IsSeparator()))
+      if (item.IsSeparator())
+      {
+        if (!filterContextMenu)
+        {
+          if (isBigScreen && destMenu.InsertItem(startPos, true, item))
+            startPos++;
+          continue;
+        }
+
+        // Add a separator only when two visible FileManager items need it.
+        // This prevents gaps left by hidden roots without touching Shell items.
+        pendingSeparator = haveFileContextMenuItem;
         continue;
+      }
+
+      if (filterContextMenu &&
+          !IsStaticFileContextMenuItemVisible(contextMenuFlags, item))
+        continue;
+
+      if (!isBigScreen && disable)
+        continue;
+
+      if (filterContextMenu && pendingSeparator && haveFileContextMenuItem)
+      {
+        destMenu.AppendItem(MF_SEPARATOR, 0, (LPCTSTR)0);
+        startPos++;
+        pendingSeparator = false;
+      }
 
       CopyPopMenu_IfRequired(item);
       if (destMenu.InsertItem(startPos, true, item))
@@ -559,10 +732,9 @@ void CFileMenu::Load(HMENU hMenu, unsigned startPos)
         if (disable)
           destMenu.EnableItem(startPos, MF_BYPOSITION | MF_GRAYED);
         startPos++;
-      }
-
-      if (!item.IsSeparator())
+        haveFileContextMenuItem = true;
         numRealItems = startPos;
+      }
     }
   }
 
@@ -591,8 +763,15 @@ void CFileMenu::Load(HMENU hMenu, unsigned startPos)
             continue;
         }
 
+        if (filterContextMenu &&
+            !IsFileContextMenuItemVisible(
+                contextMenuFlags,
+                kFileContextMenuItemExtractAllDialog + 1 + k))
+          continue;
+
         CMenuItem item;
-        UString s (g_Zvc_Strings[k]);
+        UString s;
+        AddLangString(s, g_Zvc_ResourceIds[k]);
         if (destMenu.AppendItem(MF_STRING, id, s))
         {
           startPos++;

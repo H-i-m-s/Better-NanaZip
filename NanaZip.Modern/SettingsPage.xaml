@@ -96,6 +96,11 @@
             Margin="0,16,0,6"
             FontWeight="SemiBold" />
           <StackPanel x:Name="MenuContextListPanel" />
+          <TextBlock
+            x:Name="MenuFileContextItemsLabel"
+            Margin="0,16,0,6"
+            FontWeight="SemiBold" />
+          <StackPanel x:Name="MenuFileContextListPanel" />
           <CheckBox
             x:Name="MenuExtractOnOpenCheck"
             Margin="0,10,0,0"

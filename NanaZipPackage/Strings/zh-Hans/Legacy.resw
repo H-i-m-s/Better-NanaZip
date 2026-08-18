@@ -1486,4 +1486,28 @@
   <data name="Resource3434" xml:space="preserve">
     <value>解压后打开（按住 Shift 跳过）</value>
   </data>
+  <data name="Resource2560" xml:space="preserve">
+    <value>文件管理器右键菜单:</value>
+  </data>
+  <data name="Resource2561" xml:space="preserve">
+    <value>逐个提取…(&amp;O)</value>
+  </data>
+  <data name="Resource2562" xml:space="preserve">
+    <value>全部解压到各自文件夹(&amp;E)</value>
+  </data>
+  <data name="Resource2563" xml:space="preserve">
+    <value>全部解压到…(&amp;A)</value>
+  </data>
+  <data name="Resource2564" xml:space="preserve">
+    <value>版本控制编辑(&amp;1)</value>
+  </data>
+  <data name="Resource2565" xml:space="preserve">
+    <value>版本控制提交</value>
+  </data>
+  <data name="Resource2566" xml:space="preserve">
+    <value>版本控制还原</value>
+  </data>
+  <data name="Resource2567" xml:space="preserve">
+    <value>版本控制比较(&amp;0)</value>
+  </data>
 </root>

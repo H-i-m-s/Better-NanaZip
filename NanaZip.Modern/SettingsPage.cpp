@@ -428,6 +428,8 @@ namespace winrt::NanaZip::Modern::implementation
         MenuElimDupCheck().IsChecked(BoxBool(this->m_Context->ElimDup != FALSE));
         MenuZoneLabel().Text(Res(3440, L"Propagate Zone.Id stream:"));
         MenuContextItemsLabel().Text(Res(2303, L"Context menu items:"));
+        MenuFileContextItemsLabel().Text(
+            Res(2560, L"File Manager context menu:"));
         MenuExtractOnOpenCheck().Content(winrt::box_value(Res(3434, L"Extract on open")));
         MenuExtractOnOpenCheck().IsChecked(BoxBool(this->m_Context->ExtractOnOpen != FALSE));
 
@@ -459,6 +461,21 @@ namespace winrt::NanaZip::Modern::implementation
             Item.Click({ this, &SettingsPage::MenuCheckBoxClick });
             MenuContextListPanel().Children().Append(Item);
             m_MenuChecks[i] = Item;
+        }
+
+        // FileManager internal file-list context-menu item checkboxes.
+        MenuFileContextListPanel().Children().Clear();
+        for (unsigned i = 0; i < 28; i++)
+        {
+            winrt::Windows::UI::Xaml::Controls::CheckBox Item;
+            Item.Content(winrt::box_value(
+                winrt::hstring(this->m_Context->FileContextMenuNames[i])));
+            Item.IsChecked(BoxBool(
+                this->m_Context->FileContextMenuFlags[i] != FALSE));
+            Item.Margin(winrt::Windows::UI::Xaml::Thickness(0, 4, 0, 0));
+            Item.Click({ this, &SettingsPage::MenuCheckBoxClick });
+            MenuFileContextListPanel().Children().Append(Item);
+            m_FileContextMenuChecks[i] = Item;
         }
 
         // ============ Folders page ============
@@ -1143,7 +1160,16 @@ namespace winrt::NanaZip::Modern::implementation
                 if (sender == m_MenuChecks[i])
                 {
                     this->m_Context->ContextFlags[i] = Checked ? TRUE : FALSE;
-                    break;
+                    return;
+                }
+            }
+            for (unsigned i = 0; i < 28; i++)
+            {
+                if (sender == m_FileContextMenuChecks[i])
+                {
+                    this->m_Context->FileContextMenuFlags[i] =
+                        Checked ? TRUE : FALSE;
+                    return;
                 }
             }
         }

@@ -70,6 +70,9 @@ bool WantAutoShowPassword();
 bool WantAutoSharePassword();
 // **************** SSS Modification End ****************
 
+UInt32 ReadFileContextMenuFlags();
+void SaveFileContextMenuFlags(UInt32 flags);
+
 void SaveFlatView(UInt32 panelIndex, bool enable);
 bool ReadFlatView(UInt32 panelIndex);
 
