@@ -48,6 +48,42 @@ using namespace NDir;
 
 static const wchar_t * const kIncorrectOutDir = L"Incorrect output directory path";
 
+// Temporary extraction-flow diagnostics. Only records control-flow markers,
+// candidate indexes, boolean states, and HRESULTs; never records paths,
+// passwords, API configuration, or response data.
+static void ExtractFlowDiagLog(const wchar_t *message)
+{
+  wchar_t path[MAX_PATH] = {};
+  const DWORD length = ::GetTempPathW(MAX_PATH, path);
+  if (length == 0 || length >= MAX_PATH)
+    return;
+  wcscat_s(path, L"k7extract_flow_diag.log");
+  HANDLE file = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+      NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (file == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  ::WriteFile(file, message,
+      (DWORD)(wcslen(message) * sizeof(wchar_t)), &written, NULL);
+  ::WriteFile(file, L"\r\n", 4, &written, NULL);
+  ::CloseHandle(file);
+}
+
+static void ExtractFlowDiagLogIndex(const wchar_t *stage, size_t index)
+{
+  wchar_t message[128] = {};
+  swprintf_s(message, L"%s index=%zu", stage, index);
+  ExtractFlowDiagLog(message);
+}
+
+static void ExtractFlowDiagLogResult(const wchar_t *stage, HRESULT result)
+{
+  wchar_t message[160] = {};
+  swprintf_s(message, L"%s hr=0x%08X", stage,
+      static_cast<unsigned>(result));
+  ExtractFlowDiagLog(message);
+}
+
 static BOOLEAN WINAPI QueryPasswordForDialog(
     LPCWSTR archivePath,
     UINT32 source,
@@ -112,15 +148,21 @@ static bool TryAutomaticPasswordCandidates(
     const CExtractOptions &options,
     CExtractCallbackImp *extractCallback)
 {
+  ExtractFlowDiagLog(L"[F2] automatic candidate phase enter");
   if (archivePathsFull.Size() != 1 || options.TestMode ||
       extractCallback->PasswordIsDefined)
+  {
+    ExtractFlowDiagLog(L"[F2] automatic candidate phase skipped");
     return false;
+  }
 
   std::vector<NanaZipPassword::Candidate> candidates;
   NanaZipPassword::BuildAutomaticCandidates(
       std::wstring(archivePathsFull[0].Ptr()), candidates);
+  ExtractFlowDiagLogIndex(L"[F2] candidates built count", candidates.size());
   for (size_t i = 0; i < candidates.size(); ++i)
   {
+    ExtractFlowDiagLogIndex(L"[F2] candidate begin", i);
     CExtractOptions testOptions = options;
     testOptions.TestMode = true;
     testOptions.OpenFolder.Val = false;
@@ -150,17 +192,24 @@ static bool TryAutomaticPasswordCandidates(
         #endif
         errorMessage,
         stat);
+    ExtractFlowDiagLogResult(L"[F2] candidate extract returned", result);
     if (result == S_OK && testCallback.IsOK())
     {
       if (!testCallback.PasswordWasAsked || stat.NumFiles == 0)
+      {
+        ExtractFlowDiagLog(L"[F2] candidate rejected no verified content");
         return false; // no password-protected archive content was verified
+      }
       extractCallback->Password = candidates[i].Value.c_str();
       extractCallback->PasswordIsDefined = true;
       extractCallback->PasswordSource = candidates[i].Source;
       extractCallback->PasswordArchivePath = archivePathsFull[0];
+      ExtractFlowDiagLog(L"[F2] candidate accepted");
       return true;
     }
+    ExtractFlowDiagLog(L"[F2] candidate rejected");
   }
+  ExtractFlowDiagLog(L"[F2] automatic candidate phase exhausted");
   return false;
 }
 
@@ -659,21 +708,17 @@ HRESULT ExtractGUI(
     HWND hwndParent)
 {
   messageWasDisplayed = false;
+  ExtractFlowDiagLog(L"[F1] ExtractGUI enter");
+  ExtractFlowDiagLog(showDialog
+      ? L"[F1] showDialog=true"
+      : L"[F1] showDialog=false");
+  ExtractFlowDiagLog(options.TestMode
+      ? L"[F1] testMode=true"
+      : L"[F1] testMode=false");
 
-  // Automatic candidates are validated by a no-write test pass before the
-  // real extraction begins. The 7-Zip password callback accepts only one
-  // password per operation, so this outer retry is the only reliable way
-  // to test every local password-book entry in order.
-  TryAutomaticPasswordCandidates(
-      codecs,
-      formatIndices,
-      excludedFormatIndices,
-      archivePaths,
-      archivePathsFull,
-      wildcardCensor,
-      options,
-      extractCallback);
-
+  // The automatic candidate test is deliberately performed after the
+  // optional extract dialog. In -ad mode, running a full test extraction on
+  // the UI thread before showing the dialog makes the dialog appear hung.
   CThreadExtracting extracter;
   /*
   #ifdef Z7_EXTERNAL_CODECS
@@ -712,8 +757,12 @@ HRESULT ExtractGUI(
       // XAML is now the only dialog path (the Win32 fallback was removed).
       // If the XAML infrastructure is unavailable, tell the user instead
       // of silently skipping the dialog.
+      ExtractFlowDiagLog(K7ModernAvailable()
+          ? L"[F3] K7ModernAvailable=true"
+          : L"[F3] K7ModernAvailable=false");
       if (!K7ModernAvailable())
       {
+        ExtractFlowDiagLog(L"[F3] unavailable branch");
         ShowErrorMessage(L"Extract dialog (XAML) initialization failed.");
         messageWasDisplayed = true;
         return E_FAIL;
@@ -851,7 +900,10 @@ HRESULT ExtractGUI(
           ctx.FontSizeDialog = pt;
         }
 
+        ExtractFlowDiagLog(L"[F4] calling K7ModernShowExtractDialog");
         const int modernResult = ::K7ModernShowExtractDialog(hwndParent, &ctx);
+        ExtractFlowDiagLogResult(L"[F4] K7ModernShowExtractDialog returned",
+            modernResult);
         if (modernResult == -1)
         {
           ShowErrorMessage(L"Extract dialog (XAML) initialization failed.");
@@ -976,6 +1028,23 @@ HRESULT ExtractGUI(
       #endif
       // **************** SSS Modification End ****************
     }
+
+    // Automatic candidates are validated by a no-write test pass before the
+    // real extraction begins. The 7-Zip password callback accepts only one
+    // password per operation, so this outer retry is the only reliable way
+    // to test every local password-book entry in order. In dialog mode this
+    // runs only after the user has seen and confirmed the dialog.
+    TryAutomaticPasswordCandidates(
+        codecs,
+        formatIndices,
+        excludedFormatIndices,
+        archivePaths,
+        archivePathsFull,
+        wildcardCensor,
+        options,
+        extractCallback);
+    ExtractFlowDiagLog(L"[F2] automatic candidate phase returned");
+
     // **************** 7-Zip ZS Modification Start ****************
     // The "Open target folder" checkbox (ZS legacy) is hidden; keep
     // OpnTrgFold false so the built-in browse never triggers.

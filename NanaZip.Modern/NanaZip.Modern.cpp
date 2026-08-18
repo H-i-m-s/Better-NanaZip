@@ -973,20 +973,53 @@ EXTERN_C INT WINAPI K7ModernShowOverwriteDialog(
         &InitialRect);
 }
 
+static void ExtractDiagLog(const wchar_t* msg)
+{
+    wchar_t path[MAX_PATH] = {};
+    const DWORD n = ::GetTempPathW(MAX_PATH, path);
+    if (n == 0 || n >= MAX_PATH)
+    {
+        return;
+    }
+    wcscat_s(path, L"k7extract_diag.log");
+    HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        ::WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)),
+            &written, nullptr);
+        ::WriteFile(h, L"\r\n", 4, &written, nullptr);
+        ::CloseHandle(h);
+    }
+}
+
+static void ExtractDiagLogResult(const wchar_t* stage, HRESULT result)
+{
+    wchar_t message[160] = {};
+    swprintf_s(message, L"%s hr=0x%08X", stage,
+        static_cast<unsigned>(result));
+    ExtractDiagLog(message);
+}
+
 EXTERN_C INT WINAPI K7ModernShowExtractDialog(
     _In_opt_ HWND ParentWindowHandle,
     _Inout_ PK7_EXTRACT_DIALOG_CONTEXT Context)
 {
+    ExtractDiagLog(L"[E1] K7ModernShowExtractDialog enter");
     if (!Context)
     {
+        ExtractDiagLog(L"[E2] null context");
         return -1;
     }
 
     HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
     if (!WindowHandle)
     {
+        ExtractDiagLog(L"[E3] CreateXamlDialog failed");
         return -1;
     }
+    ExtractDiagLog(L"[E3] CreateXamlDialog ok");
 
     using Interface =
         winrt::NanaZip::Modern::ExtractPage;
@@ -996,6 +1029,7 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
     Interface Window = winrt::make<Implementation>(
         WindowHandle,
         Context);
+    ExtractDiagLog(L"[E4] ExtractPage make ok");
 
     ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
 
@@ -1012,6 +1046,7 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
     // shrink the dialog below its measured content (which would clip the
     // options). The XAML page writes MinTrackW/MinTrackH from its content
     // during PrepareForShow; this subclass reads them in WM_GETMINMAXINFO.
+    ExtractDiagLog(L"[E5] installing subclass");
     if (!::SetWindowSubclass(
         WindowHandle,
         [](
@@ -1052,17 +1087,23 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
         1,
         reinterpret_cast<DWORD_PTR>(&Context->MinTrackW)))
     {
+        ExtractDiagLog(L"[E5] SetWindowSubclass failed");
         ::DestroyWindow(WindowHandle);
         return -1;
     }
+    ExtractDiagLog(L"[E5] subclass ok");
 
-    if (FAILED(::MileXamlSetXamlContentForContentWindow(
-        WindowHandle,
-        winrt::get_abi(Window))))
+    const HRESULT setContentResult =
+        ::MileXamlSetXamlContentForContentWindow(
+            WindowHandle,
+            winrt::get_abi(Window));
+    ExtractDiagLogResult(L"[E6] SetXamlContent result", setContentResult);
+    if (FAILED(setContentResult))
     {
         ::DestroyWindow(WindowHandle);
         return -1;
     }
+    ExtractDiagLog(L"[E6] SetXamlContent ok");
 
     if (ParentWindowHandle)
     {
@@ -1125,6 +1166,8 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
     if (ClientW > 1400) ClientW = 1400;
     if (ClientH > 900) ClientH = 900;
 
+    ExtractDiagLog(L"[E7] PrepareForShow ok");
+
     // Minimum size: the width may shrink (text may wrap), but the height
     // stays at the full content height so the buttons and the lower controls
     // are never clipped when the user compresses the dialog vertically.
@@ -1160,12 +1203,14 @@ EXTERN_C INT WINAPI K7ModernShowExtractDialog(
         ((ParentRect.bottom - ParentRect.top - WindowH) / 2);
     RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
 
+    ExtractDiagLog(L"[E8] entering message loop");
     int Result = ::K7ModernShowXamlWindow(
         WindowHandle,
         ClientW,
         ClientH,
         ParentWindowHandle,
         &InitialRect);
+    ExtractDiagLogResult(L"[E9] message loop returned", Result);
 
     return Result;
 }

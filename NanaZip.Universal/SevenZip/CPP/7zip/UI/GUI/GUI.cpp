@@ -459,7 +459,14 @@ void NanaZipInitialize()
         ::ErrorMessage(L"K7BaseDisableChildProcessCreation Failed");
     }
 
-    ::K7ModernInitialize();
+    const HRESULT modernResult = ::K7ModernInitialize();
+    if (FAILED(modernResult))
+    {
+        wchar_t message[160] = {};
+        swprintf_s(message, L"K7ModernInitialize failed: 0x%08X",
+            static_cast<unsigned>(modernResult));
+        ::ErrorMessage(message);
+    }
 }
 // **************** NanaZip Modification End ****************
 
