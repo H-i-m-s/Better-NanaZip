@@ -31,6 +31,8 @@ static const UInt32 kLangIDs[] =
   IDT_SETTINGS_API_SIGNING_KEY,
   IDT_SETTINGS_API_PACKAGE_NAME,
   IDT_SETTINGS_API_FINGERPRINT,
+  IDT_SETTINGS_API_PROTOCOL_VERSION,
+  IDT_SETTINGS_API_TIMEOUT_SECONDS,
   IDX_SETTINGS_AUTO_MATCH_LOCAL,
   IDT_SETTINGS_MATCH_PRIORITY,
   IDX_SETTINGS_AUTO_SHOW_PASSWORD,
@@ -162,6 +164,10 @@ void CExtractSettingsPage::LoadApiToEdits()
   SetItemText(IDX_SETTINGS_API_SIGNING_KEY, cfg.SigningKey);
   SetItemText(IDX_SETTINGS_API_PACKAGE_NAME, cfg.PackageName);
   SetItemText(IDX_SETTINGS_API_FINGERPRINT, cfg.Fingerprint);
+  SetItemText(IDX_SETTINGS_API_PROTOCOL_VERSION, cfg.ProtocolVersion);
+  UString timeout;
+  timeout.Add_UInt32(cfg.TimeoutSeconds);
+  SetItemText(IDX_SETTINGS_API_TIMEOUT_SECONDS, timeout);
 }
 
 void CExtractSettingsPage::ApplyApiFromEdits()
@@ -169,12 +175,19 @@ void CExtractSettingsPage::ApplyApiFromEdits()
   if (!_apiChanged)
     return; // 用户没动过 API 配置 → 不创建文件（懒创建）
   SssApiConfig cfg;
+  cfg.Clear();
   GetItemText(IDX_SETTINGS_API_URL, cfg.Url);
   GetItemText(IDX_SETTINGS_API_APP_ID, cfg.AppId);
   GetItemText(IDX_SETTINGS_API_AES_KEY, cfg.AesKey);
   GetItemText(IDX_SETTINGS_API_SIGNING_KEY, cfg.SigningKey);
   GetItemText(IDX_SETTINGS_API_PACKAGE_NAME, cfg.PackageName);
   GetItemText(IDX_SETTINGS_API_FINGERPRINT, cfg.Fingerprint);
+  GetItemText(IDX_SETTINGS_API_PROTOCOL_VERSION, cfg.ProtocolVersion);
+  UString timeout;
+  GetItemText(IDX_SETTINGS_API_TIMEOUT_SECONDS, timeout);
+  const UInt32 timeoutValue = (UInt32)wcstoul(timeout.Ptr(), NULL, 10);
+  if (timeoutValue >= 1 && timeoutValue <= 30)
+    cfg.TimeoutSeconds = timeoutValue;
   SssSaveApiConfig(cfg);
 }
 
@@ -215,7 +228,7 @@ bool CExtractSettingsPage::OnCommand(int code, int itemID, LPARAM param)
         }
         return true;
       }
-      if (itemID >= IDX_SETTINGS_API_URL && itemID <= IDX_SETTINGS_API_FINGERPRINT)
+      if (itemID >= IDX_SETTINGS_API_URL && itemID <= IDX_SETTINGS_API_TIMEOUT_SECONDS)
       {
         if (!_apiLoading)
         {

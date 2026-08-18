@@ -49,6 +49,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        void OnPasswordChanged(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
         void OnElimDupClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -150,5 +154,6 @@ namespace winrt::NanaZip::Modern::implementation
         // Page width (DIPs) below which the mode combos wrap below their
         // labels; computed from the wrapped layout in RecalcMinTrack.
         double m_WrapThresholdW;
+        bool m_ProgrammaticPasswordChange;
     };
 }

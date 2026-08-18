@@ -521,12 +521,16 @@ namespace winrt::NanaZip::Modern::implementation
         ExtractApiSigningKeyLabel().Text(Res(2549, L"Signing key:"));
         ExtractApiPackageLabel().Text(Res(2550, L"Package:"));
         ExtractApiFingerprintLabel().Text(Res(2551, L"Fingerprint:"));
+        ExtractApiProtocolVersionLabel().Text(Res(2582, L"Protocol version:"));
+        ExtractApiTimeoutLabel().Text(Res(2583, L"Timeout seconds:"));
         ExtractApiUrlBox().Text(winrt::hstring(this->m_Context->ApiUrl));
         ExtractApiAppIdBox().Text(winrt::hstring(this->m_Context->ApiAppId));
         ExtractApiAesKeyBox().Text(winrt::hstring(this->m_Context->ApiAesKey));
         ExtractApiSigningKeyBox().Text(winrt::hstring(this->m_Context->ApiSigningKey));
         ExtractApiPackageBox().Text(winrt::hstring(this->m_Context->ApiPackageName));
         ExtractApiFingerprintBox().Text(winrt::hstring(this->m_Context->ApiFingerprint));
+        ExtractApiProtocolVersionBox().Text(winrt::hstring(this->m_Context->ApiProtocolVersion));
+        ExtractApiTimeoutBox().Text(winrt::to_hstring(this->m_Context->ApiTimeoutSeconds));
 
         ExtractAutoMatchLocalCheck().Content(winrt::box_value(Res(2531, L"Auto match local password")));
         ExtractAutoMatchLocalCheck().IsChecked(BoxBool(this->m_Context->AutoMatchLocal != FALSE));
@@ -792,7 +796,8 @@ namespace winrt::NanaZip::Modern::implementation
         for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
                 ExtractApiUrlLabel(), ExtractApiAppIdLabel(),
                 ExtractApiAesKeyLabel(), ExtractApiSigningKeyLabel(),
-                ExtractApiPackageLabel(), ExtractApiFingerprintLabel() })
+                ExtractApiPackageLabel(), ExtractApiFingerprintLabel(),
+                ExtractApiProtocolVersionLabel(), ExtractApiTimeoutLabel() })
         {
             Label.ClearValue(
                 winrt::Windows::UI::Xaml::FrameworkElement::WidthProperty());
@@ -849,7 +854,8 @@ namespace winrt::NanaZip::Modern::implementation
         for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
                 ExtractApiUrlLabel(), ExtractApiAppIdLabel(),
                 ExtractApiAesKeyLabel(), ExtractApiSigningKeyLabel(),
-                ExtractApiPackageLabel(), ExtractApiFingerprintLabel() })
+                ExtractApiPackageLabel(), ExtractApiFingerprintLabel(),
+                ExtractApiProtocolVersionLabel(), ExtractApiTimeoutLabel() })
         {
             winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
             Label.Measure(Inf);
@@ -860,7 +866,8 @@ namespace winrt::NanaZip::Modern::implementation
             for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
                     ExtractApiUrlLabel(), ExtractApiAppIdLabel(),
                     ExtractApiAesKeyLabel(), ExtractApiSigningKeyLabel(),
-                    ExtractApiPackageLabel(), ExtractApiFingerprintLabel() })
+                    ExtractApiPackageLabel(), ExtractApiFingerprintLabel(),
+                    ExtractApiProtocolVersionLabel(), ExtractApiTimeoutLabel() })
             {
                 Label.Width(MaxApiLabelW);
             }
@@ -1406,6 +1413,19 @@ namespace winrt::NanaZip::Modern::implementation
             Target = this->m_Context->ApiPackageName;
         else if (sender == ExtractApiFingerprintBox())
             Target = this->m_Context->ApiFingerprint;
+        else if (sender == ExtractApiProtocolVersionBox())
+            Target = this->m_Context->ApiProtocolVersion;
+        else if (sender == ExtractApiTimeoutBox())
+        {
+            const std::wstring TimeoutText = ExtractApiTimeoutBox().Text().c_str();
+            const unsigned long Timeout = wcstoul(TimeoutText.c_str(), nullptr, 10);
+            if (Timeout >= 1 && Timeout <= 30)
+                this->m_Context->ApiTimeoutSeconds = static_cast<UINT32>(Timeout);
+            else
+                this->m_Context->ApiTimeoutSeconds = 5;
+            this->m_Context->DirtyApi = TRUE;
+            return;
+        }
         if (Target)
         {
             wcsncpy_s(Target, 256, Value.c_str(), _TRUNCATE);

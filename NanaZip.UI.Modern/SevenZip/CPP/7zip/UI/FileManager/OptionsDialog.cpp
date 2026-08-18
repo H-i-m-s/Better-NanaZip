@@ -408,6 +408,8 @@ static void FillSettingsDialogContext(
     wcsncpy_s(ctx.ApiSigningKey, cfg.SigningKey, _TRUNCATE);
     wcsncpy_s(ctx.ApiPackageName, cfg.PackageName, _TRUNCATE);
     wcsncpy_s(ctx.ApiFingerprint, cfg.Fingerprint, _TRUNCATE);
+    wcsncpy_s(ctx.ApiProtocolVersion, cfg.ProtocolVersion, _TRUNCATE);
+    ctx.ApiTimeoutSeconds = cfg.TimeoutSeconds;
   }
 }
 
@@ -532,6 +534,9 @@ static void SaveSettingsDialogContext(
     cfg.SigningKey = ctx.ApiSigningKey;
     cfg.PackageName = ctx.ApiPackageName;
     cfg.Fingerprint = ctx.ApiFingerprint;
+    cfg.ProtocolVersion = ctx.ApiProtocolVersion;
+    if (ctx.ApiTimeoutSeconds >= 1 && ctx.ApiTimeoutSeconds <= 30)
+      cfg.TimeoutSeconds = ctx.ApiTimeoutSeconds;
     SssSaveApiConfig(cfg);
   }
 }

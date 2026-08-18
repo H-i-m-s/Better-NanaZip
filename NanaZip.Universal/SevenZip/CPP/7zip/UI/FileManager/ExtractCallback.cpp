@@ -2,6 +2,9 @@
 
 #include "StdAfx.h"
 
+#include <string>
+#include <vector>
+
 #include "../../../Common/ComTry.h"
 #include "../../../Common/IntToString.h"
 #include "../../../Common/Lang.h"
@@ -24,6 +27,42 @@
 #include "resourceGui.h"
 
 #include "ExtractCallback.h"
+#include <NanaZip.Password.h>
+
+namespace
+{
+  static BOOLEAN WINAPI QueryPasswordForDialog(
+      LPCWSTR archivePath,
+      UINT32 source,
+      LPVOID context,
+      LPWSTR password,
+      UINT32 passwordCapacity)
+  {
+    if (!password || passwordCapacity == 0)
+      return FALSE;
+    const std::wstring *fullArchivePath =
+        static_cast<const std::wstring *>(context);
+    const std::wstring path = fullArchivePath ? *fullArchivePath
+        : (archivePath ? archivePath : L"");
+    if (path.empty())
+      return FALSE;
+    std::wstring value;
+    if (source == 1)
+    {
+      if (!NanaZipPassword::QueryCloudPassword(path, value))
+        return FALSE;
+    }
+    else
+    {
+      std::vector<NanaZipPassword::Candidate> candidates;
+      if (!NanaZipPassword::LoadLocalCandidates(candidates) || candidates.empty())
+        return FALSE;
+      value = candidates.front().Value;
+    }
+    wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
+    return TRUE;
+  }
+}
 #include "FormatUtils.h"
 #include "LangUtils.h"
 #include "MemDialog.h"
@@ -455,6 +494,9 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
 {
   _currentArchivePath = name;
   _needWriteArchivePath = true;
+  #ifndef Z7_NO_CRYPTO
+  PasswordArchivePath = name;
+  #endif
   #ifndef Z7_SFX
   RINOK(ProgressDialog->Sync.CheckStop())
   ProgressDialog->Sync.Set_TitleFileName(name);
@@ -726,6 +768,13 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
   {
 #ifdef NANAZIP_MODERN
     K7_PASSWORD_DIALOG_CONTEXT Context = {};
+    std::wstring queryArchivePath(PasswordArchivePath.Ptr());
+    {
+      wcsncpy_s(Context.ArchivePath, queryArchivePath.c_str(), _TRUNCATE);
+      Context.QueryCallback = QueryPasswordForDialog;
+      Context.QueryContext = &queryArchivePath;
+      Context.PasswordSource = 0;
+    }
     {
       // Dialog font size from the registry (mirrors the ExtractDialog font).
       DWORD pt = 0;
@@ -759,6 +808,19 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
       }
       Context.ShowPassword = (autoShow != 0 || showPassword) ? TRUE : FALSE;
     }
+    {
+      DWORD autoShare = 0;
+      HKEY key = nullptr;
+      if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", 0,
+          KEY_READ, &key) == ERROR_SUCCESS)
+      {
+        DWORD size = sizeof(autoShare);
+        ::RegQueryValueExW(key, L"AutoSharePassword", nullptr, nullptr,
+            reinterpret_cast<LPBYTE>(&autoShare), &size);
+        ::RegCloseKey(key);
+      }
+      Context.SharePassword = autoShare != 0 ? TRUE : FALSE;
+    }
     #endif
     {
       // Fixed-size ABI buffer: truncate before writing so an over-long
@@ -774,6 +836,10 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
       return E_ABORT;
     Password = Context.Password;
     PasswordIsDefined = true;
+    PasswordSource = Context.PasswordSource == 1 ? NanaZipPassword::PasswordSource::Cloud
+        : (Context.PasswordSource == 2 ? NanaZipPassword::PasswordSource::Local
+        : NanaZipPassword::PasswordSource::Manual);
+    SharePasswordAuthorized = Context.SharePassword != FALSE;
     #ifndef Z7_SFX
     if ((Context.ShowPassword != FALSE) != showPassword)
       NExtract::Save_ShowPassword(Context.ShowPassword);

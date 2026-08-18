@@ -59,6 +59,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
 
+        void OnPasswordChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::RoutedEventArgs const& e);
+
         void OnOkClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -91,5 +95,6 @@ namespace winrt::NanaZip::Modern::implementation
         HWND m_WindowHandle;
         PK7_PASSWORD_DIALOG_CONTEXT m_Context;
         bool m_OkClicked;
+        bool m_ProgrammaticPasswordChange;
     };
 }

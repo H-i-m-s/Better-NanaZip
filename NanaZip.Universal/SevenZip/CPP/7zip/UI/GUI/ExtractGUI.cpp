@@ -3,6 +3,7 @@
 #include "StdAfx.h"
 
 #include <vector>
+#include <string>
 
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -32,6 +33,7 @@
 #include "HashGUI.h"
 
 #include "NanaZip.Modern.h"
+#include <NanaZip.Password.h>
 
 #include "../FileManager/PropertyNameRes.h"
 
@@ -45,6 +47,38 @@ using namespace NFile;
 using namespace NDir;
 
 static const wchar_t * const kIncorrectOutDir = L"Incorrect output directory path";
+
+static BOOLEAN WINAPI QueryPasswordForDialog(
+    LPCWSTR archivePath,
+    UINT32 source,
+    LPVOID context,
+    LPWSTR password,
+    UINT32 passwordCapacity)
+{
+  if (!password || passwordCapacity == 0)
+    return FALSE;
+  const std::wstring *fullArchivePath =
+      static_cast<const std::wstring *>(context);
+  const std::wstring path = fullArchivePath ? *fullArchivePath
+      : (archivePath ? archivePath : L"");
+  if (path.empty())
+    return FALSE;
+  std::wstring value;
+  if (source == 1)
+  {
+    if (!NanaZipPassword::QueryCloudPassword(path, value))
+      return FALSE;
+  }
+  else
+  {
+    std::vector<NanaZipPassword::Candidate> candidates;
+    if (!NanaZipPassword::LoadLocalCandidates(candidates) || candidates.empty())
+      return FALSE;
+    value = candidates.front().Value;
+  }
+  wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
+  return TRUE;
+}
 
 #ifndef Z7_SFX
 
@@ -67,6 +101,68 @@ static void AddSizePair(UString &s, UINT resourceID, UInt64 value)
 }
 
 #endif
+
+static bool TryAutomaticPasswordCandidates(
+    CCodecs *codecs,
+    const CObjectVector<COpenType> &formatIndices,
+    const CIntVector &excludedFormatIndices,
+    const UStringVector &archivePaths,
+    const UStringVector &archivePathsFull,
+    const NWildcard::CCensorNode &wildcardCensor,
+    const CExtractOptions &options,
+    CExtractCallbackImp *extractCallback)
+{
+  if (archivePathsFull.Size() != 1 || options.TestMode ||
+      extractCallback->PasswordIsDefined)
+    return false;
+
+  std::vector<NanaZipPassword::Candidate> candidates;
+  NanaZipPassword::BuildAutomaticCandidates(
+      std::wstring(archivePathsFull[0].Ptr()), candidates);
+  for (size_t i = 0; i < candidates.size(); ++i)
+  {
+    CExtractOptions testOptions = options;
+    testOptions.TestMode = true;
+    testOptions.OpenFolder.Val = false;
+    UStringVector testPaths = archivePaths;
+    UStringVector testPathsFull = archivePathsFull;
+    CProgressDialog progress;
+    CExtractCallbackImp testCallback;
+    testCallback.ProgressDialog = &progress;
+    testCallback.PasswordIsDefined = true;
+    testCallback.Password = candidates[i].Value.c_str();
+    testCallback.Init();
+    UString errorMessage;
+    CDecompressStat stat;
+    const HRESULT result = Extract(
+        codecs,
+        formatIndices,
+        excludedFormatIndices,
+        testPaths,
+        testPathsFull,
+        wildcardCensor,
+        testOptions,
+        &testCallback,
+        &testCallback,
+        &testCallback,
+        #ifndef Z7_SFX
+        NULL,
+        #endif
+        errorMessage,
+        stat);
+    if (result == S_OK && testCallback.IsOK())
+    {
+      if (!testCallback.PasswordWasAsked || stat.NumFiles == 0)
+        return false; // no password-protected archive content was verified
+      extractCallback->Password = candidates[i].Value.c_str();
+      extractCallback->PasswordIsDefined = true;
+      extractCallback->PasswordSource = candidates[i].Source;
+      extractCallback->PasswordArchivePath = archivePathsFull[0];
+      return true;
+    }
+  }
+  return false;
+}
 
 class CThreadExtracting: public CProgressThreadVirt
 {
@@ -280,9 +376,6 @@ static void SssWriteDlgStateFile(CExtractDialog &dialog)
   #endif
   s += L"OpenFolder="; s += (dialog.OpenFolder.Val ? L"1" : L"0"); s += L"\r\n";
   s += L"DeleteAfterExtract="; s += (dialog.DeleteAfterExtract ? L"1" : L"0"); s += L"\r\n";
-  #ifndef Z7_SFX
-  s += L"Password="; s += dialog.Password; s += L"\r\n";
-  #endif
   DWORD written = 0;
   ::WriteFile(h, s.Ptr(), (DWORD)(s.Len() * sizeof(wchar_t)), &written, NULL);
   ::CloseHandle(h);
@@ -352,10 +445,6 @@ static void SssReadDlgStateFile(CExtractDialog &dialog)
         dialog.OpenFolder.Val = (val == L"1");
       else if (key == L"DeleteAfterExtract")
         dialog.DeleteAfterExtract = (val == L"1");
-      #ifndef Z7_SFX
-      else if (key == L"Password")
-        dialog.Password = val;
-      #endif
     }
     if (eol >= text.Len())
       break;
@@ -571,6 +660,20 @@ HRESULT ExtractGUI(
 {
   messageWasDisplayed = false;
 
+  // Automatic candidates are validated by a no-write test pass before the
+  // real extraction begins. The 7-Zip password callback accepts only one
+  // password per operation, so this outer retry is the only reliable way
+  // to test every local password-book entry in order.
+  TryAutomaticPasswordCandidates(
+      codecs,
+      formatIndices,
+      excludedFormatIndices,
+      archivePaths,
+      archivePathsFull,
+      wildcardCensor,
+      options,
+      extractCallback);
+
   CThreadExtracting extracter;
   /*
   #ifdef Z7_EXTERNAL_CODECS
@@ -652,8 +755,15 @@ HRESULT ExtractGUI(
           SssReadDlgStateFile(dialog);
 
         K7_EXTRACT_DIALOG_CONTEXT ctx = {};
-        wcscpy_s(ctx.DirPath, dialog.DirPath.Ptr());
-        wcscpy_s(ctx.ArcPath, dialog.ArcPath.Ptr());
+        wcsncpy_s(ctx.DirPath, dialog.DirPath.Ptr(), _TRUNCATE);
+        wcsncpy_s(ctx.ArcPath, dialog.ArcPath.Ptr(), _TRUNCATE);
+        std::wstring queryArchivePath = archivePathsFull.Size() == 1
+            ? std::wstring(archivePathsFull[0].Ptr()) : std::wstring();
+        ctx.QueryCallback = QueryPasswordForDialog;
+        ctx.QueryContext = &queryArchivePath;
+        ctx.PasswordSource = extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Cloud ? 1
+            : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Local ? 2
+            : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::CommandLine ? 3 : 0));
         ctx.PathMode = dialog.PathMode;
         ctx.OverwriteMode = dialog.OverwriteMode;
         ctx.PathMode_Force = dialog.PathMode_Force;
@@ -784,6 +894,15 @@ HRESULT ExtractGUI(
         dialog.OpenFolder.Val = ctx.OpenFolderVal;
         dialog.DeleteAfterExtract = ctx.DeleteAfterExtract;
         dialog.Password = ctx.Password;
+        extractCallback->SharePasswordAuthorized = ctx.SharePassword != FALSE;
+        extractCallback->PasswordSource = dialog.Password.IsEmpty()
+            ? NanaZipPassword::PasswordSource::None
+            : (ctx.PasswordSource == 1 ? NanaZipPassword::PasswordSource::Cloud
+            : (ctx.PasswordSource == 2 ? NanaZipPassword::PasswordSource::Local
+            : (ctx.PasswordSource == 3 ? NanaZipPassword::PasswordSource::CommandLine
+            : NanaZipPassword::PasswordSource::Manual)));
+        extractCallback->PasswordArchivePath = archivePathsFull.Size() == 1
+            ? us2fs(archivePathsFull[0]) : FString();
 
         outputDir = us2fs(dialog.DirPath);
         options.OverwriteMode = dialog.OverwriteMode;
@@ -944,6 +1063,16 @@ HRESULT ExtractGUI(
   // the file manager deletes them all in one shot.
   if (!options.TestMode && extracter.Result == S_OK && extractCallback->IsOK())
   {
+    if (extractCallback->SharePasswordAuthorized &&
+        (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Manual ||
+         extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Local) &&
+        !extractCallback->PasswordArchivePath.IsEmpty() &&
+        !extractCallback->Password.IsEmpty())
+    {
+      NanaZipPassword::SharePassword(
+          std::wstring(extractCallback->PasswordArchivePath.Ptr()),
+          std::wstring(extractCallback->Password.Ptr()));
+    }
     SssWriteBatchOk();
     if (!g_SssReleaseBeforeDeleteMarker.IsEmpty() && deleteAfter)
       SssWriteReleaseBeforeDeleteMarker(deletePermanently);

@@ -399,6 +399,8 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     WCHAR ApiSigningKey[256];
     WCHAR ApiPackageName[256];
     WCHAR ApiFingerprint[256];
+    WCHAR ApiProtocolVersion[64];
+    UINT32 ApiTimeoutSeconds;
     WCHAR PasswordBook[4096];
 
     // --- Window state ---
@@ -690,6 +692,15 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
  *        current values before calling K7ModernShowExtractDialog, and the
  *        dialog writes the user-modified values back into it.
  */
+#define K7_PASSWORD_MAX_PASSWORD_LENGTH 512
+
+typedef BOOLEAN (WINAPI *K7_PASSWORD_QUERY_CALLBACK)(
+    _In_ LPCWSTR ArchivePath,
+    _In_ UINT32 Source,
+    _In_opt_ LPVOID CallbackContext,
+    _Out_writes_z_(K7_PASSWORD_MAX_PASSWORD_LENGTH) LPWSTR Password,
+    _In_ UINT32 PasswordCapacity);
+
 typedef struct _K7_EXTRACT_DIALOG_CONTEXT
 {
     // --- Input ---
@@ -736,6 +747,13 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // the "auto share password" setting, the dialog changes never write
     // back).
     BOOLEAN SharePassword;
+    // The query callback belongs to the 7-Zip host; the XAML page only
+    // requests a password and writes a successful result into its input box.
+    K7_PASSWORD_QUERY_CALLBACK QueryCallback;
+    LPVOID QueryContext;
+    // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
+    // 3 = command-line password.
+    UINT32 PasswordSource;
     BOOLEAN SplitDestDef;
     BOOLEAN SplitDestVal;
     BOOLEAN SplitDestDef2;
@@ -969,8 +987,6 @@ EXTERN_C INT WINAPI K7ModernShowSplitDialog(
  *        K7ModernShowPasswordDialog, and the dialog writes the user's
  *        input back into it.
  */
-#define K7_PASSWORD_MAX_PASSWORD_LENGTH 512
-
 typedef struct _K7_PASSWORD_DIALOG_CONTEXT
 {
     // --- Input ---
@@ -986,6 +1002,14 @@ typedef struct _K7_PASSWORD_DIALOG_CONTEXT
     // "auto share password" setting; the dialog-level changes never write
     // back to the setting.
     BOOLEAN SharePassword;
+    // Archive identity for the query button. The XAML page passes it to the
+    // caller-owned callback and never performs network or configuration work.
+    WCHAR ArchivePath[MAX_PATH];
+    K7_PASSWORD_QUERY_CALLBACK QueryCallback;
+    LPVOID QueryContext;
+    // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
+    // 3 = command-line password.
+    UINT32 PasswordSource;
     // Minimum window track size in physical pixels, computed by the XAML
     // page from its measured content and read by the window subclass in
     // WM_GETMINMAXINFO. 0 = not yet set.

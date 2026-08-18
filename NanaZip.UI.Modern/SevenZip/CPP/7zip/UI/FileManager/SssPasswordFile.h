@@ -43,7 +43,10 @@ struct SssApiConfig
   UString SigningKey;  // CloudSigningKey
   UString PackageName; // CloudPackageName
   UString Fingerprint; // CloudFingerprint
+  UString ProtocolVersion; // CloudProtocolVersion, default 2.2.3
+  UInt32 TimeoutSeconds; // CloudTimeoutSeconds, default 5
 
+  SssApiConfig() { Clear(); }
   void Clear();
   // 六项全部非空才算完整（云端查询启用时的前置条件）
   bool IsComplete() const;

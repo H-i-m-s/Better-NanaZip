@@ -759,6 +759,12 @@
   <data name="Resource2556" xml:space="preserve">
     <value>匹配本地密码</value>
   </data>
+  <data name="Resource2582" xml:space="preserve">
+    <value>协议版本:</value>
+  </data>
+  <data name="Resource2583" xml:space="preserve">
+    <value>超时秒数:</value>
+  </data>
 
 
 

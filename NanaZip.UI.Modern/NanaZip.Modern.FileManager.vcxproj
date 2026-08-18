@@ -25,6 +25,7 @@
   <Import Project="..\K7Base\K7Base.props" />
   <Import Project="..\K7User\K7User.props" />
   <Import Project="..\NanaZip.Modern\NanaZip.Modern.props" />
+  <Import Project="..\NanaZip.Password\NanaZip.Password.props" />
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalOptions>%(AdditionalOptions) /Wv:18</AdditionalOptions>

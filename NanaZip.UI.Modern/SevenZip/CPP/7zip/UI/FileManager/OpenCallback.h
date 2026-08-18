@@ -15,6 +15,7 @@
 #include "ProgressDialog.h"
 #else
 #include "ProgressDialog2.h"
+#include <NanaZip.Password.h>
 #endif
 
 
@@ -36,6 +37,8 @@ public:
   bool PasswordIsDefined;
   bool PasswordWasAsked;
   UString Password;
+  NanaZipPassword::PasswordSource PasswordSource;
+  bool SharePasswordAuthorized;
   HWND ParentWindow;
   CProgressDialog ProgressDialog;
 
@@ -66,6 +69,8 @@ public:
     _subArchiveMode = false;
     PasswordIsDefined = false;
     PasswordWasAsked = false;
+    PasswordSource = NanaZipPassword::PasswordSource::None;
+    SharePasswordAuthorized = false;
   }
   /*
   void Init()

@@ -401,6 +401,8 @@
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock x:Name="ExtractApiUrlLabel" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
             <TextBox x:Name="ExtractApiUrlBox" Grid.Row="0" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
@@ -414,6 +416,10 @@
             <TextBox x:Name="ExtractApiPackageBox" Grid.Row="4" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
             <TextBlock x:Name="ExtractApiFingerprintLabel" Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" />
             <TextBox x:Name="ExtractApiFingerprintBox" Grid.Row="5" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiProtocolVersionLabel" Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiProtocolVersionBox" Grid.Row="6" Grid.Column="1" Margin="6,2,0,2" TextChanged="ExtractApiTextChanged" />
+            <TextBlock x:Name="ExtractApiTimeoutLabel" Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" />
+            <TextBox x:Name="ExtractApiTimeoutBox" Grid.Row="7" Grid.Column="1" Margin="6,2,0,2" InputScope="Number" TextChanged="ExtractApiTextChanged" />
           </Grid>
           <CheckBox
             x:Name="ExtractAutoMatchLocalCheck"

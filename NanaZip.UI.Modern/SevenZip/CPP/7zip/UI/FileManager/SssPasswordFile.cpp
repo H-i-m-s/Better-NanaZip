@@ -6,6 +6,8 @@
 
 #include <appmodel.h>
 #include <shlobj.h>
+#include <wincrypt.h>
+#include <vector>
 
 #include "../../../Common/StringConvert.h"
 #include "../../../Common/MyBuffer.h"
@@ -18,16 +20,84 @@ using namespace NWindows::NFile;
 
 static const wchar_t * const kPasswordFileName = L"passwords.txt";
 static const wchar_t * const kApiConfigFileName = L"api_config.txt";
+// NanaZip's packaged FileManager/7zG helpers may run without package
+// identity even though the application itself was installed from MSIX.
+// Keep the same package-family fallback used by the existing history files.
+static const wchar_t * const kNanaZipPackageFamilyName =
+  L"SSS.NanaZip.RemotePassword_t9byekn60qs4j";
 
-static const wchar_t * const kApiKeys[6] =
+static const wchar_t * const kApiKeys[8] =
 {
   L"CloudApiUrl",
   L"CloudAppId",
   L"CloudAesKey",
   L"CloudSigningKey",
   L"CloudPackageName",
-  L"CloudFingerprint"
+  L"CloudFingerprint",
+  L"CloudProtocolVersion",
+  L"CloudTimeoutSeconds"
 };
+
+static const wchar_t * const kProtectedValuePrefix = L"dpapi:";
+
+static bool SssProtectConfigValue(const UString &plain, UString &protectedValue)
+{
+  protectedValue.Empty();
+  AString utf8 = UnicodeStringToMultiByte(plain, CP_UTF8);
+  DATA_BLOB input = {};
+  input.pbData = (BYTE *)(void *)utf8.Ptr();
+  input.cbData = utf8.Len();
+  DATA_BLOB output = {};
+  if (!::CryptProtectData(&input, L"NanaZip cloud password configuration",
+      NULL, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &output))
+    return false;
+  DWORD length = 0;
+  const bool sizeOk = ::CryptBinaryToStringW(output.pbData, output.cbData,
+      CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &length) != FALSE;
+  std::vector<wchar_t> encoded(sizeOk ? length : 0, 0);
+  const bool encodeOk = sizeOk && ::CryptBinaryToStringW(output.pbData,
+      output.cbData, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
+      encoded.data(), &length) != FALSE;
+  ::LocalFree(output.pbData);
+  if (!encodeOk)
+    return false;
+  protectedValue = kProtectedValuePrefix;
+  protectedValue += encoded.data();
+  return true;
+}
+
+static bool SssUnprotectConfigValue(const UString &stored, UString &plain)
+{
+  plain.Empty();
+  if (!stored.IsPrefixedBy(kProtectedValuePrefix))
+  {
+    plain = stored; // Backward-compatible read; next save migrates to DPAPI.
+    return true;
+  }
+  const UString encoded = stored.Ptr(MyStringLen(kProtectedValuePrefix));
+  DWORD length = 0;
+  if (!::CryptStringToBinaryW(encoded.Ptr(), encoded.Len(),
+      CRYPT_STRING_BASE64, NULL, &length, NULL, NULL))
+    return false;
+  std::vector<BYTE> bytes(length);
+  if (!::CryptStringToBinaryW(encoded.Ptr(), encoded.Len(),
+      CRYPT_STRING_BASE64, bytes.data(), &length, NULL, NULL))
+    return false;
+  DATA_BLOB input = {};
+  input.pbData = bytes.data();
+  input.cbData = length;
+  DATA_BLOB output = {};
+  if (!::CryptUnprotectData(&input, NULL, NULL, NULL, NULL,
+      CRYPTPROTECT_UI_FORBIDDEN, &output))
+    return false;
+  AString utf8;
+  utf8.SetFrom_CalcLen((const char *)output.pbData, output.cbData);
+  plain = MultiByteToUnicodeString(utf8, CP_UTF8);
+  ::SecureZeroMemory(output.pbData, output.cbData);
+  ::LocalFree(output.pbData);
+  ::SecureZeroMemory(bytes.data(), bytes.size());
+  return true;
+}
 
 FString SssGetLocalStateDir()
 {
@@ -44,20 +114,34 @@ FString SssGetLocalStateDir()
   // 第一次调用：buffer=NULL 查询所需大小，返回 ERROR_INSUFFICIENT_BUFFER(0x7A) 是正常行为
   LONG rc = GetCurrentPackageInfo(filter, &bufferLength, NULL, &count);
   if (rc != ERROR_INSUFFICIENT_BUFFER || bufferLength == 0)
-    return dir;
+  {
+    UString full = base;
+    full += L"\\Packages\\";
+    full += kNanaZipPackageFamilyName;
+    full += L"\\LocalState";
+    return us2fs(full);
+  }
 
   CByteBuffer buf;
   buf.Alloc(bufferLength);
   if (GetCurrentPackageInfo(filter, &bufferLength, buf, &count) != ERROR_SUCCESS)
-    return dir;
+  {
+    UString full = base;
+    full += L"\\Packages\\";
+    full += kNanaZipPackageFamilyName;
+    full += L"\\LocalState";
+    return us2fs(full);
+  }
 
   const PACKAGE_INFO *info = (const PACKAGE_INFO *)(const void *)buf;
-  if (info->packageFamilyName == NULL || info->packageFamilyName[0] == 0)
-    return dir;
+  const wchar_t *packageFamilyName =
+    (info->packageFamilyName && info->packageFamilyName[0])
+      ? (const wchar_t *)info->packageFamilyName
+      : kNanaZipPackageFamilyName;
 
   UString full = base;
   full += L"\\Packages\\";
-  full += (const wchar_t *)info->packageFamilyName;
+  full += packageFamilyName;
   full += L"\\LocalState";
   return us2fs(full);
 }
@@ -105,6 +189,8 @@ bool SssReadFileUtf8(const FString &path, UString &text)
 
 static bool SssWriteWholeFileUtf8(const FString &path, const UString &text)
 {
+  if (path.IsEmpty())
+    return false;
   NIO::COutFile file;
   // createAlways=true → CREATE_ALWAYS（覆盖已有文件）；密码本/配置会多次全量重写
   if (!file.Create(path, true))
@@ -199,6 +285,8 @@ void SssApiConfig::Clear()
   SigningKey.Empty();
   PackageName.Empty();
   Fingerprint.Empty();
+  ProtocolVersion = L"2.2.3";
+  TimeoutSeconds = 5;
 }
 
 bool SssApiConfig::IsComplete() const
@@ -225,15 +313,33 @@ bool SssLoadApiConfig(SssApiConfig &cfg)
       continue;
     UString key = line.Left((unsigned)eq);
     UString value = line.Ptr((unsigned)(eq + 1));
-    for (int k = 0; k < 6; k++)
+    for (int k = 0; k < 8; k++)
     {
-      if (key == (const wchar_t *)kApiKeys[k])
+      if (key != (const wchar_t *)kApiKeys[k])
+        continue;
+      if (k == 0) cfg.Url = value;
+      else if (k >= 1 && k <= 5)
       {
-        UString *dest = (k == 0) ? &cfg.Url : (k == 1) ? &cfg.AppId : (k == 2) ? &cfg.AesKey
-            : (k == 3) ? &cfg.SigningKey : (k == 4) ? &cfg.PackageName : &cfg.Fingerprint;
-        *dest = value;
-        break;
+        UString plain;
+        if (!SssUnprotectConfigValue(value, plain))
+        {
+          cfg.Clear();
+          return false;
+        }
+        if (k == 1) cfg.AppId = plain;
+        else if (k == 2) cfg.AesKey = plain;
+        else if (k == 3) cfg.SigningKey = plain;
+        else if (k == 4) cfg.PackageName = plain;
+        else cfg.Fingerprint = plain;
       }
+      else if (k == 6 && !value.IsEmpty()) cfg.ProtocolVersion = value;
+      else if (k == 7)
+      {
+        const UInt32 timeout = (UInt32)wcstoul(value.Ptr(), NULL, 10);
+        if (timeout >= 1 && timeout <= 30)
+          cfg.TimeoutSeconds = timeout;
+      }
+      break;
     }
   }
   return true;
@@ -242,15 +348,25 @@ bool SssLoadApiConfig(SssApiConfig &cfg)
 bool SssSaveApiConfig(const SssApiConfig &cfg)
 {
   UString text;
-  for (int k = 0; k < 6; k++)
+  for (int k = 0; k < 8; k++)
   {
-    const UString *value = (k == 0) ? &cfg.Url : (k == 1) ? &cfg.AppId : (k == 2) ? &cfg.AesKey
-        : (k == 3) ? &cfg.SigningKey : (k == 4) ? &cfg.PackageName : &cfg.Fingerprint;
+    UString value;
+    if (k == 0) value = cfg.Url;
+    else if (k >= 1 && k <= 5)
+    {
+      const UString *plain = (k == 1) ? &cfg.AppId : (k == 2) ? &cfg.AesKey
+          : (k == 3) ? &cfg.SigningKey : (k == 4) ? &cfg.PackageName
+          : &cfg.Fingerprint;
+      if (!SssProtectConfigValue(*plain, value))
+        return false;
+    }
+    else if (k == 6) value = cfg.ProtocolVersion;
+    else value.Add_UInt32(cfg.TimeoutSeconds);
     if (k != 0)
       text += L"\r\n";
     text += kApiKeys[k];
     text += L"=";
-    text += *value;
+    text += value;
   }
   return SssWriteWholeFileUtf8(SssLocalStateFilePath(kApiConfigFileName), text);
 }

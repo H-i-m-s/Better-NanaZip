@@ -267,6 +267,9 @@ static int Main2()
     #ifndef Z7_NO_CRYPTO
     ecs->PasswordIsDefined = options.PasswordEnabled;
     ecs->Password = options.Password;
+    ecs->PasswordSource = (options.PasswordEnabled && !options.Password.IsEmpty())
+        ? NanaZipPassword::PasswordSource::CommandLine
+        : NanaZipPassword::PasswordSource::None;
     #endif
 
     ecs->Init();

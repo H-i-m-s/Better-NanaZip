@@ -759,6 +759,12 @@
   <data name="Resource2556" xml:space="preserve">
     <value>Match local password</value>
   </data>
+  <data name="Resource2582" xml:space="preserve">
+    <value>Protocol version:</value>
+  </data>
+  <data name="Resource2583" xml:space="preserve">
+    <value>Timeout seconds:</value>
+  </data>
 
 
 

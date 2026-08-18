@@ -27,6 +27,7 @@
 #endif
 
 #include "ProgressDialog2.h"
+#include <NanaZip.Password.h>
 
 #ifndef Z7_SFX
 
@@ -295,6 +296,9 @@ public:
 
 #ifndef Z7_NO_CRYPTO
   UString Password;
+  NanaZipPassword::PasswordSource PasswordSource;
+  bool SharePasswordAuthorized;
+  FString PasswordArchivePath;
 #endif
 
   UString _lang_Extracting;
@@ -314,6 +318,8 @@ public:
 #ifndef Z7_NO_CRYPTO
     , PasswordIsDefined(false)
     , PasswordWasAsked(false)
+    , PasswordSource(NanaZipPassword::PasswordSource::None)
+    , SharePasswordAuthorized(false)
 #endif
 #ifndef Z7_SFX
     , _remember(false)

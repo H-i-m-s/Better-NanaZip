@@ -177,7 +177,8 @@
                             x:Name="PasswordGroupText"/>
                         <PasswordBox
                             x:Name="PasswordBox"
-                            Margin="0,6,0,0"/>
+                            Margin="0,6,0,0"
+                            PasswordChanged="OnPasswordChanged"/>
                         <!-- Cloud / local password lookup buttons: UI only
                              for now, the handlers are placeholders. -->
                         <StackPanel x:Name="PasswordButtonsPanel" Orientation="Horizontal" Margin="0,8,0,0">

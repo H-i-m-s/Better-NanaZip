@@ -48,6 +48,10 @@
 #define IDT_SETTINGS_API_PACKAGE_NAME       2550
 #define IDT_SETTINGS_API_FINGERPRINT        2551
 #define IDT_SETTINGS_MATCH_PRIORITY         2552
+#define IDX_SETTINGS_API_PROTOCOL_VERSION   2580
+#define IDX_SETTINGS_API_TIMEOUT_SECONDS    2581
+#define IDT_SETTINGS_API_PROTOCOL_VERSION   2582
+#define IDT_SETTINGS_API_TIMEOUT_SECONDS    2583
 // **************** SSS Modification End ****************
 // **************** SSS Modification End ****************
 #define IDT_SETTINGS_FONT_GROUP           2514

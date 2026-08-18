@@ -20,7 +20,8 @@ namespace winrt::NanaZip::Modern::implementation
         _In_ PK7_PASSWORD_DIALOG_CONTEXT Context) :
         m_WindowHandle(WindowHandle),
         m_Context(Context),
-        m_OkClicked(false)
+        m_OkClicked(false),
+        m_ProgrammaticPasswordChange(false)
     {
         this->Loaded({ this, &PasswordPage::OnLoaded });
         this->Unloaded({ this, &PasswordPage::OnUnloaded });
@@ -165,7 +166,9 @@ namespace winrt::NanaZip::Modern::implementation
         CancelButton().Content(winrt::box_value(RemoveMnemonic(Res(402, L"Cancel"))));
 
         // Initial password and show-password state.
+        this->m_ProgrammaticPasswordChange = true;
         PasswordInput().Password(winrt::hstring(Context->Password));
+        this->m_ProgrammaticPasswordChange = false;
         ShowPasswordCheck().IsChecked(BoxBool(
             Context->ShowPassword != FALSE));
         // "Share password" initial state comes from the host (the
@@ -252,20 +255,50 @@ namespace winrt::NanaZip::Modern::implementation
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
-        // Placeholder: cloud password lookup is implemented later (same as
-        // the extract dialog).
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
+        if (!this->m_Context || !this->m_Context->QueryCallback)
+        {
+            return;
+        }
+        wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
+        if (this->m_Context->QueryCallback(
+            this->m_Context->ArchivePath,
+            1,
+            this->m_Context->QueryContext,
+            Password,
+            ARRAYSIZE(Password)))
+        {
+            this->m_ProgrammaticPasswordChange = true;
+            PasswordInput().Password(winrt::hstring(Password));
+            this->m_ProgrammaticPasswordChange = false;
+            this->m_Context->PasswordSource = 1;
+        }
     }
 
     void PasswordPage::OnLocalPasswordClicked(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
     {
-        // Placeholder: local password matching is implemented later (same as
-        // the extract dialog).
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
+        if (!this->m_Context || !this->m_Context->QueryCallback)
+        {
+            return;
+        }
+        wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
+        if (this->m_Context->QueryCallback(
+            this->m_Context->ArchivePath,
+            2,
+            this->m_Context->QueryContext,
+            Password,
+            ARRAYSIZE(Password)))
+        {
+            this->m_ProgrammaticPasswordChange = true;
+            PasswordInput().Password(winrt::hstring(Password));
+            this->m_ProgrammaticPasswordChange = false;
+            this->m_Context->PasswordSource = 2;
+        }
     }
 
     void PasswordPage::OnSharePasswordClicked(
@@ -276,6 +309,18 @@ namespace winrt::NanaZip::Modern::implementation
         // extract dialog).
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
+    }
+
+    void PasswordPage::OnPasswordChanged(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        if (this->m_Context && !this->m_ProgrammaticPasswordChange)
+        {
+            this->m_Context->PasswordSource = 0;
+        }
     }
 
     void PasswordPage::OnPasswordKeyDown(
@@ -357,6 +402,8 @@ namespace winrt::NanaZip::Modern::implementation
             Show = Checked.Value();
         }
         Context->ShowPassword = Show ? TRUE : FALSE;
+        Context->SharePassword = SharePasswordCheck().IsChecked() &&
+            SharePasswordCheck().IsChecked().Value() ? TRUE : FALSE;
 
         this->m_OkClicked = true;
         Context->OK = TRUE;
