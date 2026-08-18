@@ -146,9 +146,19 @@ static bool TryAutomaticPasswordCandidates(
     const UStringVector &archivePathsFull,
     const NWildcard::CCensorNode &wildcardCensor,
     const CExtractOptions &options,
-    CExtractCallbackImp *extractCallback)
+    CExtractCallbackImp *extractCallback,
+    bool showDialog)
 {
   ExtractFlowDiagLog(L"[F2] automatic candidate phase enter");
+  // In dialog mode, an empty password must reach the formal extraction
+  // callback immediately so that CryptoGetTextPassword can show the password
+  // dialog. The XAML extraction page still provides explicit local/cloud
+  // lookup actions before confirmation.
+  if (showDialog)
+  {
+    ExtractFlowDiagLog(L"[F2] automatic candidate phase skipped dialog mode");
+    return false;
+  }
   if (archivePathsFull.Size() != 1 || options.TestMode ||
       extractCallback->PasswordIsDefined)
   {
@@ -173,6 +183,7 @@ static bool TryAutomaticPasswordCandidates(
     testCallback.ProgressDialog = &progress;
     testCallback.PasswordIsDefined = true;
     testCallback.Password = candidates[i].Value.c_str();
+    testCallback.TestMode = true;
     testCallback.Init();
     UString errorMessage;
     CDecompressStat stat;
@@ -1029,12 +1040,11 @@ HRESULT ExtractGUI(
       // **************** SSS Modification End ****************
     }
 
-    // Automatic candidates are validated by a no-write test pass before the
-    // real extraction begins. The 7-Zip password callback accepts only one
-    // password per operation, so this outer retry is the only reliable way
-    // to test every local password-book entry in order. In dialog mode this
-    // runs only after the user has seen and confirmed the dialog.
-    TryAutomaticPasswordCandidates(
+    // Automatic candidates are validated by a no-write test pass for the
+    // no-dialog path. In dialog mode the page's explicit local/cloud lookup
+    // actions are used instead, so an empty password can reach the formal
+    // extraction callback and open the password dialog.
+    const bool candidateAccepted = TryAutomaticPasswordCandidates(
         codecs,
         formatIndices,
         excludedFormatIndices,
@@ -1042,8 +1052,11 @@ HRESULT ExtractGUI(
         archivePathsFull,
         wildcardCensor,
         options,
-        extractCallback);
-    ExtractFlowDiagLog(L"[F2] automatic candidate phase returned");
+        extractCallback,
+        showDialog);
+    ExtractFlowDiagLog(candidateAccepted
+        ? L"[F2] automatic candidate phase accepted"
+        : L"[F2] automatic candidate phase returned");
 
     // **************** 7-Zip ZS Modification Start ****************
     // The "Open target folder" checkbox (ZS legacy) is hidden; keep
