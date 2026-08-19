@@ -2301,6 +2301,30 @@ void CCompressDialogCore::SetArchiveName2(bool prevWasSFX)
 }
 
 
+// Appends the current format's main extension when the archive name has
+// none (the user replaced the whole selected file name). Existing
+// extensions are left alone; SFX mode appends .exe.
+void CCompressDialogCore::EnsureArchiveExtension()
+{
+  UString name = ArchiveName;
+  name.Trim();
+  if (name.IsEmpty())
+    return;
+  if (GetExtDotPos(name) >= 0)
+    return;
+  if (IsSfx())
+  {
+    name += kExeExt;
+  }
+  else
+  {
+    name.Add_Dot();
+    name += Get_ArcInfoEx().GetMainExt();
+  }
+  ArchiveName = name;
+}
+
+
 bool CCompressDialogCore::ArcPathChanged(const UString &path)
 {
   const int dotPos = GetExtDotPos(path);

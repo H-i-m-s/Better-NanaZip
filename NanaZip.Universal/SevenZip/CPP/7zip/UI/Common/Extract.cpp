@@ -19,6 +19,16 @@
 // **************** NanaZip Modification Start ****************
 #include <set>
 #include <string>
+// Batch password session result recording (defined in ExtractGUI.cpp,
+// GUI build only; Z7_LANG is the 7-Zip convention that separates the
+// GUI project from the Console project).
+// Called once per archive by the Extract() loop below so the File
+// Manager can show a summary (extracted / skipped / failed) after 7zG
+// exits. Declared at file scope: the loop is in Extract(), not in the
+// per-archive DecompressArchive helper.
+#ifdef Z7_LANG
+void SssRecordBatchArchiveResult(const UString &archivePath, bool ok);
+#endif
 // **************** NanaZip Modification End ****************
 
 using namespace NWindows;
@@ -519,6 +529,11 @@ HRESULT Extract(
       thereAreNotOpenArcs = true;
       if (!options.StdInMode)
         totalPackProcessed += fi.Size;
+      // **************** NanaZip Modification Start ****************
+#ifdef Z7_LANG
+      SssRecordBatchArchiveResult(arcPath, false);
+#endif
+      // **************** NanaZip Modification End ****************
       continue;
     }
 
@@ -641,6 +656,14 @@ HRESULT Extract(
     totalPackProcessed += packProcessed;
     ecs->LocalProgressSpec->InSize += packProcessed;
     ecs->LocalProgressSpec->OutSize = ecs->UnpackSize;
+    // **************** NanaZip Modification Start ****************
+    // Per-archive result: skipped archives were already recorded by the
+    // password callback (code 1) and are not overwritten; everything else
+    // is success (0) or a real failure (2).
+#ifdef Z7_LANG
+    SssRecordBatchArchiveResult(arcPath, errorMessage.IsEmpty());
+#endif
+    // **************** NanaZip Modification End ****************
     if (!errorMessage.IsEmpty())
       return E_FAIL;
   }

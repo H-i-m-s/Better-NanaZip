@@ -425,6 +425,109 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
 }
 
 // **************** NanaZip Modification Start ****************
+// Reads the per-batch result file written by 7zG (one UTF-16 line per
+// archive: <code>\t<path>, 0 = extracted, 1 = skipped, 2 = failed) and
+// shows the summary, naming the archives that were skipped because no
+// verifying password was found. The file is deleted after reading.
+static void SssShowBatchResultSummary(const UString &sessionId,
+    unsigned total)
+{
+  wchar_t temp[MAX_PATH];
+  UString path;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    path = temp;
+    path += L"sss_batch_result_";
+    path += sessionId;
+    path += L".txt";
+  }
+  if (path.IsEmpty())
+    return;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  const DWORD size = ::GetFileSize(h, NULL);
+  std::vector<wchar_t> buf((size / sizeof(wchar_t)) + 1, 0);
+  DWORD read = 0;
+  if (size >= 2)
+  {
+    ::ReadFile(h, buf.data(), size - (size & 1), &read, NULL);
+  }
+  ::CloseHandle(h);
+  ::DeleteFileW(path);
+
+  unsigned done = 0;
+  unsigned skipped = 0;
+  unsigned failed = 0;
+  UStringVector skippedNames;
+  unsigned rows = 0;
+  size_t pos = 0;
+  while (pos < buf.size() && buf[pos] != 0)
+  {
+    // One line: <code>\t<path>\n
+    const unsigned code = (unsigned)(buf[pos] - L'0');
+    size_t tab = pos + 2; // skip "<code>\t"
+    size_t lineEnd = tab;
+    while (lineEnd < buf.size() &&
+        buf[lineEnd] != L'\n' && buf[lineEnd] != 0)
+    {
+      lineEnd++;
+    }
+    UString name(buf.data() + tab);
+    name.DeleteFrom((unsigned)(lineEnd - tab));
+    if (code == 0)
+      done++;
+    else if (code == 1)
+    {
+      skipped++;
+      // Show only the file name, not the full path.
+      int slash = name.ReverseFind(L'\\');
+      if (slash < 0)
+        slash = name.ReverseFind(L'/');
+      skippedNames.Add(name.Ptr(slash < 0 ? 0 : slash + 1));
+    }
+    else
+      failed++;
+    rows++;
+    if (buf[lineEnd] == 0)
+      break;
+    pos = lineEnd + 1;
+  }
+  // Archives with no result row (7zG aborted before handling them) count
+  // as failed; the summary still adds up to the submitted total.
+  if (rows < total)
+    failed += (unsigned)(total - rows);
+
+  UString msg = L"已解压 ";
+  msg.Add_UInt32(done);
+  msg += L" 个归档";
+  if (skipped > 0)
+  {
+    msg += L"，跳过 ";
+    msg.Add_UInt32(skipped);
+    msg += L" 个";
+  }
+  if (failed > 0)
+  {
+    msg += L"，";
+    msg.Add_UInt32(failed);
+    msg += L" 个失败";
+  }
+  if (skipped > 0 && !skippedNames.IsEmpty())
+  {
+    msg += L"\n\n无密码跳过：\n";
+    FOR_VECTOR (i, skippedNames)
+    {
+      msg += skippedNames[i];
+      if (i + 1 < skippedNames.Size())
+        msg += L"\n";
+    }
+  }
+  ::MessageBoxW(0, msg, L"批量解压", MB_ICONINFORMATION);
+}
+
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
 void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker, const UString &passwordSessionId)
 // **************** NanaZip Modification End ****************
@@ -527,6 +630,28 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   // joined stage so a hang can be attributed to the exact thread.
   batchScope.reset();
   SssFmDiagLog(L"[Q4-FM] session cleaned");
+  // **************** NanaZip Modification Start ****************
+  // Multi-archive dialog path: 7zG wrote one result line per archive
+  // (extracted / skipped / failed); show the summary here, naming the
+  // archives that were skipped for lack of a verifying password.
+  if (showDialog && !effectiveSessionId.IsEmpty())
+    SssShowBatchResultSummary(effectiveSessionId, arcPaths.Size());
+  else if (!effectiveSessionId.IsEmpty())
+  {
+    // Silent one-by-one path: the loop in PanelOperations reports its own
+    // summary, so just drop the result file written by 7zG.
+    wchar_t temp[MAX_PATH];
+    UString rp;
+    if (::GetTempPathW(MAX_PATH, temp) != 0)
+    {
+      rp = temp;
+      rp += L"sss_batch_result_";
+      rp += effectiveSessionId;
+      rp += L".txt";
+      NFile::NDir::DeleteFileAlways(us2fs(rp));
+    }
+  }
+  // **************** NanaZip Modification End ****************
   MY_TRY_FINISH_VOID
 }
 

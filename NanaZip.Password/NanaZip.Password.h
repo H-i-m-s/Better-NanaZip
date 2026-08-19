@@ -103,6 +103,10 @@ namespace NanaZipPassword
     {
         std::vector<std::wstring> LocalCandidates;
         std::wstring CloudPassword; // empty = none available
+        // true = the cloud lookup for this archive has finished (its
+        // result may still be empty). false = still in flight; the 7zG
+        // prefetch worker retries shortly instead of giving up.
+        bool CloudReady = false;
     };
 
     // Server side (FileManager). Owns the candidate store that the

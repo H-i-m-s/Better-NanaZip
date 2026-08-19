@@ -89,6 +89,7 @@ namespace winrt::NanaZip::Modern::implementation
         m_Context(Context),
         m_InitGuard(false),
         m_OkClicked(false),
+        m_PathUserEdited(false),
         m_FirstLayout(true),
         m_LeftWrapped(false),
         m_EncryptionWrapped(false),
@@ -227,8 +228,14 @@ namespace winrt::NanaZip::Modern::implementation
 
         PK7_COMPRESS_DIALOG_CONTEXT Context = this->m_Context;
 
-        // Static labels are loaded once in ApplyLabels.
-        ArchivePathCombo().Text(winrt::hstring(Context->ArchivePath));
+        // Static labels are loaded once in ApplyLabels. The archive-path
+        // box is only re-filled while the user has not edited it: once they
+        // typed their own name, option refreshes must never overwrite it
+        // with the default name again.
+        if (!this->m_PathUserEdited)
+        {
+            ArchivePathCombo().Text(winrt::hstring(Context->ArchivePath));
+        }
         ParametersBox().Text(winrt::hstring(Context->Parameters));
         VolumeCombo().Text(winrt::hstring(Context->VolumeText));
 
@@ -402,6 +409,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
 
         this->m_InitGuard = true;
+        this->m_PathUserEdited = false;
         ApplyLabels();
         ApplySnapshotToUi();
         this->m_InitGuard = false;
@@ -1068,34 +1076,53 @@ namespace winrt::NanaZip::Modern::implementation
         this->m_PathTextSnapshot =
             ArchivePathCombo().Text().c_str();
 
-        // Show the "x" on every history entry once the drop-down is open,
-        // but never on the first entry (the current path). Containers are
-        // generated asynchronously, so defer one dispatch.
+        // Show the "x" on every history entry once the drop-down is open.
+        // Containers are generated asynchronously, so start the bounded
+        // retry chain.
         this->Dispatcher().TryRunAsync(
             winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
             [this]()
         {
-            const uint32_t Count = ArchivePathCombo().Items().Size();
-            for (uint32_t i = 0; i < Count; i++)
-            {
-                auto Container =
-                    ArchivePathCombo().ContainerFromIndex((int)i);
-                if (!Container)
-                {
-                    continue;
-                }
-                std::vector<winrt::Windows::UI::Xaml::Controls::Button>
-                    Buttons;
-                FindVisualChildren(Container, Buttons);
-                const auto Vis = (i == 0)
-                    ? winrt::Windows::UI::Xaml::Visibility::Collapsed
-                    : winrt::Windows::UI::Xaml::Visibility::Visible;
-                for (auto& B : Buttons)
-                {
-                    B.Visibility(Vis);
-                }
-            }
+            this->ShowHistoryDeleteButtons(0);
         });
+    }
+
+    void CompressPage::ShowHistoryDeleteButtons(int attempt)
+    {
+        if (!ArchivePathCombo().IsDropDownOpen())
+        {
+            return; // closed meanwhile: OnArchivePathDropDownClosed hides all
+        }
+        bool allReady = true;
+        const uint32_t Count = ArchivePathCombo().Items().Size();
+        for (uint32_t i = 0; i < Count; i++)
+        {
+            auto Container = ArchivePathCombo().ContainerFromIndex((int)i);
+            if (!Container)
+            {
+                allReady = false;
+                continue;
+            }
+            std::vector<winrt::Windows::UI::Xaml::Controls::Button>
+                Buttons;
+            FindVisualChildren(Container, Buttons);
+            const auto Vis = (i == 0)
+                ? winrt::Windows::UI::Xaml::Visibility::Collapsed
+                : winrt::Windows::UI::Xaml::Visibility::Visible;
+            for (auto& B : Buttons)
+            {
+                B.Visibility(Vis);
+            }
+        }
+        if (!allReady && attempt < 5)
+        {
+            this->Dispatcher().TryRunAsync(
+                winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+                [this, attempt]()
+            {
+                this->ShowHistoryDeleteButtons(attempt + 1);
+            });
+        }
     }
 
     void CompressPage::OnArchivePathDropDownClosed(
@@ -1184,6 +1211,13 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
         std::wstring Path = ArchivePathCombo().Text().c_str();
+        // Lost focus on the path combo: if the text differs from the
+        // default (last applied snapshot), the user took over the name -
+        // remember it so refreshes stop overwriting the box.
+        if (Path != this->m_Context->ArchivePath)
+        {
+            this->m_PathUserEdited = true;
+        }
         wcscpy_s(this->m_Context->ArchivePath, Path.c_str());
         SendCommand(
             K7_COMPRESS_COMMAND_ARCHIVE_PATH,

@@ -415,6 +415,7 @@ public:
   void SetSfxChecked(bool val) { SfxChecked = val; }
   void SetArchiveName(const UString &name);
   void SetArchiveName2(bool prevWasSFX);
+  void EnsureArchiveExtension();  // 无扩展名时补当前格式主扩展名（SFX 补 .exe）
   bool ArcPathChanged(const UString &path);   // 返回是否切换了格式
 
   // ---- 路径 ----

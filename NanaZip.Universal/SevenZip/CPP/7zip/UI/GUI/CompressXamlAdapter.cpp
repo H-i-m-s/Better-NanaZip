@@ -1080,5 +1080,8 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
   }
 
   ApplyUserText(core, ctx.get());
+  // The user may have replaced the whole (pre-selected) archive name with
+  // a bare name; append the current format's main extension in that case.
+  core.EnsureArchiveExtension();
   return kXamlOk;
 }

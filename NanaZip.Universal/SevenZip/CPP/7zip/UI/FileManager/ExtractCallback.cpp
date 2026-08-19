@@ -116,7 +116,7 @@ extern void ExtractFlowDiagLog(const wchar_t *message);
 // ask for the password from several files at once, and the 7-Zip engine
 // is not safe for concurrent Open/Extract on the same archive from the
 // same process.
-static std::mutex &SssBatchMatchMutex()
+std::mutex &SssBatchMatchMutex()
 {
   static std::mutex mutex;
   return mutex;
@@ -868,6 +868,11 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
       }
       ExtractFlowDiagLog(L"[Q4] crypto no match");
       SssWriteBatchSkip(PasswordArchivePath);
+      // Record into the per-batch result file too (multi-archive dialog
+      // path reads it for the summary; the marker above serves the
+      // one-by-one loop).
+      extern void SssRecordBatchSkip(const UString &archivePath);
+      SssRecordBatchSkip(PasswordArchivePath);
       // Not E_ABORT: that would cancel the whole batch. A plain failure
       // makes only this archive fail and the loop continues.
       return E_FAIL;

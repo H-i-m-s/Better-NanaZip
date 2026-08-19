@@ -1500,29 +1500,21 @@ namespace NanaZipPassword
                 }
                 std::vector<std::wstring> local;
                 std::wstring cloud;
+                bool cloudReady = false;
                 {
-                    std::unique_lock<std::mutex> lock(this->m_mutex);
+                    std::lock_guard<std::mutex> lock(this->m_mutex);
                     local = this->m_localCandidates;
                     if (index >= 0)
                     {
-                        // Wait for the prefetch thread's cloud result with
-                        // a generous timeout: cloud lookups are slow and
-                        // the prefetch thread serves one archive at a time
-                        // (concurrency 1), so a worker may wait behind
-                        // earlier archives.
-                        this->m_cv.wait_for(
-                            lock,
-                            std::chrono::milliseconds(300000),
-                            [&]()
-                            {
-                                return this->m_stopped.load() ||
-                                    this->m_cloudReady[index];
-                            });
-                        SssBatchDiagLog(
-                            L"[Q4-S] client cloud wait done", 0);
+                        // Cloud lookups run in parallel in the prefetch
+                        // worker; never block a client on one. When the
+                        // result is not ready yet the response carries an
+                        // empty cloud field with cloudReady=false and the
+                        // 7zG prefetch worker retries shortly.
                         if (this->m_cloudReady[index])
                         {
                             cloud = this->m_cloudPasswords[index];
+                            cloudReady = true;
                         }
                     }
                 }
@@ -1553,6 +1545,11 @@ namespace NanaZipPassword
                     writeExact(cloud.c_str(),
                         cloudLen * sizeof(wchar_t));
                 }
+                // Trailing flag: whether the cloud lookup has finished
+                // (its result may still be empty). The 7zG prefetch worker
+                // uses it to stop retrying once the lookup completed.
+                const UINT32 cloudReadyFlag = cloudReady ? 1u : 0u;
+                writeExact(&cloudReadyFlag, sizeof(cloudReadyFlag));
 
                 // The response is fully written. Do NOT disconnect here:
                 // DisconnectNamedPipe drops buffered data the client has
@@ -1741,6 +1738,16 @@ namespace NanaZipPassword
                 ok = false;
             }
         }
+        if (ok)
+        {
+            // Trailing ready flag: the server writes it after the cloud
+            // password (see HandleClient). Without it the client cannot
+            // tell "lookup still in flight" apart from "lookup done, no
+            // password", so this field is mandatory.
+            UINT32 cloudReadyFlag = 0;
+            ok = readBytes(&cloudReadyFlag, sizeof(cloudReadyFlag));
+            candidates.CloudReady = (ok && cloudReadyFlag != 0);
+        }
         ::CloseHandle(pipe);
         return ok;
     }
@@ -1748,9 +1755,13 @@ namespace NanaZipPassword
     namespace
     {
         // Prefetch worker: publishes the password book once (shared by
-        // every archive) and each archive's cloud result in order
-        // (concurrency 1). A cloud lookup can take seconds, so this runs
-        // while the current archive's 7zG process is still extracting.
+        // every archive) and queries the cloud for every archive in
+        // parallel (bounded concurrency). A lookup can take seconds
+        // (user-configured timeout), so they all run while the current
+        // archive's 7zG process is still extracting; serial lookups would
+        // make every later archive wait behind earlier ones. When the
+        // session stops, no new lookup is started and the in-flight ones
+        // finish within the configured timeout, so teardown stays bounded.
         void BatchPrefetchWorker(
             BatchSession* session,
             std::vector<std::wstring> paths,
@@ -1764,21 +1775,66 @@ namespace NanaZipPassword
                 local.push_back(c.Value);
             }
             session->PublishLocalCandidates(local);
-            for (size_t i = 0; i < paths.size(); ++i)
+            if (!queryCloud)
             {
-                if (session->IsStopped())
+                // No cloud lookups at all: mark every archive ready with
+                // an empty password so clients never wait on the flag.
+                for (size_t i = 0; i < paths.size(); ++i)
+                {
+                    session->PublishCloudResult(i, std::wstring());
+                }
+                return;
+            }
+
+            // Bounded parallel lookups: at most kMaxCloudConcurrency
+            // queries in flight at once. Each archive gets its own thread
+            // so one slow lookup never delays the rest.
+            constexpr size_t kMaxCloudConcurrency = 4;
+            std::mutex slotMutex;
+            std::condition_variable slotCv;
+            size_t active = 0;
+            size_t next = 0;
+            std::vector<std::thread> workers;
+            for (;;)
+            {
+                std::unique_lock<std::mutex> lock(slotMutex);
+                while (active >= kMaxCloudConcurrency)
+                {
+                    if (session->IsStopped())
+                    {
+                        break;
+                    }
+                    slotCv.wait(lock);
+                }
+                if (session->IsStopped() || next >= paths.size())
                 {
                     break;
                 }
-                std::wstring cloud;
-                if (queryCloud)
+                const size_t index = next++;
+                const std::wstring path = paths[index];
+                ++active;
+                workers.emplace_back(
+                    [&slotMutex, &slotCv, &active, session, index, path]()
                 {
+                    std::wstring cloud;
                     // The configured timeout (api_config.txt
                     // CloudTimeoutSeconds) already caps every HTTP stage
                     // including DNS; honor the user's value.
-                    QueryCloudPassword(paths[i], cloud);
+                    QueryCloudPassword(path, cloud);
+                    session->PublishCloudResult(index, cloud);
+                    {
+                        std::lock_guard<std::mutex> lock(slotMutex);
+                        --active;
+                    }
+                    slotCv.notify_one();
+                });
+            }
+            for (auto& worker : workers)
+            {
+                if (worker.joinable())
+                {
+                    worker.join();
                 }
-                session->PublishCloudResult(i, cloud);
             }
         }
 

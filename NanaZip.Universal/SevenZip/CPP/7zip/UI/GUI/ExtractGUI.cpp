@@ -9,6 +9,7 @@
 #include <memory>
 #include <atomic>
 #include <map>
+#include <set>
 
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -45,6 +46,10 @@
 // 7zG worker belongs to (see SssBatchPasswordMatch below). Declared early
 // because the batch callback above uses it.
 extern UString g_SssPasswordSessionId;
+// Serializes password verification on this process (defined in
+// ExtractCallback.cpp): the engine is not safe for concurrent
+// Open/Extract passes, so every TestArchivePassword takes this lock.
+extern std::mutex &SssBatchMatchMutex();
 // **************** SSS Modification End ****************
 
 #include "../FileManager/PropertyNameRes.h"
@@ -418,12 +423,247 @@ static bool TestArchivePassword(
   return ok;
 }
 
-// Batch password callback for the File Manager session (-sssid): asks the
-// session for the current archive's candidates (the password book, shared
-// once, plus the prefetched cloud result) and returns the first password
-// that really decrypts the archive, following MatchPriority. The session
-// request waits for the prefetch to finish, so a cloud lookup is never
-// duplicated here.
+// ================= Batch pipeline prefetch + result file =================
+// The File Manager prefetches every archive's cloud result in parallel;
+// 7zG additionally verifies each archive's local password-book candidates
+// on a worker while the previous archive is still extracting (pipeline:
+// archive N extracts while N+1's password is being looked up). The verdict
+// follows the mixed-mode rule set by the user: both sides done -> local
+// wins; cloud done while local is still testing -> cloud; local first ->
+// local. A trailing CloudReady flag in the pipe response tells "still in
+// flight" apart from "done, no password", so the worker retries only while
+// the lookup is actually running.
+
+struct SssPrefetchResult
+{
+  std::atomic<bool> LocalDone{false}; // password-book candidates all tested
+  std::wstring LocalPassword;         // non-empty = local hit (verified)
+  std::atomic<bool> CloudDone{false}; // cloud lookup finished
+  std::wstring CloudPassword;         // non-empty = cloud hit (verified)
+};
+
+static std::mutex g_PrefetchMutex;
+static std::condition_variable g_PrefetchCv;
+static std::map<std::wstring, std::shared_ptr<SssPrefetchResult>>
+    g_PrefetchResults;
+static std::atomic<bool> g_PrefetchStopped{false};
+
+// %TEMP%\sss_batch_result_<sessionid>.txt - one line per archive:
+// <code>\t<path>, code 0 = extracted ok, 1 = skipped (no verifying
+// password), 2 = failed. The File Manager reads it after 7zG exits to show
+// the batch summary (and names the skipped archives). Numbers only, no
+// password ever reaches this file.
+static UString SssBatchResultFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_result_";
+    p += g_SssPasswordSessionId;
+    p += L".txt";
+  }
+  return p;
+}
+
+static void SssRecordBatchResult(const UString &archivePath, UINT32 code)
+{
+  if (g_SssPasswordSessionId.IsEmpty())
+    return;
+  const UString path = SssBatchResultFilePath();
+  if (path.IsEmpty())
+    return;
+  static std::mutex fileMutex;
+  std::lock_guard<std::mutex> lock(fileMutex);
+  HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+      OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  UString line;
+  line.Add_UInt32(code);
+  line += L'\t';
+  line += archivePath;
+  line += L'\n';
+  DWORD written = 0;
+  ::WriteFile(h, line.Ptr(),
+      (DWORD)(line.Len() * sizeof(wchar_t)), &written, NULL);
+  ::CloseHandle(h);
+}
+
+// Archives that were silently skipped (no verifying password candidate).
+// The result file is written here so the loop below never overwrites a
+// skip with a "success".
+static std::mutex g_BatchSkippedMutex;
+static std::set<std::wstring> g_BatchSkippedPaths;
+
+void SssRecordBatchSkip(const UString &archivePath)
+{
+  if (g_SssPasswordSessionId.IsEmpty())
+    return;
+  {
+    std::lock_guard<std::mutex> lock(g_BatchSkippedMutex);
+    g_BatchSkippedPaths.insert(std::wstring(archivePath.Ptr()));
+  }
+  SssRecordBatchResult(archivePath, 1);
+}
+
+// Called by the extraction loop (UI/Common/Extract.cpp) once an archive is
+// handled: skipped archives keep their code=1 row, everything else is
+// recorded as ok (0) or failed (2).
+void SssRecordBatchArchiveResult(const UString &archivePath, bool ok)
+{
+  if (g_SssPasswordSessionId.IsEmpty())
+    return;
+  {
+    std::lock_guard<std::mutex> lock(g_BatchSkippedMutex);
+    if (g_BatchSkippedPaths.find(std::wstring(archivePath.Ptr())) !=
+        g_BatchSkippedPaths.end())
+    {
+      return; // already recorded as skipped
+    }
+  }
+  SssRecordBatchResult(archivePath, ok ? 0 : 2);
+}
+
+// Verifies one candidate against one archive. Runs under the batch match
+// mutex (same as the extraction thread's password callback) so the 7-Zip
+// engine never has two Open/Extract passes on the same process at once.
+static bool SssVerifyPassword(const std::wstring &candidate,
+    const SssPasswordQueryContext &context)
+{
+  if (candidate.empty())
+    return false;
+  std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+  return TestArchivePassword(candidate, context);
+}
+
+// Prefetches one archive: asks the session for candidates, verifies local
+// password-book candidates while the cloud lookup is still running, and
+// stops as soon as a side decides (local hit -> local wins, cloud ready ->
+// verify and use cloud; cloud done without a password -> local decides).
+static void SssPrefetchOne(const UString &archivePath,
+    const SssPasswordQueryContext &baseContext)
+{
+  auto result = std::make_shared<SssPrefetchResult>();
+  {
+    std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+    g_PrefetchResults[std::wstring(archivePath.Ptr())] = result;
+  }
+
+  SssPasswordQueryContext ctx = baseContext; // same codecs, different archive
+  UStringVector singlePaths;
+  singlePaths.Add(archivePath);
+  ctx.ArchivePaths = &singlePaths;
+  ctx.ArchivePathsFull = &singlePaths;
+  ctx.ArchivePath = std::wstring(archivePath.Ptr());
+
+  std::vector<std::wstring> localCandidates;
+  bool haveCandidates = false;
+  size_t localIndex = 0;
+  bool cloudFinished = false;
+
+  for (;;)
+  {
+    if (g_PrefetchStopped.load())
+      break;
+
+    // Ask the session for this archive's candidates. Once the cloud
+    // lookup has finished (ready flag set), never ask again: the result
+    // will not change and only the local candidates still need testing.
+    if (!cloudFinished)
+    {
+      NanaZipPassword::BatchCandidates candidates;
+      if (!NanaZipPassword::RequestBatchCandidates(
+          std::wstring(g_SssPasswordSessionId.Ptr()),
+          std::wstring(archivePath.Ptr()),
+          300000, candidates))
+      {
+        break; // pipe gone (session ended) -> stop quietly
+      }
+      if (!haveCandidates)
+      {
+        localCandidates = candidates.LocalCandidates;
+        haveCandidates = true;
+      }
+      if (candidates.CloudReady)
+      {
+        cloudFinished = true;
+        if (!candidates.CloudPassword.empty() &&
+            SssVerifyPassword(candidates.CloudPassword, ctx))
+        {
+          result->CloudPassword = candidates.CloudPassword;
+        }
+        result->CloudDone = true;
+        {
+          std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+          g_PrefetchCv.notify_all();
+        }
+        if (!result->CloudPassword.empty())
+          break; // cloud hit: done (a late local hit must not change it)
+        // Cloud lookup finished but no usable password: the local
+        // candidates below are the only hope, so keep testing them.
+      }
+    }
+
+    // Test one local candidate in the gaps between cloud retries (or
+    // straight through once the cloud result turned out unusable).
+    if (localIndex < localCandidates.size())
+    {
+      if (SssVerifyPassword(localCandidates[localIndex], ctx))
+      {
+        result->LocalPassword = localCandidates[localIndex];
+        result->LocalDone = true;
+        {
+          std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+          g_PrefetchCv.notify_all();
+        }
+        break; // local hit: done, a late cloud result must not change it
+      }
+      ++localIndex;
+      if (localIndex >= localCandidates.size() && cloudFinished)
+      {
+        result->LocalDone = true; // all rejected, cloud unusable -> done
+        {
+          std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+          g_PrefetchCv.notify_all();
+        }
+        break;
+      }
+    }
+    else if (!result->LocalDone.load())
+    {
+      result->LocalDone = true; // all local candidates rejected
+      {
+        std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+        g_PrefetchCv.notify_all();
+      }
+      if (cloudFinished)
+        break; // nothing left to wait for
+      // otherwise keep waiting for the cloud result below
+    }
+
+    if (cloudFinished)
+      break; // cloud done (unusable) and locals exhausted -> done
+    ::Sleep(150); // short retry interval while the FM prefetch finishes
+  }
+}
+
+static void SssPrefetchWorker(const UStringVector &archivePathsFull,
+    const SssPasswordQueryContext &baseContext)
+{
+  for (unsigned i = 0; i < archivePathsFull.Size(); ++i)
+  {
+    if (g_PrefetchStopped.load())
+      break;
+    SssPrefetchOne(archivePathsFull[i], baseContext);
+  }
+}
+
+// Batch password callback for the File Manager session (-sssid): consumes
+// the prefetched verdict for the current archive (pipeline result, already
+// verified) and returns it following MatchPriority. No session request is
+// made here; the prefetch worker owns the pipe traffic.
 static bool SssBatchPasswordMatch(
     const UString &archivePath,
     LPVOID queryContext,
@@ -439,26 +679,30 @@ static bool SssBatchPasswordMatch(
     swprintf_s(diagName, L"[Q4] match enter %s", name);
     ExtractFlowDiagLog(diagName);
   }
-  NanaZipPassword::BatchCandidates candidates;
-  if (!NanaZipPassword::RequestBatchCandidates(
-      std::wstring(g_SssPasswordSessionId.Ptr()),
-      std::wstring(archivePath.Ptr()),
-      300000, candidates))
-  {
-    ExtractFlowDiagLog(L"[Q4] batch session request failed");
-    return false;
-  }
 
-  const SssPasswordQueryContext *context =
-      static_cast<const SssPasswordQueryContext *>(queryContext);
-  if (!context)
+  std::shared_ptr<SssPrefetchResult> result;
+  {
+    std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+    auto it = g_PrefetchResults.find(std::wstring(archivePath.Ptr()));
+    if (it != g_PrefetchResults.end())
+      result = it->second;
+  }
+  if (!result)
+  {
+    // Startup race (the worker creates entries as it goes): prefetch this
+    // archive synchronously, then read the verdict.
+    const SssPasswordQueryContext *context =
+        static_cast<const SssPasswordQueryContext *>(queryContext);
+    if (!context)
+      return false;
+    SssPrefetchOne(archivePath, *context);
+    std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+    auto it = g_PrefetchResults.find(std::wstring(archivePath.Ptr()));
+    if (it != g_PrefetchResults.end())
+      result = it->second;
+  }
+  if (!result)
     return false;
-  SssPasswordQueryContext testContext = *context;
-  UStringVector singlePaths;
-  singlePaths.Add(archivePath);
-  testContext.ArchivePaths = &singlePaths;
-  testContext.ArchivePathsFull = &singlePaths;
-  testContext.ArchivePath = std::wstring(archivePath.Ptr());
 
   bool autoQueryCloud = false;
   bool autoMatchLocal = false;
@@ -466,63 +710,101 @@ static bool SssBatchPasswordMatch(
   NanaZipPassword::ReadAutomaticPasswordSettings(
       autoQueryCloud, autoMatchLocal, matchPriority);
 
-  auto accept = [&](const std::wstring &candidate,
-      UINT32 candidateSource) -> bool
+  auto waitFor = [&](const std::atomic<bool> &flag) -> bool
   {
-    if (candidate.empty())
-      return false;
-    if (TestArchivePassword(candidate, testContext))
+    std::unique_lock<std::mutex> lock(g_PrefetchMutex);
+    g_PrefetchCv.wait(lock, [&]()
     {
-      password = candidate.c_str();
-      source = candidateSource;
-      ExtractFlowDiagLog(L"[Q4] batch candidate accepted");
-      return true;
-    }
-    return false;
+      return g_PrefetchStopped.load() || flag.load();
+    });
+    return !g_PrefetchStopped.load();
   };
 
   if (matchPriority == 1)
   {
-    // Cloud first: the cloud candidate, then the local book.
-    if (accept(candidates.CloudPassword,
-        (UINT32)NanaZipPassword::PasswordSource::Cloud))
-      return true;
-    for (const std::wstring &c : candidates.LocalCandidates)
+    // Cloud first: wait for the cloud verdict, then the book.
+    if (!waitFor(result->CloudDone))
+      return false;
+    if (!result->CloudPassword.empty())
     {
-      if (accept(c, (UINT32)NanaZipPassword::PasswordSource::Local))
-        return true;
+      password = result->CloudPassword.c_str();
+      source = (UINT32)NanaZipPassword::PasswordSource::Cloud;
+      return true;
+    }
+    if (!waitFor(result->LocalDone))
+      return false;
+    if (!result->LocalPassword.empty())
+    {
+      password = result->LocalPassword.c_str();
+      source = (UINT32)NanaZipPassword::PasswordSource::Local;
+      return true;
     }
     return false;
   }
 
   if (matchPriority == 2)
   {
-    // Mixed: first match wins. The engine is NOT thread-safe, so the two
-    // sides must not run in parallel: concurrent TestArchivePassword on
-    // the same archive from one process corrupts the verification and can
-    // hang the engine. Serially this keeps the same winner semantics: the
-    // cloud result (single candidate, fast) is tried first, and when it
-    // misses the password book decides.
-    if (accept(candidates.CloudPassword,
-        (UINT32)NanaZipPassword::PasswordSource::Cloud))
-      return true;
-    for (const std::wstring &c : candidates.LocalCandidates)
+    // Mixed (user rule): both done -> local wins; cloud done while local
+    // is still testing -> cloud; local first -> local. When the cloud
+    // result turned out unusable (empty), the local verdict is the only
+    // hope, so keep waiting for it instead of skipping early.
     {
-      if (accept(c, (UINT32)NanaZipPassword::PasswordSource::Local))
+      std::unique_lock<std::mutex> lock(g_PrefetchMutex);
+      g_PrefetchCv.wait(lock, [&]()
+      {
+        return g_PrefetchStopped.load() ||
+            result->LocalDone.load() || result->CloudDone.load();
+      });
+    }
+    if (g_PrefetchStopped.load())
+      return false;
+    if (!result->LocalPassword.empty())
+    {
+      password = result->LocalPassword.c_str();
+      source = (UINT32)NanaZipPassword::PasswordSource::Local;
+      return true;
+    }
+    if (!result->CloudPassword.empty())
+    {
+      password = result->CloudPassword.c_str();
+      source = (UINT32)NanaZipPassword::PasswordSource::Cloud;
+      return true;
+    }
+    if (!result->LocalDone.load())
+    {
+      // Cloud done but unusable while local is still testing: the local
+      // candidates are the only chance, wait for their verdict.
+      if (!waitFor(result->LocalDone))
+        return false;
+      if (!result->LocalPassword.empty())
+      {
+        password = result->LocalPassword.c_str();
+        source = (UINT32)NanaZipPassword::PasswordSource::Local;
         return true;
+      }
     }
     ExtractFlowDiagLog(L"[Q4] no candidate matched (mixed)");
     return false;
   }
 
   // Local first (default): the password book, then the cloud result.
-  for (const std::wstring &c : candidates.LocalCandidates)
+  if (!waitFor(result->LocalDone))
+    return false;
+  if (!result->LocalPassword.empty())
   {
-    if (accept(c, (UINT32)NanaZipPassword::PasswordSource::Local))
-      return true;
+    password = result->LocalPassword.c_str();
+    source = (UINT32)NanaZipPassword::PasswordSource::Local;
+    return true;
   }
-  return accept(candidates.CloudPassword,
-      (UINT32)NanaZipPassword::PasswordSource::Cloud);
+  if (!waitFor(result->CloudDone))
+    return false;
+  if (!result->CloudPassword.empty())
+  {
+    password = result->CloudPassword.c_str();
+    source = (UINT32)NanaZipPassword::PasswordSource::Cloud;
+    return true;
+  }
+  return false;
 }
 
 // Async local password match. The XAML page starts it through
@@ -1805,7 +2087,51 @@ HRESULT ExtractGUI(
 
   extracter.IconID = IDI_ICON;
 
-  RINOK(extracter.Create(title, hwndParent))
+  // **************** NanaZip Modification Start ****************
+  // Batch pipeline: start the password prefetch worker before the
+  // extraction thread. It verifies every archive's local candidates and
+  // waits for the cloud result while the previous archive is still
+  // extracting, so each archive's password is ready (or almost ready)
+  // when its turn comes instead of being tested synchronously in the
+  // extract callback.
+  g_PrefetchStopped = false;
+  std::thread prefetchThread;
+  if (!g_SssPasswordSessionId.IsEmpty() && archivePathsFull.Size() > 1)
+  {
+    // Fresh result file for this batch (the File Manager reads it after
+    // 7zG exits to build the summary; the file name carries the session
+    // id, so a leftover from a crashed run is simply replaced).
+    NDir::DeleteFileAlways(us2fs(SssBatchResultFilePath()));
+    {
+      std::lock_guard<std::mutex> lock(g_BatchSkippedMutex);
+      g_BatchSkippedPaths.clear();
+    }
+    {
+      std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+      g_PrefetchResults.clear();
+    }
+    prefetchThread =
+        std::thread(SssPrefetchWorker, archivePathsFull, queryContext);
+  }
+  // **************** NanaZip Modification End ****************
+
+  const HRESULT createRes = extracter.Create(title, hwndParent);
+  if (createRes != S_OK)
+  {
+    // Create failed: the prefetch worker (if started) must be stopped and
+    // joined before returning, otherwise destroying the joinable
+    // std::thread terminates the process.
+    g_PrefetchStopped = true;
+    {
+      std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+      g_PrefetchCv.notify_all();
+    }
+    if (prefetchThread.joinable())
+    {
+      prefetchThread.join();
+    }
+    return createRes;
+  }
   messageWasDisplayed = extracter.ThreadFinishedOK && extracter.MessagesDisplayed;
   // **************** 7-Zip ZS Modification Start ****************
 #ifndef Z7_SFX
@@ -1859,6 +2185,20 @@ HRESULT ExtractGUI(
     else if (!g_SssNoDelete && deleteAfter)
       SssDeleteArchivesAfterExtract(archivePathsFull, deletePermanently);
   }
-  // **************** SSS Modification End ****************
+  // **************** NanaZip Modification Start ****************
+  // Stop the prefetch worker and join it. The session pipe is still alive
+  // (the File Manager waits for 7zG to exit), so the worker finishes its
+  // current request or sleep and then sees the stop flag; the join is
+  // bounded by one pipe round trip plus one retry interval.
+  g_PrefetchStopped = true;
+  {
+    std::lock_guard<std::mutex> lock(g_PrefetchMutex);
+    g_PrefetchCv.notify_all();
+  }
+  if (prefetchThread.joinable())
+  {
+    prefetchThread.join();
+  }
+  // **************** NanaZip Modification End ****************
   return extracter.Result;
 }

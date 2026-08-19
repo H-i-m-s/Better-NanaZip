@@ -180,6 +180,12 @@ namespace winrt::NanaZip::Modern::implementation
         // Fill the archive-path drop-down: the current path first, then the
         // history (deduplicated, capped at 16), mirroring the extract page.
         void FillArchivePathHistory();
+        // Shows the delete "x" on every history entry while the drop-down
+        // is open. Item containers are generated asynchronously, so the
+        // work is retried across dispatcher turns until every container
+        // exists (bounded attempts); never on the first entry (the current
+        // path).
+        void ShowHistoryDeleteButtons(int attempt);
         void ApplyOptionList(
             winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
             _In_ const K7_COMPRESS_OPTION_LIST& List);
@@ -229,6 +235,11 @@ namespace winrt::NanaZip::Modern::implementation
         PK7_COMPRESS_DIALOG_CONTEXT m_Context;
         bool m_InitGuard;
         bool m_OkClicked;
+        // Set once the user edits the archive path themselves (typed into
+        // the combo). While set, option refreshes never overwrite the box
+        // with the default name again; without it, switching format etc.
+        // keeps updating the extension of the untouched default name.
+        bool m_PathUserEdited;
 
         // Layout state for the wrap-on-shrink behavior.
         bool m_FirstLayout;
