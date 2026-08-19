@@ -1118,7 +1118,7 @@ namespace NanaZipPassword
             LoadLocalCandidates(local);
         }
         const bool cloudFound = useCloud && QueryCloudPassword(archivePath, cloud);
-        const bool cloudFirst = ReadRegistryDword(kMatchPriority) != 0;
+        const bool cloudFirst = ReadRegistryDword(kMatchPriority) == 1;
         if (cloudFirst && cloudFound)
         {
             candidates.push_back({ std::move(cloud), PasswordSource::Cloud });

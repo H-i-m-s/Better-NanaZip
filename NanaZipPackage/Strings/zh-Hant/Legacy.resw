@@ -765,6 +765,9 @@
   <data name="Resource2558" xml:space="preserve">
     <value>取消比對</value>
   </data>
+  <data name="Resource2559" xml:space="preserve">
+    <value>混合（並行）</value>
+  </data>
 
 
 

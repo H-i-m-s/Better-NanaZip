@@ -39,6 +39,12 @@ namespace winrt::NanaZip::Modern::implementation
 
         void StartAutomaticPasswordQuery();
 
+        // Called by the window subclass (UI thread) when the async
+        // encrypted-content pre-check finishes (only the extract dialog
+        // starts it). Automatic lookup is started only when the archive
+        // has encrypted items.
+        void SetEncryptionCheckResult(BOOLEAN HasEncryptedItems);
+
         void OnBrowseClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -84,13 +90,18 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        // Called by the window subclass (UI thread) when the async local
-        // password match finishes. Status is one of the
+        // Called by the window subclass (UI thread) when an async password
+        // query (local match or cloud lookup) finishes. Status is one of the
         // K7_PASSWORD_MATCH_STATUS_* values; Password is the accepted
-        // candidate for MATCHED, otherwise empty.
+        // candidate for MATCHED, otherwise empty; Source records where the
+        // accepted password came from (K7_PASSWORD_QUERY_SOURCE_*). Results
+        // whose RequestId does not match the page's outstanding request are
+        // ignored.
         void SetPasswordFromMatch(
+            UINT64 RequestId,
             INT Status,
-            LPCWSTR Password);
+            LPCWSTR Password,
+            UINT32 Source);
 
         void OnOkClicked(
             winrt::IInspectable const& sender,
@@ -148,6 +159,7 @@ namespace winrt::NanaZip::Modern::implementation
 
         bool TryCloudPassword(bool automatic);
         bool StartLocalPasswordMatch(bool automatic);
+        void StartEncryptionCheck();
 
         bool GetBoolsVal(
             BOOLEAN Def1, BOOLEAN Val1,
@@ -168,10 +180,23 @@ namespace winrt::NanaZip::Modern::implementation
         // labels; computed from the wrapped layout in RecalcMinTrack.
         double m_WrapThresholdW;
         bool m_ProgrammaticPasswordChange;
-        // True while the async local password match is running; the button
-        // switches to the cancelling state while it is set.
+        // True while at least one async lookup (local match or cloud query)
+        // is running; the local button switches to the cancelling state
+        // while it is set.
         bool m_PasswordMatchRunning;
+        // Request ids of the outstanding lookups, one per source. Zero means
+        // no task of that source is in flight. Results carrying any other id
+        // belong to an older dialog/task and are ignored. Local-first and
+        // cloud-first run one task at a time; mixed mode runs both.
+        UINT64 m_LocalMatchRequestId;
+        UINT64 m_CloudQueryRequestId;
         bool m_AutoQueryStarted;
         bool m_AutoQueryActive;
+
+        // Recomputes m_PasswordMatchRunning from the two outstanding ids.
+        void UpdatePasswordMatchRunning();
+        // Fills the password box and records the source for a matched
+        // result, ending the automatic chain.
+        void FillPassword(LPCWSTR Password, UINT32 Source);
     };
 }

@@ -538,8 +538,17 @@ namespace winrt::NanaZip::Modern::implementation
         ExtractMatchPriorityCombo().Items().Clear();
         ExtractMatchPriorityCombo().Items().Append(winrt::box_value(Res(2544, L"Local first")));
         ExtractMatchPriorityCombo().Items().Append(winrt::box_value(Res(2545, L"Cloud first")));
-        ExtractMatchPriorityCombo().SelectedIndex(
-            this->m_Context->MatchPriority != 0 ? 1 : 0);
+        ExtractMatchPriorityCombo().Items().Append(winrt::box_value(Res(2559, L"Mixed (parallel)")));
+        DWORD PriorityIndex = 0;
+        if (this->m_Context->MatchPriority == 1)
+        {
+            PriorityIndex = 1;
+        }
+        else if (this->m_Context->MatchPriority >= 2)
+        {
+            PriorityIndex = 2;
+        }
+        ExtractMatchPriorityCombo().SelectedIndex(PriorityIndex);
 
         ExtractAutoShowPasswordCheck().Content(winrt::box_value(Res(2533, L"Auto show password")));
         ExtractAutoShowPasswordCheck().IsChecked(BoxBool(this->m_Context->AutoShowPassword != FALSE));
@@ -1447,7 +1456,8 @@ namespace winrt::NanaZip::Modern::implementation
             SelectedIndex();
         if (Index >= 0)
         {
-            this->m_Context->MatchPriority = (Index == 1) ? 1 : 0;
+            this->m_Context->MatchPriority = (Index == 1) ? 1
+                : (Index >= 2) ? 2 : 0;
         }
     }
 

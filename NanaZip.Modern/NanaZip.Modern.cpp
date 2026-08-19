@@ -272,31 +272,56 @@ namespace
             }
             case K7_PASSWORD_MATCH_DONE_MESSAGE:
             {
-                // Local password match finished on a worker thread. The
-                // message is posted to the dialog window only, so one of
-                // the props is always set when this window is one; the
-                // guards keep other ContentWindows (which share this
-                // subclass) unaffected.
+                // Password query finished on a worker thread (local match
+                // or cloud lookup). The message is posted to the dialog
+                // window only, so one of the props is always set when this
+                // window is one; the guards keep other ContentWindows
+                // (which share this subclass) unaffected. The payload
+                // carries the request id so the page can ignore results
+                // that no longer belong to its outstanding request.
                 auto *ExtractPagePtr =
                     static_cast<winrt::NanaZip::Modern::implementation::ExtractPage *>(
                         ::GetPropW(hWnd, L"K7ExtractPageImpl"));
                 auto *PasswordPagePtr =
                     static_cast<winrt::NanaZip::Modern::implementation::PasswordPage *>(
                         ::GetPropW(hWnd, L"K7PasswordPageImpl"));
-                wchar_t *Password = reinterpret_cast<wchar_t *>(lParam);
+                K7_PASSWORD_MATCH_RESULT *Result =
+                    reinterpret_cast<K7_PASSWORD_MATCH_RESULT *>(lParam);
+                if (Result)
+                {
+                    if (ExtractPagePtr)
+                    {
+                        ExtractPagePtr->SetPasswordFromMatch(
+                            Result->RequestId,
+                            static_cast<int>(Result->Status),
+                            Result->Password,
+                            Result->Source);
+                    }
+                    else if (PasswordPagePtr)
+                    {
+                        PasswordPagePtr->SetPasswordFromMatch(
+                            Result->RequestId,
+                            static_cast<int>(Result->Status),
+                            Result->Password,
+                            Result->Source);
+                    }
+                    delete Result;
+                }
+                return 0;
+            }
+            case K7_PASSWORD_ENCRYPTION_CHECK_DONE_MESSAGE:
+            {
+                // Encrypted-content pre-check finished on the host thread;
+                // wParam is TRUE when the archive has encrypted items. Only
+                // the extract dialog starts this pre-check.
+                auto *ExtractPagePtr =
+                    static_cast<winrt::NanaZip::Modern::implementation::ExtractPage *>(
+                        ::GetPropW(hWnd, L"K7ExtractPageImpl"));
                 if (ExtractPagePtr)
                 {
-                    ExtractPagePtr->SetPasswordFromMatch(
-                        static_cast<int>(wParam),
-                        Password ? Password : L"");
+                    ExtractPagePtr->SetEncryptionCheckResult(
+                        wParam != FALSE);
                 }
-                else if (PasswordPagePtr)
-                {
-                    PasswordPagePtr->SetPasswordFromMatch(
-                        static_cast<int>(wParam),
-                        Password ? Password : L"");
-                }
-                delete[] Password;
                 return 0;
             }
             default:

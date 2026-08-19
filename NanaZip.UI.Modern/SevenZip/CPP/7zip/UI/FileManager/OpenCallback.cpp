@@ -22,36 +22,46 @@
 
 namespace
 {
-  static BOOLEAN WINAPI QueryPasswordForDialog(
+  static UINT32 WINAPI QueryPasswordForDialog(
       LPCWSTR archivePath,
       UINT32 source,
       LPVOID context,
+      HWND notifyWindow,
+      UINT64 *requestId,
       LPWSTR password,
       UINT32 passwordCapacity)
   {
-    if (!password || passwordCapacity == 0)
-      return FALSE;
+    UNREFERENCED_PARAMETER(notifyWindow);
+    if (!password || passwordCapacity == 0 || !requestId)
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
+    *requestId = 0;
     const std::wstring *fullArchivePath =
         static_cast<const std::wstring *>(context);
     const std::wstring path = fullArchivePath ? *fullArchivePath
         : (archivePath ? archivePath : L"");
     if (path.empty())
-      return FALSE;
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     std::wstring value;
-    if (source == 1)
+    if (source == K7_PASSWORD_QUERY_SOURCE_CLOUD)
     {
       if (!NanaZipPassword::QueryCloudPassword(path, value))
-        return FALSE;
+        return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     }
-    else
+    else if (source == K7_PASSWORD_QUERY_SOURCE_LOCAL)
     {
       std::vector<NanaZipPassword::Candidate> candidates;
       if (!NanaZipPassword::LoadLocalCandidates(candidates) || candidates.empty())
-        return FALSE;
+        return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
       value = candidates.front().Value;
     }
+    else
+    {
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
+    }
+    if (value.size() >= passwordCapacity)
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
-    return TRUE;
+    return K7_PASSWORD_QUERY_RESULT_MATCHED;
   }
 }
 

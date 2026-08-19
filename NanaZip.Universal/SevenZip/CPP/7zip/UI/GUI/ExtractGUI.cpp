@@ -6,6 +6,9 @@
 #include <string>
 #include <thread>
 #include <mutex>
+#include <memory>
+#include <atomic>
+#include <map>
 
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -270,6 +273,48 @@ static bool ArchiveHasEncryptedItems(
   return false;
 }
 
+// Encrypted-content pre-check for the extract dialog, started by the page
+// after the dialog is already visible. The archive scan runs on a background
+// thread with a snapshot of the open parameters; the outcome is posted back
+// as K7_PASSWORD_ENCRYPTION_CHECK_DONE_MESSAGE so the UI thread is never
+// blocked while the dialog appears.
+static BOOLEAN WINAPI StartEncryptionCheck(
+    LPVOID callbackContext,
+    HWND notifyWindow)
+{
+  const SssPasswordQueryContext *context =
+      static_cast<const SssPasswordQueryContext *>(callbackContext);
+  if (!context || !context->ArchivePathsFull ||
+      context->ArchivePathsFull->IsEmpty() || !notifyWindow)
+    return FALSE;
+
+  struct SssEncryptionCheckJob
+  {
+    CCodecs *Codecs = nullptr;
+    CObjectVector<COpenType> FormatIndices;
+    CIntVector ExcludedFormatIndices;
+    UStringVector ArchivePathsFull;
+  };
+  SssEncryptionCheckJob job;
+  job.Codecs = context->Codecs;
+  job.FormatIndices = *context->FormatIndices;
+  job.ExcludedFormatIndices = *context->ExcludedFormatIndices;
+  job.ArchivePathsFull = *context->ArchivePathsFull;
+
+  std::thread([job, notifyWindow]()
+  {
+    SssPasswordQueryContext ctx = {};
+    ctx.Codecs = job.Codecs;
+    ctx.FormatIndices = &job.FormatIndices;
+    ctx.ExcludedFormatIndices = &job.ExcludedFormatIndices;
+    ctx.ArchivePathsFull = &job.ArchivePathsFull;
+    const bool hasEncrypted = ArchiveHasEncryptedItems(ctx);
+    ::PostMessageW(notifyWindow, K7_PASSWORD_ENCRYPTION_CHECK_DONE_MESSAGE,
+        hasEncrypted ? TRUE : FALSE, 0);
+  }).detach();
+  return TRUE;
+}
+
 static bool TestArchivePassword(
     const std::wstring &password,
     const SssPasswordQueryContext &context)
@@ -366,9 +411,10 @@ static bool TestArchivePassword(
 // QueryPasswordForDialog (Source == 2) and receives the outcome as
 // K7_PASSWORD_MATCH_DONE_MESSAGE posted to the dialog window, so no nested
 // modal window is ever created (nested XAML ContentWindow message loops are
-// unsafe on this architecture). The worker owns a snapshot of the extraction
-// parameters, so it never touches the caller's dialog-owned objects and can
-// outlive the dialog safely.
+// unsafe on this architecture). Every request is an independent task with its
+// own RequestId; the result is routed back by that id, so closing a dialog
+// and reopening one never blocks a new request and stale results are ignored
+// by the page that no longer owns them.
 struct SssLocalPasswordMatchJob
 {
   CCodecs *Codecs = nullptr;
@@ -379,26 +425,27 @@ struct SssLocalPasswordMatchJob
   CExtractOptions Options;
 };
 
-static struct SssLocalPasswordMatchState
+struct SssLocalPasswordMatchTask
 {
-  std::mutex Mutex;
-  bool Running = false;
-  bool Cancelled = false;
-  HWND NotifyWindow = NULL;
+  std::atomic<bool> Cancelled{false};
   SssLocalPasswordMatchJob Job;
-} g_LocalMatch;
+  HWND NotifyWindow = NULL;
+};
 
-static void LocalPasswordMatchWorker()
+static std::atomic<UINT64> g_NextPasswordRequestId{1};
+static std::mutex g_PasswordTasksMutex;
+static std::map<UINT64, std::shared_ptr<SssLocalPasswordMatchTask>>
+    g_PasswordTasks;
+
+static void LocalPasswordMatchWorker(
+    std::shared_ptr<SssLocalPasswordMatchTask> task,
+    UINT64 requestId)
 {
   int status = K7_PASSWORD_MATCH_STATUS_NOMATCH;
   std::wstring acceptedPassword;
   try
   {
-    SssLocalPasswordMatchJob job;
-    {
-      std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-      job = g_LocalMatch.Job;
-    }
+    const SssLocalPasswordMatchJob job = task->Job;
 
     // CCensorNode is not copyable; rebuild the equivalent "include
     // everything" wildcard so the worker never touches the caller's censor.
@@ -415,14 +462,11 @@ static void LocalPasswordMatchWorker()
     {
       for (size_t i = 0; i < candidates.size(); ++i)
       {
+        if (task->Cancelled.load())
         {
-          std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-          if (g_LocalMatch.Cancelled)
-          {
-            cancelled = true;
-            ExtractFlowDiagLog(L"[Q3] match cancelled");
-            break;
-          }
+          cancelled = true;
+          ExtractFlowDiagLog(L"[Q3] match cancelled");
+          break;
         }
         ExtractFlowDiagLogIndex(L"[Q3] local candidate begin", i);
         SssPasswordQueryContext ctx;
@@ -450,10 +494,7 @@ static void LocalPasswordMatchWorker()
     }
 
     if (!accepted && !cancelled)
-    {
-      std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-      cancelled = g_LocalMatch.Cancelled;
-    }
+      cancelled = task->Cancelled.load();
 
     status = accepted
         ? K7_PASSWORD_MATCH_STATUS_MATCHED
@@ -470,109 +511,156 @@ static void LocalPasswordMatchWorker()
     status = K7_PASSWORD_MATCH_STATUS_NOMATCH;
   }
 
-  wchar_t *passwordCopy =
-      new (std::nothrow) wchar_t[K7_PASSWORD_MAX_PASSWORD_LENGTH]();
-  if (passwordCopy)
+  K7_PASSWORD_MATCH_RESULT *result =
+      new (std::nothrow) K7_PASSWORD_MATCH_RESULT{};
+  if (result)
   {
+    result->RequestId = requestId;
+    result->Status = static_cast<UINT32>(status);
+    result->Source = K7_PASSWORD_QUERY_SOURCE_LOCAL;
     if (status == K7_PASSWORD_MATCH_STATUS_MATCHED)
     {
-      wcsncpy_s(passwordCopy, K7_PASSWORD_MAX_PASSWORD_LENGTH,
+      wcsncpy_s(result->Password, K7_PASSWORD_MAX_PASSWORD_LENGTH,
           acceptedPassword.c_str(), _TRUNCATE);
     }
-    else
+    ExtractFlowDiagLogResult(L"[Q3] match worker notify", status);
+    // PostMessage fails silently when the dialog was already destroyed; the
+    // heap block is then released here instead of leaking.
+    if (!::PostMessageW(task->NotifyWindow, K7_PASSWORD_MATCH_DONE_MESSAGE,
+        0, reinterpret_cast<LPARAM>(result)))
     {
-      passwordCopy[0] = L'\0';
+      delete result;
     }
   }
-  ExtractFlowDiagLogResult(L"[Q3] match worker notify", status);
-  HWND notifyWindow = NULL;
+
+  // The task is done; drop it from the table so a later cancel is a no-op
+  // and the request id can never collide with a future request.
   {
-    std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-    // Send to the latest extract dialog: if the dialog that started this
-    // match was already closed and a new one opened, the result still
-    // reaches a live page (which restores its button / shows the notice).
-    notifyWindow = g_LocalMatch.NotifyWindow;
-  }
-  if (!::PostMessageW(notifyWindow, K7_PASSWORD_MATCH_DONE_MESSAGE,
-      static_cast<WPARAM>(status), reinterpret_cast<LPARAM>(passwordCopy)))
-  {
-    delete[] passwordCopy;
-  }
-  {
-    std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-    g_LocalMatch.Running = false;
-    g_LocalMatch.Cancelled = false;
-    g_LocalMatch.Job = SssLocalPasswordMatchJob();
+    std::lock_guard<std::mutex> lock(g_PasswordTasksMutex);
+    g_PasswordTasks.erase(requestId);
   }
 }
 
-static VOID WINAPI CancelLocalPasswordMatch(LPVOID)
+static VOID WINAPI CancelLocalPasswordMatch(LPVOID, UINT64 requestId)
 {
-  std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-  g_LocalMatch.Cancelled = true;
+  std::lock_guard<std::mutex> lock(g_PasswordTasksMutex);
+  const auto it = g_PasswordTasks.find(requestId);
+  if (it != g_PasswordTasks.end())
+    it->second->Cancelled = true;
 }
 
-static BOOLEAN WINAPI QueryPasswordForDialog(
+// Async cloud lookup. The WinHTTP request can take seconds when the
+// endpoint is unreachable or the API key is wrong, so it must never run on
+// the UI thread. The outcome is posted back as
+// K7_PASSWORD_MATCH_DONE_MESSAGE with the same request id, exactly like the
+// local match path, so the dialog appears and stays responsive while the
+// request is in flight.
+static void CloudPasswordQueryWorker(
+    std::wstring archivePath,
+    UINT64 requestId,
+    HWND notifyWindow)
+{
+  int status = K7_PASSWORD_MATCH_STATUS_NOMATCH;
+  std::wstring value;
+  try
+  {
+    if (NanaZipPassword::QueryCloudPassword(archivePath, value))
+      status = K7_PASSWORD_MATCH_STATUS_MATCHED;
+  }
+  catch (...)
+  {
+    // Malformed config or engine exception: report "no match" instead of
+    // terminating the process from a bare std::thread.
+    ExtractFlowDiagLog(L"[Q3] cloud worker exception");
+    status = K7_PASSWORD_MATCH_STATUS_NOMATCH;
+  }
+
+  K7_PASSWORD_MATCH_RESULT *result =
+      new (std::nothrow) K7_PASSWORD_MATCH_RESULT{};
+  if (result)
+  {
+    result->RequestId = requestId;
+    result->Status = static_cast<UINT32>(status);
+    result->Source = K7_PASSWORD_QUERY_SOURCE_CLOUD;
+    if (status == K7_PASSWORD_MATCH_STATUS_MATCHED)
+    {
+      wcsncpy_s(result->Password, K7_PASSWORD_MAX_PASSWORD_LENGTH,
+          value.c_str(), _TRUNCATE);
+    }
+    // PostMessage fails silently when the dialog was already destroyed; the
+    // heap block is then released here instead of leaking.
+    if (!::PostMessageW(notifyWindow, K7_PASSWORD_MATCH_DONE_MESSAGE,
+        0, reinterpret_cast<LPARAM>(result)))
+    {
+      delete result;
+    }
+  }
+}
+
+static UINT32 WINAPI QueryPasswordForDialog(
     LPCWSTR archivePath,
     UINT32 source,
     LPVOID callbackContext,
+    HWND notifyWindow,
+    UINT64 *requestId,
     LPWSTR password,
     UINT32 passwordCapacity)
 {
-  if (!password || passwordCapacity == 0)
-    return FALSE;
+  if (!password || passwordCapacity == 0 || !requestId)
+    return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
+  *requestId = 0;
+
   const SssPasswordQueryContext *context =
       static_cast<const SssPasswordQueryContext *>(callbackContext);
   const std::wstring path = context && !context->ArchivePath.empty()
       ? context->ArchivePath
       : (archivePath ? archivePath : L"");
   if (path.empty())
-    return FALSE;
+    return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
 
-  std::wstring value;
-  bool found = false;
-  if (source == 1)
+  if (source == K7_PASSWORD_QUERY_SOURCE_CLOUD)
   {
-    if (!NanaZipPassword::QueryCloudPassword(path, value))
-      return FALSE;
-    found = true;
+    // Async cloud lookup: the network request runs on a worker thread so
+    // the dialog appears and stays responsive while it is in flight. The
+    // outcome arrives through K7_PASSWORD_MATCH_DONE_MESSAGE with the same
+    // request id, used by both the manual button and the automatic lookup.
+    if (!notifyWindow)
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
+    const UINT64 id = g_NextPasswordRequestId.fetch_add(1);
+    *requestId = id;
+    std::thread(CloudPasswordQueryWorker, path, id, notifyWindow).detach();
+    return K7_PASSWORD_QUERY_RESULT_PENDING;
   }
-  else if (source == K7_PASSWORD_QUERY_SOURCE_LOCAL)
-  {
-    if (!context)
-      return FALSE;
 
-    // Start the match on a background thread. The page switches its button
-    // to the "cancelling" state and receives the outcome as a posted
-    // K7_PASSWORD_MATCH_DONE_MESSAGE; nothing here blocks the UI thread and
-    // no nested modal window is created.
+  if (source == K7_PASSWORD_QUERY_SOURCE_LOCAL)
+  {
+    if (!context || !notifyWindow)
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
+
+    // Every request gets its own task and request id; a new dialog can always
+    // start a fresh match even when an older task is still finishing, and the
+    // result is routed back by request id instead of by "the latest window".
+    auto task = std::make_shared<SssLocalPasswordMatchTask>();
+    task->NotifyWindow = notifyWindow;
+    task->Job.Codecs = context->Codecs;
+    task->Job.FormatIndices = *context->FormatIndices;
+    task->Job.ExcludedFormatIndices = *context->ExcludedFormatIndices;
+    task->Job.ArchivePaths = *context->ArchivePaths;
+    task->Job.ArchivePathsFull = *context->ArchivePathsFull;
+    task->Job.Options = *context->Options;
+
+    const UINT64 id = g_NextPasswordRequestId.fetch_add(1);
     {
-      std::lock_guard<std::mutex> lock(g_LocalMatch.Mutex);
-      if (g_LocalMatch.Running)
-        return FALSE; // a match is already in flight
-      g_LocalMatch.Running = true;
-      g_LocalMatch.Cancelled = false;
-      g_LocalMatch.NotifyWindow = ::GetActiveWindow();
-      g_LocalMatch.Job.Codecs = context->Codecs;
-      g_LocalMatch.Job.FormatIndices = *context->FormatIndices;
-      g_LocalMatch.Job.ExcludedFormatIndices =
-          *context->ExcludedFormatIndices;
-      g_LocalMatch.Job.ArchivePaths = *context->ArchivePaths;
-      g_LocalMatch.Job.ArchivePathsFull = *context->ArchivePathsFull;
-      g_LocalMatch.Job.Options = *context->Options;
+      std::lock_guard<std::mutex> lock(g_PasswordTasksMutex);
+      g_PasswordTasks[id] = task;
     }
+    *requestId = id;
     ExtractFlowDiagLog(L"[Q3] local match started async");
-    std::thread(LocalPasswordMatchWorker).detach();
-    return FALSE; // async: the XAML page switches to the cancelling state
+    std::thread(LocalPasswordMatchWorker, task, id).detach();
+    return K7_PASSWORD_QUERY_RESULT_PENDING;
   }
-  else
-  {
-    return FALSE;
-  }
-  if (!found || value.size() >= passwordCapacity)
-    return FALSE;
-  wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
-  return TRUE;
+
+  return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
 }
 
 #ifndef Z7_SFX
@@ -1307,8 +1395,10 @@ HRESULT ExtractGUI(
         ctx.PasswordSource = extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Cloud ? 1
             : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Local ? 2
             : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::CommandLine ? 3 : 0));
-        ctx.HasEncryptedItems = ArchiveHasEncryptedItems(queryContext)
-            ? TRUE : FALSE;
+        // The encrypted-content pre-check runs after the dialog is shown so
+        // the dialog appears immediately; the page starts it through this
+        // callback and receives the outcome as a window message.
+        ctx.EncryptionCheckCallback = StartEncryptionCheck;
         ctx.PathMode = dialog.PathMode;
         ctx.OverwriteMode = dialog.OverwriteMode;
         ctx.PathMode_Force = dialog.PathMode_Force;

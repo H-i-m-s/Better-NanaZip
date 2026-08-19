@@ -87,7 +87,8 @@ bool CExtractSettingsPage::OnInit()
   priority.ResetContent();
   priority.AddString(LangString(IDX_SETTINGS_PRIORITY_LOCAL_CLOUD));
   priority.AddString(LangString(IDX_SETTINGS_PRIORITY_CLOUD_LOCAL));
-  priority.SetCurSel(st.MatchPriority != 0 ? 1 : 0);
+  priority.AddString(LangString(IDX_SETTINGS_PRIORITY_MIXED));
+  priority.SetCurSel(st.MatchPriority == 1 ? 1 : (st.MatchPriority >= 2 ? 2 : 0));
 
   LoadBookToEdit();
   LoadApiToEdits();
@@ -204,7 +205,10 @@ LONG CExtractSettingsPage::OnApply()
     {
       CComboBox priority;
       priority.Attach(GetItem(IDX_SETTINGS_MATCH_PRIORITY));
-      st.MatchPriority = (priority.GetCurSel() == 1) ? 1 : 0;
+      {
+        const int Sel = priority.GetCurSel();
+        st.MatchPriority = (Sel == 1) ? 1 : (Sel >= 2 ? 2 : 0);
+      }
     }
     st.AutoShowPassword = IsButtonCheckedBool(IDX_SETTINGS_AUTO_SHOW_PASSWORD);
     st.Save();

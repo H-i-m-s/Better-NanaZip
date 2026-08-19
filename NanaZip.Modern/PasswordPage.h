@@ -60,10 +60,15 @@ namespace winrt::NanaZip::Modern::implementation
         // Called by the window subclass (UI thread) when the async local
         // password match finishes. Status is one of the
         // K7_PASSWORD_MATCH_STATUS_* values; Password is the accepted
-        // candidate for MATCHED, otherwise empty.
+        // candidate for MATCHED, otherwise empty; Source records where the
+        // accepted password came from (K7_PASSWORD_QUERY_SOURCE_*). Results
+        // whose RequestId does not match the page's outstanding request are
+        // ignored.
         void SetPasswordFromMatch(
+            UINT64 RequestId,
             INT Status,
-            LPCWSTR Password);
+            LPCWSTR Password,
+            UINT32 Source);
 
         void OnPasswordKeyDown(
             winrt::IInspectable const& sender,
@@ -109,10 +114,23 @@ namespace winrt::NanaZip::Modern::implementation
         PK7_PASSWORD_DIALOG_CONTEXT m_Context;
         bool m_OkClicked;
         bool m_ProgrammaticPasswordChange;
-        // True while the async local password match is running; the button
-        // switches to the cancelling state while it is set.
+        // True while at least one async lookup (local match or cloud query)
+        // is running; the local button switches to the cancelling state
+        // while it is set.
         bool m_PasswordMatchRunning;
+        // Request ids of the outstanding lookups, one per source. Zero means
+        // no task of that source is in flight. Results carrying any other id
+        // belong to an older dialog/task and are ignored. Local-first and
+        // cloud-first run one task at a time; mixed mode runs both.
+        UINT64 m_LocalMatchRequestId;
+        UINT64 m_CloudQueryRequestId;
         bool m_AutoQueryStarted;
         bool m_AutoQueryActive;
+
+        // Recomputes m_PasswordMatchRunning from the two outstanding ids.
+        void UpdatePasswordMatchRunning();
+        // Fills the password box and records the source for a matched
+        // result, ending the automatic chain.
+        void FillPassword(LPCWSTR Password, UINT32 Source);
     };
 }

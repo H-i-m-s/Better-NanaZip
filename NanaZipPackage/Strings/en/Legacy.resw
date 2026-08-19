@@ -765,6 +765,9 @@
   <data name="Resource2558" xml:space="preserve">
     <value>Cancel matching</value>
   </data>
+  <data name="Resource2559" xml:space="preserve">
+    <value>Mixed (parallel)</value>
+  </data>
   <data name="Resource2582" xml:space="preserve">
     <value>Protocol version:</value>
   </data>

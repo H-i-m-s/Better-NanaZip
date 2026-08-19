@@ -40,6 +40,7 @@
 // 优先级下拉项（语言资源 ID，非控件）
 #define IDX_SETTINGS_PRIORITY_LOCAL_CLOUD   2544
 #define IDX_SETTINGS_PRIORITY_CLOUD_LOCAL   2545
+#define IDX_SETTINGS_PRIORITY_MIXED        2559
 // 静态标签
 #define IDT_SETTINGS_API_URL                2546
 #define IDT_SETTINGS_API_APP_ID             2547

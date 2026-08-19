@@ -30,43 +30,41 @@
 
 namespace
 {
-  static BOOLEAN WINAPI QueryPasswordForDialog(
+  static UINT32 WINAPI QueryPasswordForDialog(
       LPCWSTR archivePath,
       UINT32 source,
       LPVOID context,
+      HWND notifyWindow,
+      UINT64 *requestId,
       LPWSTR password,
       UINT32 passwordCapacity)
   {
-    if (!password || passwordCapacity == 0)
-      return FALSE;
-    if (source != 1)
+    UNREFERENCED_PARAMETER(notifyWindow);
+    if (!password || passwordCapacity == 0 || !requestId)
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
+    *requestId = 0;
+    if (source == K7_PASSWORD_QUERY_SOURCE_LOCAL)
     {
-      if (source == 2)
-      {
-        // No local password book support on this host: post a silent
-        // cancellation so the page leaves its cancelling state instead of
-        // waiting forever for a worker result.
-        ::PostMessageW(
-            ::GetActiveWindow(),
-            K7_PASSWORD_MATCH_DONE_MESSAGE,
-            K7_PASSWORD_MATCH_STATUS_CANCELLED,
-            NULL);
-      }
-      return FALSE;
+      // No local password book support on this host: report that the
+      // request was not started so the page keeps its normal button state
+      // instead of waiting for a worker result.
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     }
+    if (source != K7_PASSWORD_QUERY_SOURCE_CLOUD)
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     const std::wstring *fullArchivePath =
         static_cast<const std::wstring *>(context);
     const std::wstring path = fullArchivePath ? *fullArchivePath
         : (archivePath ? archivePath : L"");
     if (path.empty())
-      return FALSE;
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     std::wstring value;
     if (!NanaZipPassword::QueryCloudPassword(path, value))
-      return FALSE;
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     if (value.size() >= passwordCapacity)
-      return FALSE;
+      return K7_PASSWORD_QUERY_RESULT_NOT_FOUND;
     wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
-    return TRUE;
+    return K7_PASSWORD_QUERY_RESULT_MATCHED;
   }
 }
 #include "FormatUtils.h"

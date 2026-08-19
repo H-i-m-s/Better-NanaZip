@@ -765,6 +765,9 @@
   <data name="Resource2558" xml:space="preserve">
     <value>取消匹配</value>
   </data>
+  <data name="Resource2559" xml:space="preserve">
+    <value>混合（并行）</value>
+  </data>
   <data name="Resource2582" xml:space="preserve">
     <value>协议版本:</value>
   </data>

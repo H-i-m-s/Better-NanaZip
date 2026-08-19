@@ -695,30 +695,62 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
 #define K7_PASSWORD_MAX_PASSWORD_LENGTH 512
 
 // Local password match completion, posted from the match worker thread to the
-// extract dialog window. wParam is one of the K7_PASSWORD_MATCH_STATUS_*
-// values; lParam is a heap-allocated
-// wchar_t[K7_PASSWORD_MAX_PASSWORD_LENGTH] holding the accepted password when
-// the status is MATCHED (the receiver must delete[] it) and NULL otherwise.
-// The message is only sent while the dialog window still exists.
+// dialog window. lParam is a heap-allocated K7_PASSWORD_MATCH_RESULT owned by
+// the receiver; it is only posted while the dialog window still exists.
 #define K7_PASSWORD_MATCH_DONE_MESSAGE (WM_APP + 0x4A)
+// Encrypted-content pre-check completion for the extract dialog. wParam is
+// TRUE when the archive contains encrypted items, FALSE otherwise.
+#define K7_PASSWORD_ENCRYPTION_CHECK_DONE_MESSAGE (WM_APP + 0x4B)
 #define K7_PASSWORD_MATCH_STATUS_NOMATCH 0
 #define K7_PASSWORD_MATCH_STATUS_MATCHED 1
 #define K7_PASSWORD_MATCH_STATUS_CANCELLED 2
 #define K7_PASSWORD_QUERY_SOURCE_CLOUD 1u
 #define K7_PASSWORD_QUERY_SOURCE_LOCAL 2u
 
-typedef BOOLEAN (WINAPI *K7_PASSWORD_QUERY_CALLBACK)(
+// Query callback outcome. MATCHED fills Password synchronously; PENDING means
+// the host started an asynchronous task whose result arrives later through
+// K7_PASSWORD_MATCH_DONE_MESSAGE carrying the same RequestId. NOT_FOUND means
+// the request was not started (nothing will arrive).
+#define K7_PASSWORD_QUERY_RESULT_NOT_FOUND 0u
+#define K7_PASSWORD_QUERY_RESULT_MATCHED 1u
+#define K7_PASSWORD_QUERY_RESULT_PENDING 2u
+
+typedef UINT32 (WINAPI *K7_PASSWORD_QUERY_CALLBACK)(
     _In_ LPCWSTR ArchivePath,
     _In_ UINT32 Source,
     _In_opt_ LPVOID CallbackContext,
+    _In_ HWND NotifyWindow,
+    _Out_ UINT64 *RequestId,
     _Out_writes_z_(K7_PASSWORD_MAX_PASSWORD_LENGTH) LPWSTR Password,
     _In_ UINT32 PasswordCapacity);
 
-// Cancels an in-flight local password match. The host owns the match state;
-// the XAML page only forwards the click while its button is in the
-// "cancelling" state.
+// Result payload of K7_PASSWORD_MATCH_DONE_MESSAGE. The receiver compares
+// RequestId against its own outstanding request and ignores stale results.
+// Source is one of the K7_PASSWORD_QUERY_SOURCE_* values so the receiver can
+// record where the accepted password came from.
+typedef struct _K7_PASSWORD_MATCH_RESULT
+{
+    UINT64 RequestId;
+    UINT32 Status;
+    UINT32 Source;
+    WCHAR Password[K7_PASSWORD_MAX_PASSWORD_LENGTH];
+} K7_PASSWORD_MATCH_RESULT, *PK7_PASSWORD_MATCH_RESULT;
+
+// Cancels the asynchronous request identified by RequestId. The host owns the
+// task table; the XAML page only forwards the click while its button is in
+// the "cancelling" state and restores its own UI immediately.
 typedef VOID (WINAPI *K7_PASSWORD_QUERY_CANCEL_CALLBACK)(
-    _In_opt_ LPVOID CallbackContext);
+    _In_opt_ LPVOID CallbackContext,
+    _In_ UINT64 RequestId);
+
+// Starts an asynchronous encrypted-content pre-check for the extract dialog.
+// Returns TRUE when the check was started; the outcome arrives through
+// K7_PASSWORD_ENCRYPTION_CHECK_DONE_MESSAGE posted to NotifyWindow. Returns
+// FALSE when no check could be started (the page then skips automatic
+// lookup because it cannot confirm the archive needs a password).
+typedef BOOLEAN (WINAPI *K7_PASSWORD_ENCRYPTION_CHECK_CALLBACK)(
+    _In_opt_ LPVOID CallbackContext,
+    _In_ HWND NotifyWindow);
 
 typedef struct _K7_EXTRACT_DIALOG_CONTEXT
 {
@@ -730,9 +762,14 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     WCHAR DirPath[MAX_PATH];
     // The initial password (may be empty).
     WCHAR Password[K7_PASSWORD_MAX_PASSWORD_LENGTH];
-    // Set by the host after a side-effect-free archive inspection. Automatic
-    // lookup is started only when the archive has encrypted content.
+    // Set by the async encrypted-content pre-check after the dialog is
+    // shown. Automatic lookup is started only when this is TRUE.
     BOOLEAN HasEncryptedItems;
+    // Optional host callback that starts the encrypted-content pre-check on
+    // a background thread; the outcome arrives through
+    // K7_PASSWORD_ENCRYPTION_CHECK_DONE_MESSAGE. May be NULL when the host
+    // already supplied HasEncryptedItems synchronously.
+    K7_PASSWORD_ENCRYPTION_CHECK_CALLBACK EncryptionCheckCallback;
     // 0 = Full paths, 1 = No paths, 2 = Absolute paths.
     UINT32 PathMode;
     // 0 = Ask, 1 = Overwrite, 2 = Skip existing, 3 = Rename, 4 = Rename existing.
