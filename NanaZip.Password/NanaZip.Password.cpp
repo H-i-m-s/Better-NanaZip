@@ -247,22 +247,26 @@ namespace
     {
         lines.clear();
         size_t start = 0;
-        while (start <= text.size())
+        const size_t len = text.size();
+        while (start <= len)
         {
-            const size_t end = text.find(L'\n', start);
-            std::wstring line = text.substr(
-                start,
-                end == std::wstring::npos ? std::wstring::npos : end - start);
-            if (!line.empty() && line.back() == L'\r')
+            // Find LF, CRLF, or CR separators for legacy password files.
+            size_t end = start;
+            while (end < len && text[end] != L'\n' && text[end] != L'\r')
             {
-                line.pop_back();
+                end++;
             }
-            lines.emplace_back(std::move(line));
-            if (end == std::wstring::npos)
+            lines.emplace_back(text.substr(start, end - start));
+            // Skip consecutive separators, including CRLF as one break.
+            while (end < len && (text[end] == L'\n' || text[end] == L'\r'))
+            {
+                end++;
+            }
+            start = end;
+            if (end >= len)
             {
                 break;
             }
-            start = end + 1;
         }
     }
 

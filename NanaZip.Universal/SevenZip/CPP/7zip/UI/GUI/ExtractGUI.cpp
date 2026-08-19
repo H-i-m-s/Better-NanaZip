@@ -196,7 +196,7 @@ Z7_COM7F_IMF(CTestExtractCallback::PrepareOperation(
 
 Z7_COM7F_IMF(CTestExtractCallback::SetOperationResult(Int32 opRes))
 {
-  ExtractFlowDiagLog(L"[C] SetOperationResult");
+  ExtractFlowDiagLogResult(L"[C] SetOperationResult", opRes);
   if (opRes != NArchive::NExtract::NOperationResult::kOK)
     HadError = true;
   return S_OK;
