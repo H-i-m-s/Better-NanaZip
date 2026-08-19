@@ -57,6 +57,11 @@ bool g_SssUseDlgState = false;
 // 7zG records a successful delete request here instead of deleting while
 // the File Manager's archive handle is still open.
 UString g_SssReleaseBeforeDeleteMarker;
+// -sssid<id>: the File Manager's batch password session. When set, the
+// password callback asks that session (a local named pipe) for the current
+// archive's candidates instead of showing the password dialog, and skips
+// the archive when no candidate verifies.
+UString g_SssPasswordSessionId;
 // **************** SSS Modification End ****************
 
 #ifdef Z7_LARGE_PAGES
@@ -232,6 +237,7 @@ enum Enum
   kNoDelete,
   kSSSDlgState,
   kReleaseBeforeDelete,
+  kSSSPasswordSession,
   // **************** SSS Modification End ****************
 
   kDeleteAfterCompressing,
@@ -397,6 +403,7 @@ static const CSwitchForm kSwitchForms[] =
   { "snd", SWFRM_MINUS },
   { "ssdlg", SWFRM_MINUS },
   { "srd", SWFRM_STRING_SINGL(0) },
+  { "sssid", SWFRM_STRING_SINGL(0) },
   // **************** SSS Modification End ****************
   
   { "sdel", SWFRM_SIMPLE },
@@ -1530,6 +1537,9 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
   if (parser[NKey::kReleaseBeforeDelete].ThereIs)
     g_SssReleaseBeforeDeleteMarker =
         parser[NKey::kReleaseBeforeDelete].PostStrings[0];
+  if (parser[NKey::kSSSPasswordSession].ThereIs)
+    g_SssPasswordSessionId =
+        parser[NKey::kSSSPasswordSession].PostStrings[0];
   // **************** SSS Modification End ****************
   
   NWildcard::ECensorPathMode censorPathMode = NWildcard::k_RelatPath;

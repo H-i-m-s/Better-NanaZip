@@ -11,6 +11,14 @@
 #include <cwctype>
 #include <vector>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <random>
+#include <thread>
+
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "bcrypt.lib")
 
@@ -24,6 +32,40 @@ namespace
     constexpr wchar_t kAutoQueryCloud[] = L"AutoQueryCloud";
     constexpr wchar_t kAutoMatchLocal[] = L"AutoMatchLocal";
     constexpr wchar_t kMatchPriority[] = L"MatchPriority";
+
+    // Diagnostic log for the batch password session (server and client
+    // sides). Only events and error codes are recorded; passwords never
+    // appear here. A separate file keeps it free of cross-process writes
+    // with the 7zG extraction trace.
+    static void SssBatchDiagLog(const wchar_t* event, DWORD error)
+    {
+        wchar_t tempPath[MAX_PATH] = {};
+        if (::GetTempPathW(MAX_PATH, tempPath) == 0)
+        {
+            return;
+        }
+        std::wstring path = tempPath;
+        path += L"k7batch_session_diag.log";
+        HANDLE file = ::CreateFileW(
+            path.c_str(),
+            FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+        if (file == INVALID_HANDLE_VALUE)
+        {
+            return;
+        }
+        wchar_t buffer[192];
+        const int length = ::wsprintfW(
+            buffer, L"[Q4-S] %s err=%lu\n", event, error);
+        DWORD written = 0;
+        ::WriteFile(file, buffer, length * sizeof(wchar_t),
+            &written, nullptr);
+        ::CloseHandle(file);
+    }
 
     struct BcryptObject
     {
@@ -735,7 +777,8 @@ namespace
         const wchar_t* relativePath,
         const std::wstring& body,
         const std::wstring* accessHeader,
-        std::wstring& response)
+        std::wstring& response,
+        DWORD timeoutSeconds = 0)
     {
         response.clear();
         if (!IsHttpsUrl(config.Url))
@@ -791,7 +834,10 @@ namespace
         {
             return false;
         }
-        const DWORD timeout = config.TimeoutSeconds * 1000;
+        // timeoutSeconds != 0 overrides the configured timeout: the batch
+        // prefetch thread must never stall the session teardown for long.
+        const DWORD timeout = (timeoutSeconds != 0
+            ? timeoutSeconds : config.TimeoutSeconds) * 1000;
         ::WinHttpSetTimeouts(session, timeout, timeout, timeout, timeout);
         HINTERNET connection = ::WinHttpConnect(
             session,
@@ -1054,7 +1100,8 @@ namespace NanaZipPassword
 
     bool QueryCloudPassword(
         const std::wstring& archivePath,
-        std::wstring& password)
+        std::wstring& password,
+        DWORD timeoutSeconds)
     {
         password.clear();
         ApiConfig config;
@@ -1078,7 +1125,8 @@ namespace NanaZipPassword
             return false;
         }
         std::wstring response;
-        if (!HttpPost(config, L"/api/v3/search/info", envelope, &accessHeader, response))
+        if (!HttpPost(config, L"/api/v3/search/info", envelope,
+            &accessHeader, response, timeoutSeconds))
         {
             return false;
         }
@@ -1160,5 +1208,619 @@ namespace NanaZipPassword
             && HttpPost(config, L"/api/v3/sync/ads", envelope, nullptr, response)
             && FindJsonString(response, L"code", code)
             && code == L"200";
+    }
+
+    std::wstring GeneratePasswordSessionId()
+    {
+        std::random_device rd;
+        std::mt19937_64 gen(rd());
+        wchar_t buf[40];
+        swprintf_s(buf, L"%016llx%016llx",
+            static_cast<unsigned long long>(gen()),
+            static_cast<unsigned long long>(gen()));
+        return buf;
+    }
+
+    std::wstring PasswordSessionPipeName(
+        const std::wstring& sessionId)
+    {
+        // Named pipes use the \\.\pipe\ prefix; \\?\pipe\ is not a
+        // valid pipe name and would make CreateNamedPipe/CreateFile fail.
+        return L"\\\\.\\pipe\\NanaZip.Pwd." + sessionId;
+    }
+
+    BatchSession::BatchSession(
+        const std::wstring& sessionId,
+        const std::vector<std::wstring>& archivePaths) :
+        m_sessionId(sessionId),
+        m_pipeName(PasswordSessionPipeName(sessionId)),
+        m_archivePaths(archivePaths),
+        m_cloudPasswords(archivePaths.size()),
+        m_cloudReady(archivePaths.size(), false),
+        m_stopped(false),
+        m_stopEvent(::CreateEventW(nullptr, TRUE, FALSE, nullptr))
+    {
+    }
+
+    BatchSession::~BatchSession()
+    {
+        this->Stop();
+        // Handler threads are woken by the stop event (or finish their
+        // request) and then exit on their own; join them all before the
+        // session members go away.
+        SssBatchDiagLog(L"[Q4-S] client join begin", 0);
+        for (auto& thread : this->m_clientThreads)
+        {
+            if (thread.joinable())
+            {
+                thread.join();
+            }
+        }
+        SssBatchDiagLog(L"[Q4-S] client join done", 0);
+        if (this->m_stopEvent)
+        {
+            ::CloseHandle(this->m_stopEvent);
+        }
+    }
+
+    void BatchSession::Stop()
+    {
+        this->m_stopped.store(true);
+        this->m_cv.notify_all();
+        if (this->m_stopEvent)
+        {
+            ::SetEvent(this->m_stopEvent);
+        }
+    }
+
+    void BatchSession::PublishLocalCandidates(
+        const std::vector<std::wstring>& candidates)
+    {
+        std::lock_guard<std::mutex> lock(this->m_mutex);
+        this->m_localCandidates = candidates;
+        this->m_cv.notify_all();
+    }
+
+    void BatchSession::PublishCloudResult(
+        size_t index,
+        const std::wstring& cloudPassword)
+    {
+        std::lock_guard<std::mutex> lock(this->m_mutex);
+        if (index < this->m_cloudReady.size())
+        {
+            this->m_cloudPasswords[index] = cloudPassword;
+            this->m_cloudReady[index] = true;
+        }
+        this->m_cv.notify_all();
+    }
+
+    int BatchSession::IndexOf(
+        const std::wstring& archivePath) const
+    {
+        for (size_t i = 0; i < this->m_archivePaths.size(); ++i)
+        {
+            if (::_wcsicmp(archivePath.c_str(),
+                this->m_archivePaths[i].c_str()) == 0)
+            {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    bool BatchSession::ServeConnection()
+    {
+        // Once the session is stopping, never accept a new connection:
+        // the File Manager tears the scope down as soon as 7zG exits, and
+        // a late client would make the pipe thread join hang.
+        if (this->m_stopped.load())
+        {
+            return false;
+        }
+        SssBatchDiagLog(L"[Q4-SV] pipe create", 0);
+        HANDLE pipe = ::CreateNamedPipeW(
+            this->m_pipeName.c_str(),
+            // FILE_FLAG_OVERLAPPED is mandatory: without it the pipe
+            // handle is synchronous, ConnectNamedPipe blocks until a
+            // client connects and ignores the OVERLAPPED/stop event, so
+            // the listener could never be woken during teardown (the
+            // File Manager would hang joining this thread).
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+            PIPE_UNLIMITED_INSTANCES,
+            8192,
+            8192,
+            5000,
+            nullptr);
+        if (pipe == INVALID_HANDLE_VALUE)
+        {
+            SssBatchDiagLog(L"[Q4-SV] pipe create failed",
+                ::GetLastError());
+            return false;
+        }
+        HANDLE connectEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!connectEvent)
+        {
+            ::CloseHandle(pipe);
+            return false;
+        }
+        OVERLAPPED overlapped = {};
+        overlapped.hEvent = connectEvent;
+        BOOL connected = ::ConnectNamedPipe(pipe, &overlapped);
+        DWORD connectError = ::GetLastError();
+        if (!connected && connectError == ERROR_PIPE_CONNECTED)
+        {
+            connected = TRUE;
+        }
+        else if (!connected && connectError == ERROR_IO_PENDING)
+        {
+            SssBatchDiagLog(L"[Q4-SV] pipe connect wait", 0);
+            HANDLE waitHandles[2] = { connectEvent, this->m_stopEvent };
+            const DWORD wait = ::WaitForMultipleObjects(
+                2, waitHandles, FALSE, INFINITE);
+            SssBatchDiagLog(
+                wait == WAIT_OBJECT_0 ? L"[Q4-SV] pipe connect event"
+                : L"[Q4-SV] pipe connect stopped",
+                wait);
+            if (wait == WAIT_OBJECT_0)
+            {
+                DWORD unused = 0;
+                ::GetOverlappedResult(pipe, &overlapped, &unused, FALSE);
+                connected = TRUE;
+            }
+            else
+            {
+                ::CancelIo(pipe);
+            }
+        }
+        if (!connected)
+        {
+            SssBatchDiagLog(L"[Q4-SV] connect failed",
+                ::GetLastError());
+            ::CloseHandle(connectEvent);
+            ::CloseHandle(pipe);
+            return false;
+        }
+
+        SssBatchDiagLog(L"[Q4-SV] client connected", 0);
+
+        // Hand the connection to a dedicated handler thread and return
+        // immediately: 7zG may open several archives / files concurrently
+        // (multi-threaded extraction), so the listener must never block on
+        // one request while another client is waiting. The handler owns
+        // pipe and connectEvent and closes them when done.
+        {
+            std::lock_guard<std::mutex> lock(this->m_mutex);
+            this->m_clientThreads.push_back(std::thread(
+                &BatchSession::HandleClient, this, pipe, connectEvent));
+            SssBatchDiagLog(L"[Q4-S] client thread started",
+                static_cast<DWORD>(this->m_clientThreads.size()));
+        }
+        return true;
+    }
+
+    void BatchSession::HandleClient(HANDLE pipe, HANDLE connectEvent)
+    {
+        SssBatchDiagLog(L"[Q4-S] client handler begin", 0);
+        // Read the request: UINT32 pathByteLen + UTF-16 path bytes.
+        // Every wait also watches the stop event so an aborted client can
+        // never block the session teardown (Stop() + thread join).
+        auto readExact = [&](void* buffer, DWORD bytes) -> bool
+        {
+            OVERLAPPED overlapped = {};
+            overlapped.hEvent =
+                ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (!overlapped.hEvent)
+            {
+                return false;
+            }
+            DWORD read = 0;
+            const BOOL result =
+                ::ReadFile(pipe, buffer, bytes, nullptr, &overlapped);
+            DWORD error = ::GetLastError();
+            bool done = false;
+            if (!result && error == ERROR_IO_PENDING)
+            {
+                HANDLE waitHandles[2] = { overlapped.hEvent,
+                    this->m_stopEvent };
+                const DWORD wait = ::WaitForMultipleObjects(
+                    2, waitHandles, FALSE, INFINITE);
+                if (wait == WAIT_OBJECT_0)
+                {
+                    ::GetOverlappedResult(pipe, &overlapped, &read, FALSE);
+                    done = (read == bytes);
+                }
+                else
+                {
+                    ::CancelIo(pipe);
+                }
+            }
+            else if (result)
+            {
+                done = true;
+            }
+            ::CloseHandle(overlapped.hEvent);
+            return done;
+        };
+        // Stop-aware write: a client that stops reading (or a teardown)
+        // must never block this handler forever.
+        auto writeExact = [&](const void* buffer, DWORD bytes) -> bool
+        {
+            OVERLAPPED overlapped = {};
+            overlapped.hEvent =
+                ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (!overlapped.hEvent)
+            {
+                return false;
+            }
+            DWORD written = 0;
+            const BOOL result =
+                ::WriteFile(pipe, buffer, bytes, nullptr, &overlapped);
+            DWORD error = ::GetLastError();
+            bool done = false;
+            if (!result && error == ERROR_IO_PENDING)
+            {
+                HANDLE waitHandles[2] = { overlapped.hEvent,
+                    this->m_stopEvent };
+                const DWORD wait = ::WaitForMultipleObjects(
+                    2, waitHandles, FALSE, INFINITE);
+                if (wait == WAIT_OBJECT_0)
+                {
+                    ::GetOverlappedResult(pipe, &overlapped, &written, FALSE);
+                    done = (written == bytes);
+                }
+                else
+                {
+                    ::CancelIo(pipe);
+                }
+            }
+            else if (result)
+            {
+                done = true;
+            }
+            ::CloseHandle(overlapped.hEvent);
+            return done;
+        };
+
+        UINT32 pathBytes = 0;
+        if (readExact(&pathBytes, sizeof(pathBytes)) &&
+            pathBytes <= 65536 &&
+            (pathBytes & 1) == 0)
+        {
+            SssBatchDiagLog(L"[Q4-S] client header ok", 0);
+            std::vector<wchar_t> path(pathBytes / sizeof(wchar_t) + 1, 0);
+            if (pathBytes == 0 ||
+                readExact(path.data(), pathBytes))
+            {
+                SssBatchDiagLog(L"[Q4-S] client path ok", 0);
+                const int index = this->IndexOf(path.data());
+                if (index < 0)
+                {
+                    SssBatchDiagLog(L"[Q4-SV] path not indexed", 0);
+                }
+                std::vector<std::wstring> local;
+                std::wstring cloud;
+                {
+                    std::unique_lock<std::mutex> lock(this->m_mutex);
+                    local = this->m_localCandidates;
+                    if (index >= 0)
+                    {
+                        // Wait for the prefetch thread's cloud result with
+                        // a generous timeout: cloud lookups are slow and
+                        // the prefetch thread serves one archive at a time
+                        // (concurrency 1), so a worker may wait behind
+                        // earlier archives.
+                        this->m_cv.wait_for(
+                            lock,
+                            std::chrono::milliseconds(300000),
+                            [&]()
+                            {
+                                return this->m_stopped.load() ||
+                                    this->m_cloudReady[index];
+                            });
+                        SssBatchDiagLog(
+                            L"[Q4-S] client cloud wait done", 0);
+                        if (this->m_cloudReady[index])
+                        {
+                            cloud = this->m_cloudPasswords[index];
+                        }
+                    }
+                }
+
+                // Write the response: UINT32 localCount, then per
+                // candidate UINT32 len + UTF-16 bytes, then UINT32
+                // cloudLen + UTF-16 bytes. Write failures are ignored:
+                // the client may already be gone (stop-aware, so a
+                // teardown cannot block here either).
+                UINT32 count = static_cast<UINT32>(local.size());
+                writeExact(&count, sizeof(count));
+                for (const std::wstring& candidate : local)
+                {
+                    const UINT32 len =
+                        static_cast<UINT32>(candidate.size());
+                    writeExact(&len, sizeof(len));
+                    if (!candidate.empty())
+                    {
+                        writeExact(candidate.c_str(),
+                            len * sizeof(wchar_t));
+                    }
+                }
+                const UINT32 cloudLen =
+                    static_cast<UINT32>(cloud.size());
+                writeExact(&cloudLen, sizeof(cloudLen));
+                if (!cloud.empty())
+                {
+                    writeExact(cloud.c_str(),
+                        cloudLen * sizeof(wchar_t));
+                }
+
+                // The response is fully written. Do NOT disconnect here:
+                // DisconnectNamedPipe drops buffered data the client has
+                // not read yet, and the client needs a moment to start its
+                // read (the server can win the race by microseconds). Wait
+                // for the client to read everything and close its handle
+                // instead; this read returns when the client is gone, and
+                // the stop event still wakes it during teardown.
+                SssBatchDiagLog(L"[Q4-S] client response written", 0);
+                BYTE tail = 0;
+                (void)readExact(&tail, 1);
+                SssBatchDiagLog(L"[Q4-S] client tail done", 0);
+            }
+        }
+        else
+        {
+            SssBatchDiagLog(L"[Q4-SV] read request failed",
+                ::GetLastError());
+        }
+
+        ::DisconnectNamedPipe(pipe);
+        ::CloseHandle(connectEvent);
+        ::CloseHandle(pipe);
+        SssBatchDiagLog(L"[Q4-S] client handler done", 0);
+    }
+
+    bool RequestBatchCandidates(
+        const std::wstring& sessionId,
+        const std::wstring& archivePath,
+        DWORD timeoutMs,
+        BatchCandidates& candidates)
+    {
+        candidates.LocalCandidates.clear();
+        candidates.CloudPassword.clear();
+        const std::wstring pipeName =
+            PasswordSessionPipeName(sessionId);
+
+        HANDLE pipe = INVALID_HANDLE_VALUE;
+        for (int attempt = 0; attempt < 50; ++attempt)
+        {
+            pipe = ::CreateFileW(
+                pipeName.c_str(),
+                GENERIC_READ | GENERIC_WRITE,
+                0,
+                nullptr,
+                OPEN_EXISTING,
+                FILE_FLAG_OVERLAPPED,
+                nullptr);
+            if (pipe != INVALID_HANDLE_VALUE)
+            {
+                break;
+            }
+            const DWORD error = ::GetLastError();
+            if (error == ERROR_PIPE_BUSY)
+            {
+                if (!::WaitNamedPipeW(pipeName.c_str(), 200))
+                {
+                    break;
+                }
+            }
+            else if (error != ERROR_FILE_NOT_FOUND)
+            {
+                // Access denied and similar failures will not heal.
+                break;
+            }
+            else
+            {
+                // The server may not have created the pipe yet.
+                ::Sleep(100);
+            }
+        }
+        if (pipe == INVALID_HANDLE_VALUE)
+        {
+            SssBatchDiagLog(L"[Q4-CL] pipe open failed",
+                ::GetLastError());
+            return false;
+        }
+
+        // Message-mode reads match the server's PIPE_TYPE_MESSAGE
+        // instance; byte mode would also work for reading a message
+        // stream, but being explicit keeps the pairing well-defined.
+        DWORD pipeMode = PIPE_READMODE_MESSAGE;
+        ::SetNamedPipeHandleState(pipe, &pipeMode, nullptr, nullptr);
+
+        // Send the request.
+        const UINT32 pathBytes =
+            static_cast<UINT32>(archivePath.size() * sizeof(wchar_t));
+        DWORD written = 0;
+        bool ok = ::WriteFile(pipe, &pathBytes, sizeof(pathBytes),
+                &written, nullptr) &&
+            ::WriteFile(pipe, archivePath.c_str(), pathBytes,
+                &written, nullptr);
+        if (!ok)
+        {
+            SssBatchDiagLog(L"[Q4-CL] write failed",
+                ::GetLastError());
+            ::CloseHandle(pipe);
+            return false;
+        }
+
+        // Read the response with a bounded timeout.
+        auto readBytes = [&](void* buffer, DWORD bytes) -> bool
+        {
+            DWORD read = 0;
+            OVERLAPPED overlapped = {};
+            overlapped.hEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (!overlapped.hEvent)
+            {
+                return false;
+            }
+            const BOOL result =
+                ::ReadFile(pipe, buffer, bytes, nullptr, &overlapped);
+            DWORD error = ::GetLastError();
+            if (!result && error == ERROR_IO_PENDING)
+            {
+                if (::WaitForSingleObject(overlapped.hEvent, timeoutMs)
+                    != WAIT_OBJECT_0)
+                {
+                    SssBatchDiagLog(L"[Q4-CL] read timeout",
+                        WAIT_TIMEOUT);
+                    ::CancelIo(pipe);
+                    ::CloseHandle(overlapped.hEvent);
+                    return false;
+                }
+                ::GetOverlappedResult(pipe, &overlapped, &read, FALSE);
+            }
+            else if (result)
+            {
+                read = bytes;
+            }
+            else
+            {
+                SssBatchDiagLog(L"[Q4-CL] read failed", error);
+                ::CloseHandle(overlapped.hEvent);
+                return false;
+            }
+            ::CloseHandle(overlapped.hEvent);
+            return read == bytes;
+        };
+
+        UINT32 count = 0;
+        ok = readBytes(&count, sizeof(count));
+        if (ok && count <= 4096)
+        {
+            candidates.LocalCandidates.reserve(count);
+            for (UINT32 i = 0; i < count && ok; ++i)
+            {
+                UINT32 len = 0;
+                ok = readBytes(&len, sizeof(len));
+                if (!ok || len > 1024)
+                {
+                    ok = false;
+                    break;
+                }
+                std::wstring value(len, L'\0');
+                if (len > 0)
+                {
+                    ok = readBytes(&value[0], len * sizeof(wchar_t));
+                }
+                if (ok)
+                {
+                    candidates.LocalCandidates.push_back(
+                        std::move(value));
+                }
+            }
+        }
+        if (ok)
+        {
+            UINT32 cloudLen = 0;
+            ok = readBytes(&cloudLen, sizeof(cloudLen));
+            if (ok && cloudLen <= 1024)
+            {
+                if (cloudLen > 0)
+                {
+                    // cloudLen is the byte length of the UTF-16 cloud
+                    // password (the server writes cloudLen * 2 bytes);
+                    // read exactly that many bytes.
+                    candidates.CloudPassword.assign(
+                        cloudLen / sizeof(wchar_t), L'\0');
+                    ok = readBytes(&candidates.CloudPassword[0],
+                        cloudLen * sizeof(wchar_t));
+                }
+            }
+            else
+            {
+                ok = false;
+            }
+        }
+        ::CloseHandle(pipe);
+        return ok;
+    }
+
+    namespace
+    {
+        // Prefetch worker: publishes the password book once (shared by
+        // every archive) and each archive's cloud result in order
+        // (concurrency 1). A cloud lookup can take seconds, so this runs
+        // while the current archive's 7zG process is still extracting.
+        void BatchPrefetchWorker(
+            BatchSession* session,
+            std::vector<std::wstring> paths,
+            bool queryCloud)
+        {
+            std::vector<Candidate> candidates;
+            LoadLocalCandidates(candidates);
+            std::vector<std::wstring> local;
+            for (const auto& c : candidates)
+            {
+                local.push_back(c.Value);
+            }
+            session->PublishLocalCandidates(local);
+            for (size_t i = 0; i < paths.size(); ++i)
+            {
+                if (session->IsStopped())
+                {
+                    break;
+                }
+                std::wstring cloud;
+                if (queryCloud)
+                {
+                    // The configured timeout (api_config.txt
+                    // CloudTimeoutSeconds) already caps every HTTP stage
+                    // including DNS; honor the user's value.
+                    QueryCloudPassword(paths[i], cloud);
+                }
+                session->PublishCloudResult(i, cloud);
+            }
+        }
+
+        // Pipe listener worker: serves one connection per archive until
+        // the session is stopped (ServeConnection polls the stop flag).
+        void BatchPipeWorker(BatchSession* session)
+        {
+            while (session->ServeConnection())
+            {
+            }
+        }
+    }
+
+    BatchSessionScope::BatchSessionScope(
+        const std::vector<std::wstring>& archivePaths,
+        const std::wstring& sessionId) :
+        m_session(sessionId.empty()
+            ? GeneratePasswordSessionId() : sessionId, archivePaths)
+    {
+        bool queryCloud = false;
+        bool matchLocal = false;
+        DWORD priority = 0;
+        ReadAutomaticPasswordSettings(queryCloud, matchLocal, priority);
+        m_prefetchThread = std::thread(
+            BatchPrefetchWorker, &m_session, archivePaths, queryCloud);
+        m_pipeThread = std::thread(BatchPipeWorker, &m_session);
+    }
+
+    BatchSessionScope::~BatchSessionScope()
+    {
+        SssBatchDiagLog(L"[Q4-S] scope stop begin", 0);
+        m_session.Stop();
+        if (m_prefetchThread.joinable())
+        {
+            m_prefetchThread.join();
+            SssBatchDiagLog(L"[Q4-S] scope prefetch joined", 0);
+        }
+        if (m_pipeThread.joinable())
+        {
+            m_pipeThread.join();
+            SssBatchDiagLog(L"[Q4-S] scope pipe joined", 0);
+        }
+        SssBatchDiagLog(L"[Q4-S] scope stop done", 0);
     }
 }

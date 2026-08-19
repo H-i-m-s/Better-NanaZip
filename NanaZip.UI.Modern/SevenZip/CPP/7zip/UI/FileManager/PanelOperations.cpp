@@ -28,6 +28,9 @@
 #include "../Common/ZipRegistry.h"
 #include "../Common/CompressCall.h"
 #include "../../../Windows/FileDir.h"
+#include <NanaZip.Password.h>
+
+#include <memory>
 // **************** SSS Modification End ****************
 
 #include "resource.h"
@@ -678,6 +681,46 @@ static UString SssBatchOkFilePath()
   return p;
 }
 
+// 7zG writes %TEMP%\sss_batch_skip.txt (the archive's path) when the batch
+// password session had no verifying candidate (see SssWriteBatchSkip in
+// NanaZip.Universal ExtractCallback.cpp). The file manager deletes the
+// marker before each archive and counts the archive as "skipped" when it
+// appears, separately from real extraction errors.
+static UString SssSkipFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_skip.txt";
+  }
+  return p;
+}
+
+// Consumes the silent-skip marker: returns true when the archive was
+// skipped because no password candidate verified.
+static bool SssReadSkipFile(const UString &path)
+{
+  if (path.IsEmpty())
+    return false;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  bool skipped = false;
+  if (h != INVALID_HANDLE_VALUE)
+  {
+    char buf[8] = { 0 };
+    DWORD read = 0;
+    // The marker carries the archive path (UTF-16), so a non-empty read
+    // is enough to distinguish "skipped" from "no marker".
+    skipped = ::ReadFile(h, buf, sizeof(buf), &read, NULL) && read >= 2;
+    ::CloseHandle(h);
+  }
+  NDir::DeleteFileAlways(path);
+  return skipped;
+}
+
 static bool SssReadOkFile(const UString &path)
 {
   if (path.IsEmpty())
@@ -741,10 +784,15 @@ struct CSssLoopArgs
   bool OneByOne;      // per-archive dialog mode
   UString OwTempFile;
   UString OkFile;
+  UString SkipFile;   // silent-skip mark (batch password session)
   UString DlgFile;     // per-run extract-dialog state (one-by-one only)
   UString DelFile;     // per-archive delete mark (one-by-one only)
   bool DeleteAfter;
   bool DeletePermanently;
+  // Batch password session (prefetched candidates served over a named
+  // pipe). Empty when automatic lookup is disabled: 7zG then shows the
+  // password dialog as usual.
+  UString PasswordSessionId;
 };
 
 // Path of the per-run dialog state file shared across the archives of a
@@ -827,6 +875,7 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
   CSssLoopArgs *a = (CSssLoopArgs *)param;
   UStringVector okPaths;
   unsigned done = 0;
+  unsigned skipped = 0;
   unsigned failed = 0;
 
   if (a->ShowDialog)
@@ -867,6 +916,20 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
       NDir::DeleteFileAlways(us2fs(a->DlgFile));
       NDir::DeleteFileAlways(us2fs(a->DelFile));
     }
+    // Batch password session: when automatic lookup is enabled and this is
+    // a silent batch (not one-by-one), prefetch every archive's candidates
+    // (password book once, cloud per archive) on a worker and serve them to
+    // the per-archive 7zG processes over a named pipe. 7zG verifies the
+    // candidates itself and silently skips archives without a match.
+    std::unique_ptr<NanaZipPassword::BatchSessionScope> sessionScope;
+    if (!a->PasswordSessionId.IsEmpty())
+    {
+      std::vector<std::wstring> paths;
+      for (unsigned i = 0; i < a->Paths.Size(); i++)
+        paths.push_back(std::wstring(a->Paths[i].Ptr()));
+      sessionScope.reset(new NanaZipPassword::BatchSessionScope(
+          paths, std::wstring(a->PasswordSessionId.Ptr())));
+    }
     // Per-batch overwrite policy, shared across archives through a temp
     // file: each archive runs in its own 7zG process, so "Yes to All"
     // picked in one archive is forwarded to the next ones.
@@ -877,6 +940,7 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
         break; // panel is gone: stop quietly
       SssPostLoopState(a->PanelHwnd, i, 1);
       bool ok = false;
+      bool skippedMark = false;
       FString fullPathF;
       FString parentFolder;
       if (NFile::NName::GetFullPath(us2fs(a->Paths[i]), fullPathF) &&
@@ -907,27 +971,44 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
           if (batchMode == (UInt32)(Int32)-1)
             NDir::DeleteFileAlways(us2fs(a->OwTempFile)); // drop leftovers
           NDir::DeleteFileAlways(us2fs(a->OkFile));       // this archive's marker
-          ::ExtractArchives(single, fs2us(parentFolder), false, false, a->Ci.WriteZone, true, false, batchMode, true, true);
+          if (!a->PasswordSessionId.IsEmpty())
+            NDir::DeleteFileAlways(us2fs(a->SkipFile));   // this archive's skip mark
+          ::ExtractArchives(single, fs2us(parentFolder), false, false, a->Ci.WriteZone, true, false, batchMode, true, true, false, UString(), a->PasswordSessionId);
           ok = SssReadOkFile(a->OkFile);
+          if (!ok && !a->PasswordSessionId.IsEmpty())
+            skippedMark = SssReadSkipFile(a->SkipFile);
           if (batchMode == (UInt32)(Int32)-1)
             batchMode = SssReadOwTempFile(a->OwTempFile);
         }
       }
-      SssPostLoopState(a->PanelHwnd, i, ok ? 2 : 3);
+      SssPostLoopState(a->PanelHwnd, i, ok ? 2 : (skippedMark ? 4 : 3));
       if (ok)
       {
         done++;
         if (!a->OneByOne)
           okPaths.Add(fs2us(fullPathF)); // batch: all successful archives
       }
+      else if (skippedMark)
+      {
+        // No verifying password candidate (silent batch mode): skip this
+        // archive and continue with the next one.
+        skipped++;
+      }
       else
       {
         failed++;
-        break; // cancelled or failed: stop the whole run
+        if (a->OneByOne)
+          break; // one-by-one: a cancel or failure stops the sequence
       }
     }
     NDir::DeleteFileAlways(us2fs(a->OwTempFile));
     NDir::DeleteFileAlways(us2fs(a->OkFile));
+    if (!a->PasswordSessionId.IsEmpty())
+      NDir::DeleteFileAlways(us2fs(a->SkipFile)); // leftover skip mark
+    // Stop the batch password session and wait for its workers (the
+    // prefetch thread may still be inside a cloud lookup; it checks the
+    // stop flag between archives and ends at the next check).
+    sessionScope.reset();
     if (a->OneByOne && !a->DlgFile.IsEmpty())
       NDir::DeleteFileAlways(us2fs(a->DlgFile));
     if (a->OneByOne && !a->DelFile.IsEmpty())
@@ -945,11 +1026,17 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     // processed. If the run was cancelled or failed right away (e.g. the
     // user opened the dialog and closed it without extracting anything),
     // a "0 processed" popup would just be noise.
-    if (done > 0)
+    if (done > 0 || skipped > 0 || failed > 0)
     {
       UString msg = L"已解压 ";
       msg.Add_UInt32(done);
       msg += L" 个归档";
+      if (skipped > 0)
+      {
+        msg += L"，跳过 ";
+        msg.Add_UInt32(skipped);
+        msg += L" 个";
+      }
       if (failed > 0)
       {
         msg += L"，";
@@ -988,7 +1075,7 @@ void CPanel::SssExtractAll(bool showDialog)
   CContextMenuInfo ci;
   ci.Load();
 
-  CSssLoopArgs *args = new CSssLoopArgs;
+  CSssLoopArgs *args = new CSssLoopArgs();
   args->Paths = paths;
   args->Ci = ci;
   args->IsBatch = true;
@@ -996,6 +1083,12 @@ void CPanel::SssExtractAll(bool showDialog)
   args->OneByOne = false;
   args->OwTempFile = SssOwTempFilePath();
   args->OkFile = SssBatchOkFilePath();
+  args->SkipFile = SssSkipFilePath();
+  // Batch password session: only when automatic lookup is enabled. 7zG
+  // gets -sssid and verifies prefetched candidates itself; without the
+  // session it falls back to the password dialog.
+  args->PasswordSessionId = (WantAutoQueryCloud() || WantAutoMatchLocal())
+      ? UString(NanaZipPassword::GeneratePasswordSessionId().c_str()) : UString();
   args->DeleteAfter = WantDeleteAfterExtract();
   args->DeletePermanently = WantDeletePermanently();
   _sssLoopRunning = true;
@@ -1047,7 +1140,7 @@ void CPanel::SssExtractOneByOne()
 
   CContextMenuInfo ci;
   ci.Load();
-  CSssLoopArgs *args = new CSssLoopArgs;
+  CSssLoopArgs *args = new CSssLoopArgs();
   args->Paths = paths;
   args->Ci = ci;
   args->IsBatch = IsSssBatchFolder();
@@ -1055,6 +1148,9 @@ void CPanel::SssExtractOneByOne()
   args->OneByOne = true;
   args->OwTempFile = SssOwTempFilePath();
   args->OkFile = SssBatchOkFilePath();
+  // One-by-one is interactive: no batch password session, no skip mark.
+  args->SkipFile = UString();
+  args->PasswordSessionId = UString();
   args->DlgFile = SssDlgStateFilePath();
   args->DelFile = SssDelFilePath();
   args->DeleteAfter = WantDeleteAfterExtract();

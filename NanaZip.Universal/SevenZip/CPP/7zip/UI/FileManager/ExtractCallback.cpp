@@ -28,6 +28,8 @@
 #include "ExtractCallback.h"
 #include <NanaZip.Password.h>
 
+#include <mutex>
+
 namespace
 {
   static UINT32 WINAPI QueryPasswordForDialog(
@@ -105,6 +107,20 @@ static void SssSaveOverwriteModeToTemp(const wchar_t *mode)
 // **************** SSS Modification End ****************
 
 extern bool g_DisableUserQuestions;
+
+// Diagnostic trace shared with ExtractGUI.cpp (k7extract_flow_diag.log).
+extern void ExtractFlowDiagLog(const wchar_t *message);
+
+// Serializes the whole batch password match (including the archive
+// verification inside the batch callback): multi-threaded extraction can
+// ask for the password from several files at once, and the 7-Zip engine
+// is not safe for concurrent Open/Extract on the same archive from the
+// same process.
+static std::mutex &SssBatchMatchMutex()
+{
+  static std::mutex mutex;
+  return mutex;
+}
 
 CExtractCallbackImp::~CExtractCallbackImp() {}
 
@@ -457,6 +473,16 @@ void SetExtractErrorMessage(Int32 opRes, Int32 encrypted, const wchar_t *fileNam
 
 Z7_COM7F_IMF(CExtractCallbackImp::SetOperationResult(Int32 opRes, Int32 encrypted))
 {
+  {
+    // Trace the real extraction result of the main callback (the batch
+    // silent mode: every file that fails shows up here).
+    wchar_t diag[320];
+    const wchar_t *slash = wcsrchr(_currentFilePath.Ptr(), L'\\');
+    const wchar_t *name = slash ? slash + 1 : _currentFilePath.Ptr();
+    swprintf_s(diag, L"[Q4] extract result opRes=%d enc=%d name=%s",
+        (int)opRes, (int)encrypted, name);
+    ExtractFlowDiagLog(diag);
+  }
   switch (opRes)
   {
     case NArchive::NExtract::NOperationResult::kOK:
@@ -503,6 +529,16 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
   _needWriteArchivePath = true;
   #ifndef Z7_NO_CRYPTO
   PasswordArchivePath = name;
+  if (!PasswordSessionId.IsEmpty())
+  {
+    // Batch silent mode: every archive gets its own password from the
+    // session. Never reuse the previous archive's password (7-Zip keeps
+    // PasswordIsDefined across archives of one process by design).
+    PasswordIsDefined = false;
+    Password.Empty();
+    PasswordWasAsked = false;
+    ExtractFlowDiagLog(L"[Q4] beforeopen reset");
+  }
   #endif
   #ifndef Z7_SFX
   RINOK(ProgressDialog->Sync.CheckStop())
@@ -761,6 +797,28 @@ HRESULT CExtractCallbackImp::ExtractResult(HRESULT result)
 
 #ifndef Z7_NO_CRYPTO
 
+// %TEMP%\sss_batch_skip.txt - the archive's path when the batch password
+// session had no verifying candidate (silent skip). The File Manager
+// deletes the marker before each archive, starts 7zG with -sssid, and
+// after 7zG exits reads it to count "skipped" archives separately from
+// real extraction errors.
+static void SssWriteBatchSkip(const UString &archivePath)
+{
+  wchar_t temp[MAX_PATH];
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString full(temp);
+  full += L"sss_batch_skip.txt";
+  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  ::WriteFile(h, archivePath.Ptr(),
+      (DWORD)(archivePath.Len() * sizeof(wchar_t)), &written, NULL);
+  ::CloseHandle(h);
+}
+
 HRESULT CExtractCallbackImp::SetPassword(const UString &password)
 {
   PasswordIsDefined = true;
@@ -774,6 +832,46 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
   if (!PasswordIsDefined)
   {
 #ifdef NANAZIP_MODERN
+    // Batch password session (File Manager prefetch): ask the session for
+    // the current archive's candidates and verify them. No dialog in this
+    // mode; an archive without a verifying candidate is silently skipped
+    // (a marker tells the File Manager to count it separately). The whole
+    // match runs under a mutex: multi-threaded extraction may call this
+    // from several files at once, and the 7-Zip engine is not safe for
+    // concurrent Open/Extract on the same archive from the same process.
+    if (!PasswordSessionId.IsEmpty() && BatchPasswordMatchCallback)
+    {
+      ExtractFlowDiagLog(L"[Q4] crypto batch branch");
+      std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+      // Another file of this archive may already have matched and set
+      // the password: reuse it instead of testing again.
+      if (PasswordIsDefined)
+      {
+        ExtractFlowDiagLog(L"[Q4] crypto reuse cached");
+        *password = ::SysAllocString(Password.Ptr());
+        return *password ? S_OK : E_OUTOFMEMORY;
+      }
+      UString matched;
+      UINT32 matchedSource = 0;
+      if (BatchPasswordMatchCallback(
+          PasswordArchivePath, PasswordQueryContext, matched, matchedSource))
+      {
+        ExtractFlowDiagLog(L"[Q4] crypto matched");
+        Password = matched;
+        PasswordIsDefined = true;
+        PasswordSource = (NanaZipPassword::PasswordSource)matchedSource;
+        // The BSTR output must be filled here: returning S_OK without it
+        // makes the engine see an empty password (this callback's tail
+        // that assigns *password is skipped by the early return).
+        *password = ::SysAllocString(Password.Ptr());
+        return *password ? S_OK : E_OUTOFMEMORY;
+      }
+      ExtractFlowDiagLog(L"[Q4] crypto no match");
+      SssWriteBatchSkip(PasswordArchivePath);
+      // Not E_ABORT: that would cancel the whole batch. A plain failure
+      // makes only this archive fail and the loop continues.
+      return E_FAIL;
+    }
     K7_PASSWORD_DIALOG_CONTEXT Context = {};
     std::wstring queryArchivePath(PasswordArchivePath.Ptr());
     {

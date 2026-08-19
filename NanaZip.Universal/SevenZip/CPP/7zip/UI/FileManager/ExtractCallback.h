@@ -255,6 +255,20 @@ public:
   // Cancels an in-flight local password match (the ExtractGUI host wires
   // this to its match state).
   K7_PASSWORD_QUERY_CANCEL_CALLBACK PasswordQueryCancelCallback;
+  // Batch password session id set by the File Manager via -sssid. When
+  // non-empty, the password callback asks that session (a local named
+  // pipe) for the current archive's candidates instead of showing the
+  // password dialog, and silently skips the archive when no candidate
+  // verifies. NULL when the feature is unavailable.
+  UString PasswordSessionId;
+  // Verifies the session's candidates for the current archive and fills
+  // Password (and its source) when one decrypts it. Owned by ExtractGUI,
+  // which has the codecs. May be NULL.
+  bool (*BatchPasswordMatchCallback)(
+      const UString &archivePath,
+      LPVOID queryContext,
+      UString &password,
+      UINT32 &source);
 #endif
 #endif
 
@@ -334,6 +348,8 @@ public:
     , PasswordQueryCallback(nullptr)
     , PasswordQueryContext(nullptr)
     , PasswordQueryCancelCallback(nullptr)
+    , PasswordSessionId()
+    , BatchPasswordMatchCallback(nullptr)
 #endif
     , PasswordSource(NanaZipPassword::PasswordSource::None)
     , SharePasswordAuthorized(false)

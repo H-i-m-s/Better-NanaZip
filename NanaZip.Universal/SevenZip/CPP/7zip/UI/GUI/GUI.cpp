@@ -50,6 +50,13 @@ extern
 bool g_DisableUserQuestions;
 bool g_DisableUserQuestions;
 
+// Set by the File Manager via -sssid<id>: the batch password session this
+// 7zG worker belongs to (ExtractGUI.cpp uses it for the silent password
+// callback). Declared here so batch silent mode can also suppress the
+// completion/error popups that would otherwise keep the process alive
+// while the File Manager waits for the pipe session to wind down.
+extern UString g_SssPasswordSessionId;
+
 #ifndef UNDER_CE
 
 #if !defined(Z7_WIN32_WINNT_MIN) || Z7_WIN32_WINNT_MIN < 0x0500  // win2000
@@ -164,6 +171,11 @@ static int Main2()
   parser.Parse1(commandStrings, options);
   g_DisableUserQuestions = options.YesToAll;
   parser.Parse2(options);
+  // Batch silent mode (File Manager prefetch session): never show the
+  // completion or error popups - the File Manager owns the result and
+  // waits for this process to exit, so any modal box would hang it.
+  if (!g_SssPasswordSessionId.IsEmpty())
+    g_DisableUserQuestions = true;
 
   CREATE_CODECS_OBJECT
 

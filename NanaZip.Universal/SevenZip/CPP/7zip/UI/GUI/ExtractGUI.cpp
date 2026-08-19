@@ -40,6 +40,13 @@
 #include "NanaZip.Modern.h"
 #include <NanaZip.Password.h>
 
+// **************** SSS Modification Start ****************
+// Set by the File Manager via -sssid<id>: the batch password session this
+// 7zG worker belongs to (see SssBatchPasswordMatch below). Declared early
+// because the batch callback above uses it.
+extern UString g_SssPasswordSessionId;
+// **************** SSS Modification End ****************
+
 #include "../FileManager/PropertyNameRes.h"
 #include "../Common/OpenArchive.h"
 
@@ -57,7 +64,9 @@ static const wchar_t * const kIncorrectOutDir = L"Incorrect output directory pat
 // Temporary extraction-flow diagnostics. Only records control-flow markers,
 // candidate indexes, boolean states, and HRESULTs; never records paths,
 // passwords, API configuration, or response data.
-static void ExtractFlowDiagLog(const wchar_t *message)
+// Non-static so ExtractCallback.cpp (the batch password callback path) can
+// log into the same diagnostic file.
+void ExtractFlowDiagLog(const wchar_t *message)
 {
   wchar_t path[MAX_PATH] = {};
   const DWORD length = ::GetTempPathW(MAX_PATH, path);
@@ -376,7 +385,9 @@ static bool TestArchivePassword(
         isEncrypted)
     {
       indices.Add(i);
-      break; // one encrypted item is enough to verify the password
+      // Every encrypted item must decode cleanly: an archive may mix
+      // per-file passwords (ZIP), so verifying only the first item could
+      // accept a password that leaves the other files broken.
     }
   }
   if (indices.IsEmpty())
@@ -405,6 +416,113 @@ static bool TestArchivePassword(
   const bool ok = extractRes == S_OK && !testCallbackSpec->HadError;
   ExtractFlowDiagLog(ok ? L"[T] accepted" : L"[T] rejected");
   return ok;
+}
+
+// Batch password callback for the File Manager session (-sssid): asks the
+// session for the current archive's candidates (the password book, shared
+// once, plus the prefetched cloud result) and returns the first password
+// that really decrypts the archive, following MatchPriority. The session
+// request waits for the prefetch to finish, so a cloud lookup is never
+// duplicated here.
+static bool SssBatchPasswordMatch(
+    const UString &archivePath,
+    LPVOID queryContext,
+    UString &password,
+    UINT32 &source)
+{
+  if (g_SssPasswordSessionId.IsEmpty() || archivePath.IsEmpty())
+    return false;
+  {
+    wchar_t diagName[300];
+    const wchar_t *slash = wcsrchr(archivePath.Ptr(), L'\\');
+    const wchar_t *name = slash ? slash + 1 : archivePath.Ptr();
+    swprintf_s(diagName, L"[Q4] match enter %s", name);
+    ExtractFlowDiagLog(diagName);
+  }
+  NanaZipPassword::BatchCandidates candidates;
+  if (!NanaZipPassword::RequestBatchCandidates(
+      std::wstring(g_SssPasswordSessionId.Ptr()),
+      std::wstring(archivePath.Ptr()),
+      300000, candidates))
+  {
+    ExtractFlowDiagLog(L"[Q4] batch session request failed");
+    return false;
+  }
+
+  const SssPasswordQueryContext *context =
+      static_cast<const SssPasswordQueryContext *>(queryContext);
+  if (!context)
+    return false;
+  SssPasswordQueryContext testContext = *context;
+  UStringVector singlePaths;
+  singlePaths.Add(archivePath);
+  testContext.ArchivePaths = &singlePaths;
+  testContext.ArchivePathsFull = &singlePaths;
+  testContext.ArchivePath = std::wstring(archivePath.Ptr());
+
+  bool autoQueryCloud = false;
+  bool autoMatchLocal = false;
+  DWORD matchPriority = 0;
+  NanaZipPassword::ReadAutomaticPasswordSettings(
+      autoQueryCloud, autoMatchLocal, matchPriority);
+
+  auto accept = [&](const std::wstring &candidate,
+      UINT32 candidateSource) -> bool
+  {
+    if (candidate.empty())
+      return false;
+    if (TestArchivePassword(candidate, testContext))
+    {
+      password = candidate.c_str();
+      source = candidateSource;
+      ExtractFlowDiagLog(L"[Q4] batch candidate accepted");
+      return true;
+    }
+    return false;
+  };
+
+  if (matchPriority == 1)
+  {
+    // Cloud first: the cloud candidate, then the local book.
+    if (accept(candidates.CloudPassword,
+        (UINT32)NanaZipPassword::PasswordSource::Cloud))
+      return true;
+    for (const std::wstring &c : candidates.LocalCandidates)
+    {
+      if (accept(c, (UINT32)NanaZipPassword::PasswordSource::Local))
+        return true;
+    }
+    return false;
+  }
+
+  if (matchPriority == 2)
+  {
+    // Mixed: first match wins. The engine is NOT thread-safe, so the two
+    // sides must not run in parallel: concurrent TestArchivePassword on
+    // the same archive from one process corrupts the verification and can
+    // hang the engine. Serially this keeps the same winner semantics: the
+    // cloud result (single candidate, fast) is tried first, and when it
+    // misses the password book decides.
+    if (accept(candidates.CloudPassword,
+        (UINT32)NanaZipPassword::PasswordSource::Cloud))
+      return true;
+    for (const std::wstring &c : candidates.LocalCandidates)
+    {
+      if (accept(c, (UINT32)NanaZipPassword::PasswordSource::Local))
+        return true;
+    }
+    ExtractFlowDiagLog(L"[Q4] no candidate matched (mixed)");
+    return false;
+  }
+
+  // Local first (default): the password book, then the cloud result.
+  for (const std::wstring &c : candidates.LocalCandidates)
+  {
+    if (accept(c, (UINT32)NanaZipPassword::PasswordSource::Local))
+      return true;
+  }
+  return accept(candidates.CloudPassword,
+      (UINT32)NanaZipPassword::PasswordSource::Cloud);
 }
 
 // Async local password match. The XAML page starts it through
@@ -1313,6 +1431,11 @@ HRESULT ExtractGUI(
   extractCallback->PasswordQueryCallback = QueryPasswordForDialog;
   extractCallback->PasswordQueryContext = &queryContext;
   extractCallback->PasswordQueryCancelCallback = CancelLocalPasswordMatch;
+  // Batch password session (File Manager prefetch, -sssid): when set, the
+  // password callback asks the session for candidates instead of showing
+  // the password dialog, and skips the archive when none verifies.
+  extractCallback->PasswordSessionId = g_SssPasswordSessionId;
+  extractCallback->BatchPasswordMatchCallback = SssBatchPasswordMatch;
 #endif
   if (!options.TestMode)
   {

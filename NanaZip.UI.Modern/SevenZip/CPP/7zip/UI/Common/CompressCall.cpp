@@ -20,10 +20,35 @@
 #include "../FileManager/StringUtils.h"
 #include "../FileManager/RegistryUtils.h"
 
+#include <NanaZip.Password.h>
+
+#include <memory>
+
 #include "ZipRegistry.h"
 #include "CompressCall.h"
 
 using namespace NWindows;
+
+// Trace of the FileManager side of a batch password session
+// (k7batch_session_diag.log, same file as the pipe server logs).
+static void SssFmDiagLog(const wchar_t *event)
+{
+  wchar_t temp[MAX_PATH] = {};
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString path(temp);
+  path += L"k7batch_session_diag.log";
+  HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA,
+      FILE_SHARE_READ | FILE_SHARE_WRITE,
+      NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  ::WriteFile(h, event, (DWORD)(wcslen(event) * sizeof(wchar_t)),
+      &written, NULL);
+  ::WriteFile(h, L"\r\n", 4, &written, NULL);
+  ::CloseHandle(h);
+}
 
 #define MY_TRY_BEGIN try {
 
@@ -109,6 +134,30 @@ static void ErrorMessageHRESULT(HRESULT res, LPCWSTR s = NULL)
   ErrorMessage(s2);
 }
 
+// Waits for the 7zG process to exit while pumping the message queue:
+// without this, the File Manager UI thread blocks in WaitForSingleObject
+// and the window goes "Not Responding" whenever 7zG keeps a modal dialog
+// (the extract dialog) open for a while.
+static void SssWaitWithMessagePump(CProcess &process)
+{
+  const HANDLE handle = process;
+  for (;;)
+  {
+    const DWORD wait = ::MsgWaitForMultipleObjects(
+        1, &handle, FALSE, INFINITE, QS_ALLINPUT);
+    if (wait == WAIT_OBJECT_0)
+    {
+      break; // the process exited
+    }
+    MSG msg;
+    while (::PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
+    {
+      ::TranslateMessage(&msg);
+      ::DispatchMessageW(&msg);
+    }
+  }
+}
+
 static HRESULT Call7zGui(const UString &params,
     // LPCWSTR curDir,
     bool waitFinish,
@@ -126,11 +175,17 @@ static HRESULT Call7zGui(const UString &params,
     return hres;
   }
   if (waitFinish)
-    process.Wait();
+    SssWaitWithMessagePump(process);
   else if (event != NULL)
   {
     HANDLE handles[] = { process, *event };
     ::WaitForMultipleObjects(ARRAY_SIZE(handles), handles, FALSE, INFINITE);
+    // The event only signals that 7zG parsed the archive map; it may
+    // still be extracting every archive (or showing its dialog). Wait for
+    // the process to really exit so the batch password session stays
+    // alive for all of them - while pumping messages so the File Manager
+    // window stays responsive.
+    SssWaitWithMessagePump(process);
   }
   return S_OK;
 }
@@ -371,10 +426,39 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker, const UString &passwordSessionId)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
+  // Batch password session: when this call extracts more than one archive
+  // and automatic lookup is enabled (and no session id was passed in),
+  // start a session whose prefetch thread reads the password book once and
+  // queries the cloud per archive, and whose pipe serves those candidates
+  // to the 7zG process. 7zG never sees passwords on the command line.
+  std::unique_ptr<NanaZipPassword::BatchSessionScope> batchScope;
+  UString effectiveSessionId = passwordSessionId;
+  // Multi-archive calls and non-dialog calls (right-click "extract here")
+  // run silently: they get a batch password session when automatic lookup
+  // is enabled. A single-archive call that shows the extract dialog keeps
+  // the interactive path (dialog + password box) unchanged.
+  if (effectiveSessionId.IsEmpty() &&
+      (arcPaths.Size() > 1 || !showDialog))
+  {
+    bool autoQueryCloud = false;
+    bool autoMatchLocal = false;
+    DWORD matchPriority = 0;
+    NanaZipPassword::ReadAutomaticPasswordSettings(
+        autoQueryCloud, autoMatchLocal, matchPriority);
+    if (autoQueryCloud || autoMatchLocal)
+    {
+      std::vector<std::wstring> paths;
+      for (unsigned i = 0; i < arcPaths.Size(); i++)
+        paths.push_back(std::wstring(arcPaths[i].Ptr()));
+      batchScope.reset(new NanaZipPassword::BatchSessionScope(paths));
+      effectiveSessionId = UString(batchScope->SessionId().c_str());
+      SssFmDiagLog(L"[Q4-FM] session created");
+    }
+  }
   UString params ('x');
   if (!outFolder.IsEmpty())
   {
@@ -406,6 +490,14 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   // (one-by-one extraction loop; see ExtractGUI.cpp SssReadDlgStateFile).
   if (useDlgState)
     params += L" -ssdlg";
+  // SSS: the File Manager's batch password session (prefetched candidates
+  // served over a named pipe; 7zG never sees passwords on the command
+  // line). Empty for normal extraction.
+  if (!effectiveSessionId.IsEmpty())
+  {
+    params += L" -sssid";
+    params += GetQuotedString(effectiveSessionId);
+  }
   // A file manager that is currently browsing the archive still owns an
   // archive handle. Give 7zG a per-run marker destination in that case:
   // it records a successful delete request but leaves the source untouched.
@@ -429,6 +521,12 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   if (showDialog)
     params += kShowDialogSwitch;
   ExtractGroupCommand(arcPaths, params, false, waitFinish);
+  SssFmDiagLog(L"[Q4-FM] 7zG finished");
+  // batchScope (if any) is destroyed here: the scope destructor stops the
+  // session and joins the prefetch/pipe threads. The trace marks each
+  // joined stage so a hang can be attributed to the exact thread.
+  batchScope.reset();
+  SssFmDiagLog(L"[Q4-FM] session cleaned");
   MY_TRY_FINISH_VOID
 }
 
