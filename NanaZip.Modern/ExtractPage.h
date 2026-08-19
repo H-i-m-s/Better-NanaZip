@@ -37,6 +37,8 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        void StartAutomaticPasswordQuery();
+
         void OnBrowseClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -144,6 +146,9 @@ namespace winrt::NanaZip::Modern::implementation
 
         void UpdatePasswordControl();
 
+        bool TryCloudPassword(bool automatic);
+        bool StartLocalPasswordMatch(bool automatic);
+
         bool GetBoolsVal(
             BOOLEAN Def1, BOOLEAN Val1,
             BOOLEAN Def2, BOOLEAN Val2) const;
@@ -166,5 +171,7 @@ namespace winrt::NanaZip::Modern::implementation
         // True while the async local password match is running; the button
         // switches to the cancelling state while it is set.
         bool m_PasswordMatchRunning;
+        bool m_AutoQueryStarted;
+        bool m_AutoQueryActive;
     };
 }

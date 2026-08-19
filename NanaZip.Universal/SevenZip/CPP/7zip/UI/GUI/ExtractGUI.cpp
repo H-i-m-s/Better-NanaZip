@@ -212,6 +212,64 @@ Z7_COM7F_IMF(CTestExtractCallback::CryptoGetTextPassword(BSTR *password))
   return (*password ? S_OK : E_OUTOFMEMORY);
 }
 
+static bool ArchiveHasEncryptedItems(
+    const SssPasswordQueryContext &context)
+{
+  if (!context.ArchivePathsFull || context.ArchivePathsFull->IsEmpty())
+    return false;
+
+  CProgressDialog progress;
+  CExtractCallbackImp openCallback;
+  openCallback.ProgressDialog = &progress;
+  // Supply an empty password without opening a user-facing dialog. For
+  // header-encrypted archives Open then records PasswordWasAsked; for content
+  // encryption the archive opens and its item flags can be inspected.
+  openCallback.PasswordIsDefined = true;
+  openCallback.Password.Empty();
+  openCallback.TestMode = true;
+  openCallback.Init();
+  openCallback.PasswordArchivePath = context.ArchivePathsFull->Front();
+
+  CArchiveLink arcLink;
+  COpenOptions op;
+  #ifndef Z7_SFX
+  op.props = NULL;
+  #endif
+  op.codecs = context.Codecs;
+  op.types = context.FormatIndices;
+  op.excludedFormats = context.ExcludedFormatIndices;
+  op.stdInMode = false;
+  op.stream = NULL;
+  op.seqStream = NULL;
+  op.callback = NULL;
+  op.callbackSpec = NULL;
+  op.filePath = context.ArchivePathsFull->Front();
+
+  const HRESULT openRes = arcLink.Open_Strict(op, &openCallback);
+  if (openRes != S_OK)
+  {
+    // Header-encrypted archives cannot be enumerated without a password, but
+    // the open path tells us that a password was requested. Treat that as
+    // encrypted so the password dialog can run its automatic lookup.
+    return openCallback.PasswordWasAsked || arcLink.PasswordWasAsked;
+  }
+
+  IInArchive *archive = arcLink.GetArchive();
+  UInt32 numItems = 0;
+  if (!archive || archive->GetNumberOfItems(&numItems) != S_OK)
+    return false;
+  for (UInt32 i = 0; i < numItems; i++)
+  {
+    bool encrypted = false;
+    if (Archive_GetItemBoolProp(archive, i, kpidEncrypted, encrypted) == S_OK &&
+        encrypted)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 static bool TestArchivePassword(
     const std::wstring &password,
     const SssPasswordQueryContext &context)
@@ -350,8 +408,10 @@ static void LocalPasswordMatchWorker()
     bool accepted = false;
     bool cancelled = false;
     std::vector<NanaZipPassword::Candidate> candidates;
-    if (NanaZipPassword::LoadLocalCandidates(candidates) &&
-        !candidates.empty())
+    const bool candidatesLoaded =
+        NanaZipPassword::LoadLocalCandidates(candidates) &&
+        !candidates.empty();
+    if (candidatesLoaded)
     {
       for (size_t i = 0; i < candidates.size(); ++i)
       {
@@ -477,7 +537,7 @@ static BOOLEAN WINAPI QueryPasswordForDialog(
       return FALSE;
     found = true;
   }
-  else if (source == 2)
+  else if (source == K7_PASSWORD_QUERY_SOURCE_LOCAL)
   {
     if (!context)
       return FALSE;
@@ -1234,10 +1294,21 @@ HRESULT ExtractGUI(
         wcsncpy_s(ctx.ArcPath, dialog.ArcPath.Ptr(), _TRUNCATE);
         ctx.QueryCallback = QueryPasswordForDialog;
         ctx.QueryContext = &queryContext;
+        ctx.QueryIsAsync = TRUE;
         ctx.QueryCancelCallback = CancelLocalPasswordMatch;
+        bool autoQueryCloud = false;
+        bool autoMatchLocal = false;
+        DWORD matchPriority = 0;
+        NanaZipPassword::ReadAutomaticPasswordSettings(
+            autoQueryCloud, autoMatchLocal, matchPriority);
+        ctx.AutoQueryCloud = autoQueryCloud ? TRUE : FALSE;
+        ctx.AutoMatchLocal = autoMatchLocal ? TRUE : FALSE;
+        ctx.MatchPriority = matchPriority;
         ctx.PasswordSource = extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Cloud ? 1
             : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Local ? 2
             : (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::CommandLine ? 3 : 0));
+        ctx.HasEncryptedItems = ArchiveHasEncryptedItems(queryContext)
+            ? TRUE : FALSE;
         ctx.PathMode = dialog.PathMode;
         ctx.OverwriteMode = dialog.OverwriteMode;
         ctx.PathMode_Force = dialog.PathMode_Force;

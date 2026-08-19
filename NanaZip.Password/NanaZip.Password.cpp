@@ -313,6 +313,16 @@ namespace
         return value;
     }
 
+    static void ReadAutomaticPasswordSettings(
+        bool& queryCloud,
+        bool& matchLocal,
+        DWORD& matchPriority)
+    {
+        queryCloud = ReadRegistryBool(kAutoQueryCloud);
+        matchLocal = ReadRegistryBool(kAutoMatchLocal);
+        matchPriority = ReadRegistryDword(kMatchPriority);
+    }
+
     static bool Base64Encode(
         const std::vector<BYTE>& input,
         std::wstring& output)
@@ -1008,6 +1018,14 @@ namespace NanaZipPassword
             }
         }
         return true;
+    }
+
+    void ReadAutomaticPasswordSettings(
+        bool& queryCloud,
+        bool& matchLocal,
+        DWORD& matchPriority)
+    {
+        ::ReadAutomaticPasswordSettings(queryCloud, matchLocal, matchPriority);
     }
 
     bool LoadLocalCandidates(std::vector<Candidate>& candidates)

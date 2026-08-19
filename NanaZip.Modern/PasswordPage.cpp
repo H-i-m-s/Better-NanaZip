@@ -10,6 +10,7 @@
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Core.h>
 
 #include <string>
 
@@ -22,7 +23,9 @@ namespace winrt::NanaZip::Modern::implementation
         m_Context(Context),
         m_OkClicked(false),
         m_ProgrammaticPasswordChange(false),
-        m_PasswordMatchRunning(false)
+        m_PasswordMatchRunning(false),
+        m_AutoQueryStarted(false),
+        m_AutoQueryActive(false)
     {
         this->Loaded({ this, &PasswordPage::OnLoaded });
         this->Unloaded({ this, &PasswordPage::OnUnloaded });
@@ -214,6 +217,123 @@ namespace winrt::NanaZip::Modern::implementation
         return Desired;
     }
 
+    bool PasswordPage::TryCloudPassword(bool automatic)
+    {
+        UNREFERENCED_PARAMETER(automatic);
+        if (!this->m_Context || !this->m_Context->QueryCallback)
+        {
+            return false;
+        }
+        wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
+        if (!this->m_Context->QueryCallback(
+            this->m_Context->ArchivePath,
+            K7_PASSWORD_QUERY_SOURCE_CLOUD,
+            this->m_Context->QueryContext,
+            Password,
+            ARRAYSIZE(Password)))
+        {
+            return false;
+        }
+        this->m_ProgrammaticPasswordChange = true;
+        PasswordInput().Password(winrt::hstring(Password));
+        this->m_ProgrammaticPasswordChange = false;
+        this->m_Context->PasswordSource = K7_PASSWORD_QUERY_SOURCE_CLOUD;
+        this->m_AutoQueryActive = false;
+        this->MatchStatusText().Visibility(
+            winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        return true;
+    }
+
+    bool PasswordPage::StartLocalPasswordMatch(bool automatic)
+    {
+        if (!this->m_Context || !this->m_Context->QueryCallback)
+        {
+            return false;
+        }
+        if (this->m_PasswordMatchRunning)
+        {
+            return true;
+        }
+        this->m_PasswordMatchRunning = true;
+        if (!automatic)
+        {
+            this->m_AutoQueryActive = false;
+        }
+        this->MatchStatusText().Visibility(
+            winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        this->LocalPasswordButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(2558, L"Cancel matching"))));
+        wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
+        if (this->m_Context->QueryCallback(
+            this->m_Context->ArchivePath,
+            K7_PASSWORD_QUERY_SOURCE_LOCAL,
+            this->m_Context->QueryContext,
+            Password,
+            ARRAYSIZE(Password)))
+        {
+            this->m_PasswordMatchRunning = false;
+            this->LocalPasswordButton().Content(winrt::box_value(
+                RemoveMnemonic(Res(2556, L"Match local password"))));
+            this->m_ProgrammaticPasswordChange = true;
+            PasswordInput().Password(winrt::hstring(Password));
+            this->m_ProgrammaticPasswordChange = false;
+            this->m_Context->PasswordSource = K7_PASSWORD_QUERY_SOURCE_LOCAL;
+            this->m_AutoQueryActive = false;
+            return true;
+        }
+        // The original manual local-match path is asynchronous on the
+        // Universal host; its completion arrives through the window message.
+        if (this->m_Context->QueryIsAsync)
+        {
+            return true;
+        }
+        this->m_PasswordMatchRunning = false;
+        this->LocalPasswordButton().Content(winrt::box_value(
+            RemoveMnemonic(Res(2556, L"Match local password"))));
+        return false;
+    }
+
+    void PasswordPage::StartAutomaticPasswordQuery()
+    {
+        if (this->m_AutoQueryStarted || !this->m_Context ||
+            !this->m_Context->QueryCallback ||
+            (!this->m_Context->AutoQueryCloud &&
+             !this->m_Context->AutoMatchLocal))
+        {
+            return;
+        }
+        this->m_AutoQueryStarted = true;
+        this->m_AutoQueryActive = true;
+        const bool CloudFirst = this->m_Context->MatchPriority != 0;
+        if (CloudFirst)
+        {
+            if (this->m_Context->AutoQueryCloud &&
+                this->TryCloudPassword(true))
+            {
+                return;
+            }
+            if (this->m_Context->AutoMatchLocal &&
+                this->StartLocalPasswordMatch(true))
+            {
+                return;
+            }
+        }
+        else
+        {
+            if (this->m_Context->AutoMatchLocal &&
+                this->StartLocalPasswordMatch(true))
+            {
+                return;
+            }
+            if (this->m_Context->AutoQueryCloud &&
+                this->TryCloudPassword(true))
+            {
+                return;
+            }
+        }
+        this->m_AutoQueryActive = false;
+    }
+
     void PasswordPage::OnLoaded(
         winrt::IInspectable const& sender,
         winrt::RoutedEventArgs const& e)
@@ -224,6 +344,12 @@ namespace winrt::NanaZip::Modern::implementation
         // Focus the password box like the Win32 dialog (first control).
         PasswordInput().Focus(
             winrt::Windows::UI::Xaml::FocusState::Programmatic);
+        this->Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+            [this]()
+            {
+                this->StartAutomaticPasswordQuery();
+            });
     }
 
     void PasswordPage::OnUnloaded(
@@ -266,23 +392,7 @@ namespace winrt::NanaZip::Modern::implementation
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-        if (!this->m_Context || !this->m_Context->QueryCallback)
-        {
-            return;
-        }
-        wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
-        if (this->m_Context->QueryCallback(
-            this->m_Context->ArchivePath,
-            1,
-            this->m_Context->QueryContext,
-            Password,
-            ARRAYSIZE(Password)))
-        {
-            this->m_ProgrammaticPasswordChange = true;
-            PasswordInput().Password(winrt::hstring(Password));
-            this->m_ProgrammaticPasswordChange = false;
-            this->m_Context->PasswordSource = 1;
-        }
+        this->TryCloudPassword(false);
     }
 
     void PasswordPage::OnLocalPasswordClicked(
@@ -291,46 +401,16 @@ namespace winrt::NanaZip::Modern::implementation
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-        if (!this->m_Context || !this->m_Context->QueryCallback)
-        {
-            return;
-        }
         if (this->m_PasswordMatchRunning)
         {
-            // Second click while matching: cancel the worker.
-            if (this->m_Context->QueryCancelCallback)
+            if (this->m_Context && this->m_Context->QueryCancelCallback)
             {
                 this->m_Context->QueryCancelCallback(
                     this->m_Context->QueryContext);
             }
             return;
         }
-        this->m_PasswordMatchRunning = true;
-        this->MatchStatusText().Visibility(
-            winrt::Windows::UI::Xaml::Visibility::Collapsed);
-        this->LocalPasswordButton().Content(winrt::box_value(
-            RemoveMnemonic(Res(2558, L"Cancel matching"))));
-        wchar_t Password[K7_PASSWORD_MAX_PASSWORD_LENGTH] = {};
-        if (this->m_Context->QueryCallback(
-            this->m_Context->ArchivePath,
-            2,
-            this->m_Context->QueryContext,
-            Password,
-            ARRAYSIZE(Password)))
-        {
-            // Synchronous success (unexpected for the local match path, but
-            // harmless): fill and restore the button immediately.
-            this->m_PasswordMatchRunning = false;
-            this->LocalPasswordButton().Content(winrt::box_value(
-                RemoveMnemonic(Res(2556, L"Match local password"))));
-            this->m_ProgrammaticPasswordChange = true;
-            PasswordInput().Password(winrt::hstring(Password));
-            this->m_ProgrammaticPasswordChange = false;
-            this->m_Context->PasswordSource = 2;
-        }
-        // else: the match runs in the background; the result arrives through
-        // SetPasswordFromMatch (K7_PASSWORD_MATCH_DONE_MESSAGE) while the
-        // button stays in the cancelling state.
+        this->StartLocalPasswordMatch(false);
     }
 
     void PasswordPage::SetPasswordFromMatch(
@@ -349,8 +429,24 @@ namespace winrt::NanaZip::Modern::implementation
             {
                 this->m_Context->PasswordSource = 2;
             }
+            this->m_AutoQueryActive = false;
             this->MatchStatusText().Visibility(
                 winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        }
+        else if (Status == K7_PASSWORD_MATCH_STATUS_NOMATCH &&
+            this->m_AutoQueryActive && this->m_Context &&
+            this->m_Context->AutoQueryCloud &&
+            this->m_Context->MatchPriority == 0)
+        {
+            this->m_AutoQueryActive = false;
+            if (this->TryCloudPassword(true))
+            {
+                return;
+            }
+            this->MatchStatusText().Text(Res(
+                2557, L"No matching password found in the password book"));
+            this->MatchStatusText().Visibility(
+                winrt::Windows::UI::Xaml::Visibility::Visible);
         }
         else if (Status == K7_PASSWORD_MATCH_STATUS_NOMATCH)
         {

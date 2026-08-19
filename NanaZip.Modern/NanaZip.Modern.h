@@ -704,6 +704,8 @@ EXTERN_C INT WINAPI K7ModernShowCompressDialog(
 #define K7_PASSWORD_MATCH_STATUS_NOMATCH 0
 #define K7_PASSWORD_MATCH_STATUS_MATCHED 1
 #define K7_PASSWORD_MATCH_STATUS_CANCELLED 2
+#define K7_PASSWORD_QUERY_SOURCE_CLOUD 1u
+#define K7_PASSWORD_QUERY_SOURCE_LOCAL 2u
 
 typedef BOOLEAN (WINAPI *K7_PASSWORD_QUERY_CALLBACK)(
     _In_ LPCWSTR ArchivePath,
@@ -728,6 +730,9 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     WCHAR DirPath[MAX_PATH];
     // The initial password (may be empty).
     WCHAR Password[K7_PASSWORD_MAX_PASSWORD_LENGTH];
+    // Set by the host after a side-effect-free archive inspection. Automatic
+    // lookup is started only when the archive has encrypted content.
+    BOOLEAN HasEncryptedItems;
     // 0 = Full paths, 1 = No paths, 2 = Absolute paths.
     UINT32 PathMode;
     // 0 = Ask, 1 = Overwrite, 2 = Skip existing, 3 = Rename, 4 = Rename existing.
@@ -768,9 +773,17 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // requests a password and writes a successful result into its input box.
     K7_PASSWORD_QUERY_CALLBACK QueryCallback;
     LPVOID QueryContext;
-    // Optional: cancels an in-flight local password match started through
-    // QueryCallback with Source == 2. May be NULL when the host has no
-    // match state.
+    // TRUE when Source == 2 is handled asynchronously by the host and
+    // completion is delivered through a window message. FALSE keeps the
+    // legacy synchronous callback behavior for callers without host state.
+    BOOLEAN QueryIsAsync;
+    // Settings controlling automatic lookup when this dialog is shown.
+    BOOLEAN AutoQueryCloud;
+    BOOLEAN AutoMatchLocal;
+    // 0 = local first, 1 = cloud first.
+    UINT32 MatchPriority;
+    // Optional: cancels an in-flight local/cloud password query. May be NULL
+    // when the host has no query state.
     K7_PASSWORD_QUERY_CANCEL_CALLBACK QueryCancelCallback;
     // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
     // 3 = command-line password.
@@ -1028,9 +1041,17 @@ typedef struct _K7_PASSWORD_DIALOG_CONTEXT
     WCHAR ArchivePath[MAX_PATH];
     K7_PASSWORD_QUERY_CALLBACK QueryCallback;
     LPVOID QueryContext;
-    // Optional: cancels an in-flight local password match started through
-    // QueryCallback with Source == 2. May be NULL when the host has no
-    // match state.
+    // TRUE when Source == 2 is handled asynchronously by the host and
+    // completion is delivered through a window message. FALSE keeps the
+    // legacy synchronous callback behavior for callers without host state.
+    BOOLEAN QueryIsAsync;
+    // Settings controlling automatic lookup when this dialog is shown.
+    BOOLEAN AutoQueryCloud;
+    BOOLEAN AutoMatchLocal;
+    // 0 = local first, 1 = cloud first.
+    UINT32 MatchPriority;
+    // Optional: cancels an in-flight local/cloud password query. May be NULL
+    // when the host has no query state.
     K7_PASSWORD_QUERY_CANCEL_CALLBACK QueryCancelCallback;
     // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
     // 3 = command-line password.

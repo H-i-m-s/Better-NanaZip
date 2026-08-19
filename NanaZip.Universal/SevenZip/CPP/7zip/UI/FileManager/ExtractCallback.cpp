@@ -784,7 +784,16 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
           ? PasswordQueryCallback : QueryPasswordForDialog;
       Context.QueryContext = PasswordQueryContext
           ? PasswordQueryContext : &queryArchivePath;
+      Context.QueryIsAsync = PasswordQueryCallback != nullptr;
       Context.QueryCancelCallback = PasswordQueryCancelCallback;
+      bool autoQueryCloud = false;
+      bool autoMatchLocal = false;
+      DWORD matchPriority = 0;
+      NanaZipPassword::ReadAutomaticPasswordSettings(
+          autoQueryCloud, autoMatchLocal, matchPriority);
+      Context.AutoQueryCloud = autoQueryCloud ? TRUE : FALSE;
+      Context.AutoMatchLocal = autoMatchLocal ? TRUE : FALSE;
+      Context.MatchPriority = matchPriority;
       Context.PasswordSource = 0;
     }
     {
