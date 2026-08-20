@@ -90,6 +90,8 @@ namespace winrt::NanaZip::Modern::implementation
         m_InitGuard(false),
         m_OkClicked(false),
         m_PathUserEdited(false),
+        m_CommittedPath(),
+        m_PathTextBoxHooked(false),
         m_FirstLayout(true),
         m_LeftWrapped(false),
         m_EncryptionWrapped(false),
@@ -410,6 +412,8 @@ namespace winrt::NanaZip::Modern::implementation
 
         this->m_InitGuard = true;
         this->m_PathUserEdited = false;
+        // Enter on the untouched default name confirms the dialog.
+        this->m_CommittedPath = this->m_Context->ArchivePath;
         ApplyLabels();
         ApplySnapshotToUi();
         this->m_InitGuard = false;
@@ -754,12 +758,14 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(e);
         this->m_InitGuard = false;
 
-        // Esc must close the dialog even when the focus sits inside an
-        // editable control (the control marks the key as handled, which
-        // would otherwise swallow the routed event). The XAML PreviewKeyDown
-        // attribute on the page intercepts Esc in the tunnelling phase,
-        // before the focused control can consume it, so Esc always closes
-        // the dialog and never clears the file name.
+        // The page-level Esc handling is reliable (tunnelling from the
+        // root), but the Enter branch cannot rely on focus queries in this
+        // host: the editable combo's internal text box keeps the focus and
+        // a focus walk may fail to match. Hook the editing box directly
+        // (same mechanism the address bar uses) so Enter always lands in
+        // our commit/confirm logic instead of the ComboBox's default
+        // "select the highlighted item" behavior.
+        HookPathTextBox();
     }
 
     void CompressPage::OnUnloaded(
@@ -802,6 +808,18 @@ namespace winrt::NanaZip::Modern::implementation
             }
             this->m_OkClicked = false;
             ::PostMessageW(this->m_WindowHandle, WM_CLOSE, 0, 0);
+        }
+        else if (e.Key() == winrt::Windows::System::VirtualKey::Enter &&
+            IsArchivePathFocused())
+        {
+            // Enter in the editable archive-path combo commits the typed
+            // name. Eat the key before the ComboBox's default handling
+            // runs, otherwise it would select the highlighted drop-down
+            // item (the default path) and replace the user's text. Enter
+            // with the name unchanged from the last commit confirms the
+            // dialog (OK).
+            e.Handled(true);
+            CommitArchivePath(true);
         }
     }
 
@@ -1076,6 +1094,10 @@ namespace winrt::NanaZip::Modern::implementation
         this->m_PathTextSnapshot =
             ArchivePathCombo().Text().c_str();
 
+        // The editing box exists as soon as the combo template is applied;
+        // hook Enter handling there if the Loaded hook missed it.
+        HookPathTextBox();
+
         // Show the "x" on every history entry once the drop-down is open.
         // Containers are generated asynchronously, so start the bounded
         // retry chain.
@@ -1206,11 +1228,112 @@ namespace winrt::NanaZip::Modern::implementation
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
+        CommitArchivePath(false);
+    }
+
+    void CompressPage::HookPathTextBox()
+    {
+        if (this->m_PathTextBoxHooked)
+        {
+            return;
+        }
+        std::vector<winrt::Windows::UI::Xaml::Controls::TextBox> Boxes;
+        FindVisualChildren(ArchivePathCombo(), Boxes);
+        if (Boxes.empty())
+        {
+            return;
+        }
+        // The first editing box inside the combo is its editable text
+        // area; Enter is handled where it actually lands so the ComboBox's
+        // default "select the highlighted item" behavior cannot replace
+        // the user's text.
+        Boxes[0].PreviewKeyDown(
+            { this, &CompressPage::OnPathTextBoxPreviewKeyDown });
+        this->m_PathTextBoxHooked = true;
+    }
+
+    void CompressPage::OnPathTextBoxPreviewKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() != winrt::Windows::System::VirtualKey::Enter)
+        {
+            return;
+        }
+        // Commit / confirm before the ComboBox's default Enter handling
+        // runs. Enter on a settled name confirms the dialog (OK); Enter on
+        // a changed name commits it, echoes back the suffixed form and
+        // selects it.
+        e.Handled(true);
+        CommitArchivePath(true);
+    }
+
+    void CompressPage::OnArchivePathTextChanged(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        if (this->m_InitGuard || !this->m_Context)
+        {
+            return;
+        }
+        // The user typed into the editable path combo (KeyUp, the UWP
+        // replacement for the TextChanged event ComboBox does not have):
+        // as soon as the text differs from the default (last applied
+        // snapshot), mark the name as user-edited so option refreshes
+        // never overwrite the box again. This covers every refresh
+        // trigger (Enter, format/level/method changes, checkbox clicks,
+        // ...) regardless of focus timing.
+        std::wstring Path = ArchivePathCombo().Text().c_str();
+        if (Path != this->m_Context->ArchivePath)
+        {
+            this->m_PathUserEdited = true;
+        }
+    }
+
+    bool CompressPage::IsArchivePathFocused()
+    {
+        auto Focused =
+            winrt::Windows::UI::Xaml::Input::FocusManager::GetFocusedElement();
+        if (!Focused)
+        {
+            return false;
+        }
+        // The editable ComboBox may keep focus inside its internal text
+        // box, so walk up the visual tree looking for the combo itself.
+        winrt::Windows::UI::Xaml::DependencyObject Node =
+            Focused.try_as<winrt::Windows::UI::Xaml::DependencyObject>();
+        while (Node)
+        {
+            if (Node == ArchivePathCombo())
+            {
+                return true;
+            }
+            Node = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
+                GetParent(Node);
+        }
+        return false;
+    }
+
+    void CompressPage::CommitArchivePath(bool FromEnter)
+    {
         if (this->m_InitGuard || !this->m_Context)
         {
             return;
         }
         std::wstring Path = ArchivePathCombo().Text().c_str();
+        // Enter on a name that is already settled (same as the last
+        // commit, including the format extension) confirms the dialog,
+        // just like clicking OK.
+        if (FromEnter && Path == this->m_CommittedPath)
+        {
+            this->OnOkClicked(
+                winrt::Windows::Foundation::IInspectable{},
+                winrt::Windows::UI::Xaml::RoutedEventArgs{});
+            return;
+        }
         // Lost focus on the path combo: if the text differs from the
         // default (last applied snapshot), the user took over the name -
         // remember it so refreshes stop overwriting the box.
@@ -1223,6 +1346,29 @@ namespace winrt::NanaZip::Modern::implementation
             K7_COMPRESS_COMMAND_ARCHIVE_PATH,
             0,
             this->m_Context->ArchivePath);
+        // The core may have appended the current format's main extension
+        // (bare name typed by the user). Echo the normalized name back so
+        // the suffix shows in the box.
+        if (this->m_Context->ArchivePath[0] &&
+            Path != this->m_Context->ArchivePath)
+        {
+            ArchivePathCombo().Text(
+                winrt::hstring(this->m_Context->ArchivePath));
+        }
+        // The name is now committed: remember the settled form (with the
+        // extension) so a later Enter on it can confirm the dialog.
+        this->m_CommittedPath = this->m_Context->ArchivePath;
+        // Select the whole committed name (the same state the box opens
+        // with): the name is now "confirmed", and the next keystroke
+        // replaces it wholesale. Works for Enter (focus stays, the blue
+        // selection shows immediately) and for blur (the selection is set
+        // and shows the next time the box regains focus).
+        std::vector<winrt::Windows::UI::Xaml::Controls::TextBox> Boxes;
+        FindVisualChildren(ArchivePathCombo(), Boxes);
+        for (auto& B : Boxes)
+        {
+            B.SelectAll();
+        }
     }
 
     void CompressPage::OnParametersChanged(

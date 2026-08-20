@@ -84,7 +84,8 @@
                             ItemTemplate="{StaticResource PathComboItemTemplate}"
                             DropDownOpened="OnArchivePathDropDownOpened"
                             DropDownClosed="OnArchivePathDropDownClosed"
-                            LostFocus="OnArchivePathChanged" />
+                            LostFocus="OnArchivePathChanged"
+                            KeyUp="OnArchivePathTextChanged" />
                         <Button
                             x:Name="BrowseButton"
                             Grid.Column="1"

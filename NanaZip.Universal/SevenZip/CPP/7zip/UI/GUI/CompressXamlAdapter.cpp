@@ -484,7 +484,14 @@ static BOOLEAN WINAPI CCompressCommandThunk(
 
     case K7_COMPRESS_COMMAND_ARCHIVE_PATH:
       if (semanticText)
+      {
         core.ArchiveName = semanticText;
+        // Commit-time normalization: a bare name typed by the user gets the
+        // current format's main extension here, and the snapshot is updated
+        // so the XAML page can echo the suffixed name back into the box.
+        core.EnsureArchiveExtension();
+        UpdateSnapshot(core, ctx);
+      }
       return TRUE;
 
     case K7_COMPRESS_COMMAND_PARAMETERS:

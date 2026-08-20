@@ -103,6 +103,33 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        // Typed into the editable archive-path combo: the moment the text
+        // differs from the default name, the name is marked user-edited so
+        // option refreshes never overwrite the box again (Enter, option
+        // changes, checkbox clicks...). Program refreshes set the default
+        // text back, which does not differ from the snapshot, so they are
+        // never mistaken for user input.
+        void OnArchivePathTextChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+
+        // Commits the archive-path box: marks the name user-edited, syncs
+        // it to the core, then echoes back the extension-normalized name
+        // (the core appends the current format's main extension to a bare
+        // name) so the suffix shows in the box, and selects the whole
+        // committed name. Shared by LostFocus and Enter. FromEnter also
+        // confirms the dialog (OK) when the text is unchanged from the
+        // last commit, so Enter acts like clicking OK on the settled name.
+        void CommitArchivePath(bool FromEnter);
+        bool IsArchivePathFocused();
+        // Enter handling on the combo's internal editing box (the page
+        // level cannot rely on focus queries in this host, so the key is
+        // intercepted where it actually lands).
+        void OnPathTextBoxPreviewKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+        void HookPathTextBox();
+
         void OnArchivePathDropDownOpened(
             winrt::IInspectable const& sender,
             winrt::IInspectable const& e);
@@ -240,6 +267,16 @@ namespace winrt::NanaZip::Modern::implementation
         // with the default name again; without it, switching format etc.
         // keeps updating the extension of the untouched default name.
         bool m_PathUserEdited;
+        // The archive-path text as last committed (Enter / LostFocus, after
+        // the core appended the format's main extension). Enter with the
+        // text unchanged from this value confirms the dialog (OK); Enter
+        // with a different text commits the new name.
+        std::wstring m_CommittedPath;
+        // Guards the PreviewKeyDown hook on the combo's internal text box:
+        // the page-level Enter handling cannot rely on focus queries in
+        // this host, so the key is handled on the editing box itself
+        // (same mechanism the address bar uses).
+        bool m_PathTextBoxHooked;
 
         // Layout state for the wrap-on-shrink behavior.
         bool m_FirstLayout;
