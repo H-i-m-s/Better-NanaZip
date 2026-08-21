@@ -103,6 +103,10 @@ namespace NanaZipPassword
     {
         std::vector<std::wstring> LocalCandidates;
         std::wstring CloudPassword; // empty = none available
+        // true = the password book has been loaded and LocalCandidates is
+        // the complete snapshot, including the valid empty-book case.
+        // false = the FM worker has not published the book yet.
+        bool LocalReady = false;
         // true = the cloud lookup for this archive has finished (its
         // result may still be empty). false = still in flight; the 7zG
         // prefetch worker retries shortly instead of giving up.
@@ -160,6 +164,7 @@ namespace NanaZipPassword
         mutable std::mutex m_mutex;
         mutable std::condition_variable m_cv;
         std::vector<std::wstring> m_localCandidates;
+        bool m_localReady;
         std::vector<std::wstring> m_cloudPasswords;
         std::vector<bool> m_cloudReady;
         std::vector<std::thread> m_clientThreads;

@@ -842,14 +842,17 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
     if (!PasswordSessionId.IsEmpty() && BatchPasswordMatchCallback)
     {
       ExtractFlowDiagLog(L"[Q4] crypto batch branch");
-      std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
-      // Another file of this archive may already have matched and set
-      // the password: reuse it instead of testing again.
-      if (PasswordIsDefined)
+      // Do not hold the engine-serialization mutex while waiting for the
+      // prefetch result. The prefetch worker needs that mutex to run
+      // TestArchivePassword; holding it here would make both sides wait.
       {
-        ExtractFlowDiagLog(L"[Q4] crypto reuse cached");
-        *password = ::SysAllocString(Password.Ptr());
-        return *password ? S_OK : E_OUTOFMEMORY;
+        std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+        if (PasswordIsDefined)
+        {
+          ExtractFlowDiagLog(L"[Q4] crypto reuse cached");
+          *password = ::SysAllocString(Password.Ptr());
+          return *password ? S_OK : E_OUTOFMEMORY;
+        }
       }
       UString matched;
       UINT32 matchedSource = 0;
@@ -857,13 +860,21 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
           PasswordArchivePath, PasswordQueryContext, matched, matchedSource))
       {
         ExtractFlowDiagLog(L"[Q4] crypto matched");
-        Password = matched;
-        PasswordIsDefined = true;
-        PasswordSource = (NanaZipPassword::PasswordSource)matchedSource;
+        {
+          std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+          if (!PasswordIsDefined)
+          {
+            Password = matched;
+            PasswordIsDefined = true;
+            PasswordSource =
+                (NanaZipPassword::PasswordSource)matchedSource;
+          }
+          matched = Password;
+        }
         // The BSTR output must be filled here: returning S_OK without it
         // makes the engine see an empty password (this callback's tail
         // that assigns *password is skipped by the early return).
-        *password = ::SysAllocString(Password.Ptr());
+        *password = ::SysAllocString(matched.Ptr());
         return *password ? S_OK : E_OUTOFMEMORY;
       }
       ExtractFlowDiagLog(L"[Q4] crypto no match");

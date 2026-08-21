@@ -1235,6 +1235,7 @@ namespace NanaZipPassword
         m_sessionId(sessionId),
         m_pipeName(PasswordSessionPipeName(sessionId)),
         m_archivePaths(archivePaths),
+        m_localReady(false),
         m_cloudPasswords(archivePaths.size()),
         m_cloudReady(archivePaths.size(), false),
         m_stopped(false),
@@ -1278,6 +1279,7 @@ namespace NanaZipPassword
     {
         std::lock_guard<std::mutex> lock(this->m_mutex);
         this->m_localCandidates = candidates;
+        this->m_localReady = true;
         this->m_cv.notify_all();
     }
 
@@ -1500,10 +1502,12 @@ namespace NanaZipPassword
                 }
                 std::vector<std::wstring> local;
                 std::wstring cloud;
+                bool localReady = false;
                 bool cloudReady = false;
                 {
                     std::lock_guard<std::mutex> lock(this->m_mutex);
                     local = this->m_localCandidates;
+                    localReady = this->m_localReady;
                     if (index >= 0)
                     {
                         // Cloud lookups run in parallel in the prefetch
@@ -1520,8 +1524,9 @@ namespace NanaZipPassword
                 }
 
                 // Write the response: UINT32 localCount, then per
-                // candidate UINT32 len + UTF-16 bytes, then UINT32
-                // cloudLen + UTF-16 bytes. Write failures are ignored:
+                // candidate UINT32 len + UTF-16 bytes, then a local-ready
+                // flag, then UINT32 cloudByteLen + UTF-16 bytes. Write
+                // failures are ignored:
                 // the client may already be gone (stop-aware, so a
                 // teardown cannot block here either).
                 UINT32 count = static_cast<UINT32>(local.size());
@@ -1537,13 +1542,14 @@ namespace NanaZipPassword
                             len * sizeof(wchar_t));
                     }
                 }
-                const UINT32 cloudLen =
-                    static_cast<UINT32>(cloud.size());
-                writeExact(&cloudLen, sizeof(cloudLen));
+                const UINT32 localReadyFlag = localReady ? 1u : 0u;
+                writeExact(&localReadyFlag, sizeof(localReadyFlag));
+                const UINT32 cloudByteLen = static_cast<UINT32>(
+                    cloud.size() * sizeof(wchar_t));
+                writeExact(&cloudByteLen, sizeof(cloudByteLen));
                 if (!cloud.empty())
                 {
-                    writeExact(cloud.c_str(),
-                        cloudLen * sizeof(wchar_t));
+                    writeExact(cloud.c_str(), cloudByteLen);
                 }
                 // Trailing flag: whether the cloud lookup has finished
                 // (its result may still be empty). The 7zG prefetch worker
@@ -1584,6 +1590,8 @@ namespace NanaZipPassword
     {
         candidates.LocalCandidates.clear();
         candidates.CloudPassword.clear();
+        candidates.LocalReady = false;
+        candidates.CloudReady = false;
         const std::wstring pipeName =
             PasswordSessionPipeName(sessionId);
 
@@ -1718,19 +1726,24 @@ namespace NanaZipPassword
         }
         if (ok)
         {
-            UINT32 cloudLen = 0;
-            ok = readBytes(&cloudLen, sizeof(cloudLen));
-            if (ok && cloudLen <= 1024)
+            UINT32 localReadyFlag = 0;
+            ok = readBytes(&localReadyFlag, sizeof(localReadyFlag));
+            candidates.LocalReady = (ok && localReadyFlag != 0);
+        }
+        if (ok)
+        {
+            UINT32 cloudByteLen = 0;
+            ok = readBytes(&cloudByteLen, sizeof(cloudByteLen));
+            if (ok && cloudByteLen <= 2048 &&
+                (cloudByteLen % sizeof(wchar_t)) == 0)
             {
-                if (cloudLen > 0)
+                if (cloudByteLen > 0)
                 {
-                    // cloudLen is the byte length of the UTF-16 cloud
-                    // password (the server writes cloudLen * 2 bytes);
-                    // read exactly that many bytes.
+                    // The protocol length is UTF-16 bytes on both sides.
                     candidates.CloudPassword.assign(
-                        cloudLen / sizeof(wchar_t), L'\0');
+                        cloudByteLen / sizeof(wchar_t), L'\0');
                     ok = readBytes(&candidates.CloudPassword[0],
-                        cloudLen * sizeof(wchar_t));
+                        cloudByteLen);
                 }
             }
             else
@@ -1765,15 +1778,22 @@ namespace NanaZipPassword
         void BatchPrefetchWorker(
             BatchSession* session,
             std::vector<std::wstring> paths,
-            bool queryCloud)
+            bool queryCloud,
+            bool matchLocal)
         {
-            std::vector<Candidate> candidates;
-            LoadLocalCandidates(candidates);
             std::vector<std::wstring> local;
-            for (const auto& c : candidates)
+            if (matchLocal)
             {
-                local.push_back(c.Value);
+                std::vector<Candidate> candidates;
+                LoadLocalCandidates(candidates);
+                for (const auto& c : candidates)
+                {
+                    local.push_back(c.Value);
+                }
             }
+            // Always publish the local side, including the disabled and
+            // empty-book cases. LocalReady then means "the local decision
+            // is settled", not "the candidate list is non-empty".
             session->PublishLocalCandidates(local);
             if (!queryCloud)
             {
@@ -1859,7 +1879,8 @@ namespace NanaZipPassword
         DWORD priority = 0;
         ReadAutomaticPasswordSettings(queryCloud, matchLocal, priority);
         m_prefetchThread = std::thread(
-            BatchPrefetchWorker, &m_session, archivePaths, queryCloud);
+            BatchPrefetchWorker, &m_session, archivePaths,
+            queryCloud, matchLocal);
         m_pipeThread = std::thread(BatchPipeWorker, &m_session);
     }
 

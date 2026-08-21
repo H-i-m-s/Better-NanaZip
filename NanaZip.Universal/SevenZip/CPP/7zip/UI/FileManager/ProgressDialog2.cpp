@@ -29,6 +29,10 @@
 
 #include "DialogSize.h"
 #include "ProgressDialog2.h"
+
+// Batch password prefetch stop (ExtractGUI.cpp): wakes every verdict
+// waiter so a cancel cannot deadlock behind a stuck prefetch worker.
+void SssBatchPrefetchStop();
 #include "ProgressDialog2Res.h"
 
 // **************** NanaZip Modification Start ****************
@@ -604,7 +608,13 @@ bool CProgressDialog::OnSize(WPARAM /* wParam */, int xSize, int ySize)
   return false;
 }
 
-void CProgressDialog::OnCancel() { Sync.Set_Stopped(true); }
+void CProgressDialog::OnCancel()
+{
+  Sync.Set_Stopped(true);
+  // Wake the batch password prefetch so a cancel cannot deadlock behind
+  // a stuck prefetch / verdict wait.
+  SssBatchPrefetchStop();
+}
 void CProgressDialog::OnOK() { }
 
 void CProgressDialog::SetProgressRange(UInt64 range)
@@ -1147,44 +1157,13 @@ bool CProgressDialog::ModernCancel()
     if (this->_cancelWasPressed)
         return true;
 
-    bool PreviousPaused = this->Sync.Get_Paused();
-
-    if (!PreviousPaused)
-    {
-        this->ModernPause();
-    }
-
-    this->_inCancelMessageBox = true;
-    const int res = ::MessageBoxW(
-        *this,
-        ::LangString(IDS_PROGRESS_ASK_CANCEL),
-        this->_title,
-        MB_YESNOCANCEL);
-    this->_inCancelMessageBox = false;
-    if (res == IDYES)
-        this->_cancelWasPressed = true;
-
-    if (!PreviousPaused)
-    {
-        this->ModernPause();
-    }
-
-    if (this->_externalCloseMessageWasReceived)
-    {
-        /* we have received kCloseMessage while we were in MessageBoxW().
-           so we call OnExternalCloseMessage() here.
-           it can show MessageBox and it can close dialog */
-        this->ModernExternalCloseMessage();
-        return true;
-    }
-
-    if (!this->_cancelWasPressed)
-        return true;
-
+    // No confirmation box: the Cancel button behaves like Esc and stops
+    // the operation immediately. Wake the batch password prefetch too so
+    // a stuck verdict wait cannot block the cancel.
+    this->_cancelWasPressed = true;
     this->MessagesDisplayed = true;
-    // we will call Sync.Set_Stopped(true) in OnButtonClicked() : OnCancel()
     this->Sync.Set_Stopped(true);
-
+    SssBatchPrefetchStop();
     return false;
 }
 
@@ -1231,8 +1210,10 @@ bool CProgressDialog::ModernMessageRouter(UINT message, WPARAM wParam, LPARAM lP
             }
             // Operation still running: stop it. The window stays open
             // until the operation finishes stopping (7-Zip closes it
-            // then).
+            // then). Wake the batch password prefetch too so a stuck
+            // verdict wait cannot block the cancel.
             this->Sync.Set_Stopped(true);
+            SssBatchPrefetchStop();
             return true;
         }
         return false;
@@ -1636,39 +1617,14 @@ bool CProgressDialog::OnButtonClicked(unsigned buttonID, HWND buttonHWND)
       
       if (_cancelWasPressed)
         return true;
-        
-      const bool paused = Sync.Get_Paused();
-      
-      if (!paused)
-      {
-        OnPauseButton();
-      }
 
-      _inCancelMessageBox = true;
-      const int res = ::MessageBoxW(*this, LangString(IDS_PROGRESS_ASK_CANCEL), _title, MB_YESNOCANCEL);
-      _inCancelMessageBox = false;
-      if (res == IDYES)
-        _cancelWasPressed = true;
-      
-      if (!paused)
-      {
-        OnPauseButton();
-      }
-
-      if (_externalCloseMessageWasReceived)
-      {
-        /* we have received kCloseMessage while we were in MessageBoxW().
-           so we call OnExternalCloseMessage() here.
-           it can show MessageBox and it can close dialog */
-        OnExternalCloseMessage();
-        return true;
-      }
-
-      if (!_cancelWasPressed)
-        return true;
-
+      // No confirmation box: the Cancel button behaves like Esc and stops
+      // the operation immediately. Wake the batch password prefetch too
+      // so a stuck verdict wait cannot block the cancel.
+      _cancelWasPressed = true;
       MessagesDisplayed = true;
-      // we will call Sync.Set_Stopped(true) in OnButtonClicked() : OnCancel()
+      Sync.Set_Stopped(true);
+      SssBatchPrefetchStop();
       break;
     }
 
