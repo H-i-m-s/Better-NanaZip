@@ -623,6 +623,7 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   }
   if (showDialog)
     params += kShowDialogSwitch;
+  SssFmDiagLog(L"[Q4-FM] ExtractGroupCommand begin");
   ExtractGroupCommand(arcPaths, params, false, waitFinish);
   SssFmDiagLog(L"[Q4-FM] 7zG finished");
   // batchScope (if any) is destroyed here: the scope destructor stops the

@@ -33,6 +33,8 @@
 // Batch password prefetch stop (ExtractGUI.cpp): wakes every verdict
 // waiter so a cancel cannot deadlock behind a stuck prefetch worker.
 void SssBatchPrefetchStop();
+void ExtractFlowDiagLog(const wchar_t *message);
+void ExtractFlowDiagLogResult(const wchar_t *stage, HRESULT result);
 #include "ProgressDialog2Res.h"
 
 // **************** NanaZip Modification Start ****************
@@ -1744,12 +1746,17 @@ void CProgressDialog::CopyToClipboard()
 static THREAD_FUNC_DECL MyThreadFunction(void *param)
 {
   CProgressThreadVirt *p = (CProgressThreadVirt *)param;
+  ExtractFlowDiagLog(L"[Q4] progress thread begin");
   try
   {
     p->Process();
     p->ThreadFinishedOK = true;
   }
-  catch (...) { p->Result = E_FAIL; }
+  catch (...) {
+    p->Result = E_FAIL;
+    ExtractFlowDiagLog(L"[Q4] progress thread exception");
+  }
+  ExtractFlowDiagLogResult(L"[Q4] progress thread end", p->Result);
   return 0;
 }
 
@@ -1788,6 +1795,7 @@ void CProgressThreadVirt::Process()
     m.Add_UInt32((unsigned)v);
   }
   catch(...) { m = "Error"; }
+  ExtractFlowDiagLogResult(L"[Q4] Process final result", Result);
   if (Result != E_ABORT)
   {
     if (m.IsEmpty() && Result != S_OK)

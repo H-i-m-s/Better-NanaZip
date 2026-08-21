@@ -681,6 +681,25 @@ static UString SssBatchOkFilePath()
   return p;
 }
 
+static void SssBatchFlowDiagLog(const wchar_t *event)
+{
+  wchar_t temp[MAX_PATH] = {};
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString path(temp);
+  path += L"k7batch_session_diag.log";
+  HANDLE h = ::CreateFileW(path, FILE_APPEND_DATA,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  ::WriteFile(h, event, (DWORD)(wcslen(event) * sizeof(wchar_t)),
+      &written, NULL);
+  ::WriteFile(h, L"\r\n", 4, &written, NULL);
+  ::CloseHandle(h);
+}
+
 // 7zG writes %TEMP%\sss_batch_skip.txt (the archive's path) when the batch
 // password session had no verifying candidate (see SssWriteBatchSkip in
 // NanaZip.Universal ExtractCallback.cpp). The file manager deletes the
@@ -724,16 +743,28 @@ static bool SssReadSkipFile(const UString &path)
 static bool SssReadOkFile(const UString &path)
 {
   if (path.IsEmpty())
+  {
+    SssBatchFlowDiagLog(L"[Q4-FM] ok marker read=false path-empty");
     return false;
+  }
   HANDLE h = ::CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE)
+  {
+    SssBatchFlowDiagLog(L"[Q4-FM] ok marker read=false open-failed");
     return false;
+  }
   char buf[4] = { 0 };
   DWORD read = 0;
-  ::ReadFile(h, buf, 2, &read, NULL);
+  const BOOL readResult = ::ReadFile(h, buf, 2, &read, NULL);
+  const DWORD readError = readResult ? ERROR_SUCCESS : ::GetLastError();
   ::CloseHandle(h);
-  return read >= 1 && buf[0] == '1';
+  const bool ok = read >= 1 && buf[0] == '1';
+  wchar_t message[160] = {};
+  swprintf_s(message, L"[Q4-FM] ok marker read=%d bytes=%lu error=%lu",
+      ok ? 1 : 0, (unsigned long)read, (unsigned long)readError);
+  SssBatchFlowDiagLog(message);
+  return ok;
 }
 
 // Delete the successfully extracted archives in one shot after the whole
@@ -973,10 +1004,15 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
           NDir::DeleteFileAlways(us2fs(a->OkFile));       // this archive's marker
           if (!a->PasswordSessionId.IsEmpty())
             NDir::DeleteFileAlways(us2fs(a->SkipFile));   // this archive's skip mark
+          SssBatchFlowDiagLog(L"[Q4-FM] ExtractArchives begin");
           ::ExtractArchives(single, fs2us(parentFolder), false, false, a->Ci.WriteZone, true, false, batchMode, true, true, false, UString(), a->PasswordSessionId);
+          SssBatchFlowDiagLog(L"[Q4-FM] ExtractArchives returned");
           ok = SssReadOkFile(a->OkFile);
           if (!ok && !a->PasswordSessionId.IsEmpty())
             skippedMark = SssReadSkipFile(a->SkipFile);
+          SssBatchFlowDiagLog(ok ? L"[Q4-FM] archive outcome=ok"
+              : (skippedMark ? L"[Q4-FM] archive outcome=skipped"
+                  : L"[Q4-FM] archive outcome=failed"));
           if (batchMode == (UInt32)(Int32)-1)
             batchMode = SssReadOwTempFile(a->OwTempFile);
         }

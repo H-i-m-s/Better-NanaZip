@@ -1542,6 +1542,13 @@ namespace NanaZipPassword
                             len * sizeof(wchar_t));
                     }
                 }
+                {
+                    wchar_t message[180] = {};
+                    swprintf_s(message,
+                        L"[Q4-S] local response count=%u ready=%u",
+                        count, localReady ? 1u : 0u);
+                    SssBatchDiagLog(message, 0);
+                }
                 const UINT32 localReadyFlag = localReady ? 1u : 0u;
                 writeExact(&localReadyFlag, sizeof(localReadyFlag));
                 const UINT32 cloudByteLen = static_cast<UINT32>(
@@ -1726,6 +1733,14 @@ namespace NanaZipPassword
         }
         if (ok)
         {
+            wchar_t message[180] = {};
+            swprintf_s(message,
+                L"[Q4-CL] local response count=%zu",
+                candidates.LocalCandidates.size());
+            SssBatchDiagLog(message, 0);
+        }
+        if (ok)
+        {
             UINT32 localReadyFlag = 0;
             ok = readBytes(&localReadyFlag, sizeof(localReadyFlag));
             candidates.LocalReady = (ok && localReadyFlag != 0);
@@ -1794,6 +1809,21 @@ namespace NanaZipPassword
             // Always publish the local side, including the disabled and
             // empty-book cases. LocalReady then means "the local decision
             // is settled", not "the candidate list is non-empty".
+            {
+                wchar_t message[160] = {};
+                swprintf_s(message,
+                    L"[Q4-S] local candidates published count=%zu",
+                    local.size());
+                SssBatchDiagLog(message, 0);
+            }
+            for (size_t i = 0; i < local.size(); ++i)
+            {
+                wchar_t message[160] = {};
+                swprintf_s(message,
+                    L"[Q4-S] local candidate published index=%zu units=%zu",
+                    i, local[i].size());
+                SssBatchDiagLog(message, 0);
+            }
             session->PublishLocalCandidates(local);
             if (!queryCloud)
             {

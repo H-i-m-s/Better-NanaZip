@@ -100,7 +100,7 @@ static void ExtractFlowDiagLogIndex(const wchar_t *stage, size_t index)
   ExtractFlowDiagLog(message);
 }
 
-static void ExtractFlowDiagLogResult(const wchar_t *stage, HRESULT result)
+void ExtractFlowDiagLogResult(const wchar_t *stage, HRESULT result)
 {
   wchar_t message[160] = {};
   swprintf_s(message, L"%s hr=0x%08X", stage,
@@ -574,8 +574,15 @@ static bool SssVerifyPassword(const std::wstring &candidate,
 {
   if (candidate.empty())
     return false;
+  wchar_t message[160] = {};
+  swprintf_s(message, L"[Q4] verify candidate units=%zu", candidate.size());
+  ExtractFlowDiagLog(message);
   std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
-  return TestArchivePassword(candidate, context);
+  const bool accepted = TestArchivePassword(candidate, context);
+  ExtractFlowDiagLog(accepted
+      ? L"[Q4] verify candidate accepted"
+      : L"[Q4] verify candidate rejected");
+  return accepted;
 }
 
 // Prefetches one archive according to one normalized policy. Disabled
@@ -585,6 +592,7 @@ static void SssPrefetchOne(const UString &archivePath,
     const SssPasswordQueryContext &baseContext,
     const SssAutomaticPasswordPolicy &policy)
 {
+  ExtractFlowDiagLog(L"[Q4] prefetch one begin");
   auto result = std::make_shared<SssPrefetchResult>();
   {
     std::lock_guard<std::mutex> lock(g_PrefetchMutex);
@@ -642,6 +650,18 @@ static void SssPrefetchOne(const UString &archivePath,
         // the startup response where the book has not been published yet.
         localCandidates = candidates.LocalCandidates;
         localReady = true;
+        wchar_t message[180] = {};
+        swprintf_s(message,
+            L"[Q4] local candidates received ready=1 count=%zu",
+            localCandidates.size());
+        ExtractFlowDiagLog(message);
+        for (size_t i = 0; i < localCandidates.size(); ++i)
+        {
+          wchar_t item[160] = {};
+          swprintf_s(item, L"[Q4] local candidate received index=%zu units=%zu",
+              i, localCandidates[i].size());
+          ExtractFlowDiagLog(item);
+        }
       }
       if (policy.UseCloud && !cloudFinished && candidates.CloudReady)
       {
@@ -668,6 +688,7 @@ static void SssPrefetchOne(const UString &archivePath,
     // straight through once the cloud result turned out unusable).
     if (policy.UseLocal && localIndex < localCandidates.size())
     {
+      ExtractFlowDiagLogIndex(L"[Q4] local candidate verify index", localIndex);
       if (SssVerifyPassword(localCandidates[localIndex], ctx))
       {
         result->LocalPassword = localCandidates[localIndex];
@@ -704,22 +725,36 @@ static void SssPrefetchOne(const UString &archivePath,
       // otherwise keep waiting for the cloud result below
     }
 
-    if (cloudFinished && localReady)
+    if (cloudFinished && localReady && result->LocalDone.load())
       break; // cloud and local are both settled
     ::Sleep(150); // retry until both the book and cloud state are ready
   }
+  {
+    wchar_t message[220] = {};
+    swprintf_s(message,
+        L"[Q4] prefetch final localDone=%d cloudDone=%d localPassword=%d cloudPassword=%d",
+        result->LocalDone.load() ? 1 : 0,
+        result->CloudDone.load() ? 1 : 0,
+        result->LocalPassword.empty() ? 0 : 1,
+        result->CloudPassword.empty() ? 0 : 1);
+    ExtractFlowDiagLog(message);
+  }
+  ExtractFlowDiagLog(L"[Q4] prefetch one end");
 }
 
 static void SssPrefetchWorker(const UStringVector &archivePathsFull,
     const SssPasswordQueryContext &baseContext,
     const SssAutomaticPasswordPolicy &policy)
 {
+  ExtractFlowDiagLogIndex(L"[Q4] prefetch worker begin count", archivePathsFull.Size());
   for (unsigned i = 0; i < archivePathsFull.Size(); ++i)
   {
     if (g_PrefetchStopped.load())
       break;
+    ExtractFlowDiagLogIndex(L"[Q4] prefetch worker item", i);
     SssPrefetchOne(archivePathsFull[i], baseContext, policy);
   }
+  ExtractFlowDiagLog(L"[Q4] prefetch worker end");
 }
 
 // Batch password callback for the File Manager session (-sssid): consumes
@@ -1290,6 +1325,7 @@ void CThreadExtracting::ProcessWasFinished_GuiVirt()
 
 HRESULT CThreadExtracting::ProcessVirt()
 {
+  ExtractFlowDiagLog(L"[Q4] ProcessVirt begin");
   // **************** NanaZip Modification Start ****************
   //CDecompressStat Stat;
   CDecompressStat &Stat = ExtractCallbackSpec->Stat;
@@ -1317,7 +1353,17 @@ HRESULT CThreadExtracting::ProcessVirt()
         HashBundle,
       #endif
       FinalMessage.ErrorMessage.Message, Stat);
-  
+  ExtractFlowDiagLogResult(L"[Q4] Extract returned", res);
+  {
+    wchar_t message[240] = {};
+    swprintf_s(message,
+        L"[Q4] callback state archiveErrors=%u messageErrors=%d encryptedVerified=%d isOK=%d",
+        (unsigned)ExtractCallbackSpec->NumArchiveErrors,
+        ExtractCallbackSpec->ThereAreMessageErrors ? 1 : 0,
+        ExtractCallbackSpec->EncryptedFileWasVerified ? 1 : 0,
+        ExtractCallbackSpec->IsOK() ? 1 : 0);
+    ExtractFlowDiagLog(message);
+  }
   #ifndef Z7_SFX
   if (res == S_OK && ExtractCallbackSpec->IsOK())
   {
@@ -1355,6 +1401,7 @@ HRESULT CThreadExtracting::ProcessVirt()
   }
   #endif
 
+  ExtractFlowDiagLog(L"[Q4] ProcessVirt end");
   return res;
 }
 
@@ -1587,19 +1634,34 @@ static void SssDeleteArchivesAfterExtract(const UStringVector &paths, bool perma
 // archive is never deleted).
 static void SssWriteBatchOk()
 {
+  ExtractFlowDiagLog(L"[Q4] batch ok write begin");
   wchar_t temp[MAX_PATH];
   if (::GetTempPathW(MAX_PATH, temp) == 0)
+  {
+    ExtractFlowDiagLogResult(L"[Q4] batch ok GetTempPath failed",
+        HRESULT_FROM_WIN32(::GetLastError()));
     return;
+  }
   UString full(temp);
   full += L"sss_batch_ok.txt";
   HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE)
+  {
+    ExtractFlowDiagLogResult(L"[Q4] batch ok CreateFile failed",
+        HRESULT_FROM_WIN32(::GetLastError()));
     return;
+  }
   DWORD written = 0;
   wchar_t ok = L'1';
-  ::WriteFile(h, &ok, sizeof(ok), &written, NULL);
+  const BOOL writeResult = ::WriteFile(h, &ok, sizeof(ok), &written, NULL);
+  const DWORD writeError = writeResult ? ERROR_SUCCESS : ::GetLastError();
   ::CloseHandle(h);
+  wchar_t message[180] = {};
+  swprintf_s(message, L"[Q4] batch ok write end success=%d bytes=%lu error=%lu",
+      writeResult ? 1 : 0, (unsigned long)written,
+      (unsigned long)writeError);
+  ExtractFlowDiagLog(message);
 }
 
 // The marker contains the deletion mode selected in the extract dialog:
@@ -2190,6 +2252,7 @@ HRESULT ExtractGUI(
   const HRESULT createRes = extracter.Create(title, hwndParent);
   if (createRes != S_OK)
   {
+    ExtractFlowDiagLogResult(L"[Q4] extracter Create failed", createRes);
     // Create failed: the prefetch worker (if started) must be stopped and
     // joined before returning, otherwise destroying the joinable
     // std::thread terminates the process.
@@ -2200,11 +2263,25 @@ HRESULT ExtractGUI(
     }
     if (prefetchThread.joinable())
     {
+      ExtractFlowDiagLog(L"[Q4] prefetch join begin create-failed");
       prefetchThread.join();
+      ExtractFlowDiagLog(L"[Q4] prefetch join end create-failed");
     }
     return createRes;
   }
   messageWasDisplayed = extracter.ThreadFinishedOK && extracter.MessagesDisplayed;
+  ExtractFlowDiagLogResult(L"[Q4] extracter Result", extracter.Result);
+  {
+    wchar_t message[220] = {};
+    swprintf_s(message,
+        L"[Q4] extracter state threadOK=%d messages=%d callbackOK=%d archiveErrors=%u messageErrors=%d",
+        extracter.ThreadFinishedOK ? 1 : 0,
+        extracter.MessagesDisplayed ? 1 : 0,
+        extractCallback->IsOK() ? 1 : 0,
+        (unsigned)extractCallback->NumArchiveErrors,
+        extractCallback->ThereAreMessageErrors ? 1 : 0);
+    ExtractFlowDiagLog(message);
+  }
   // **************** 7-Zip ZS Modification Start ****************
 #ifndef Z7_SFX
   // browse/navigate to target path:
@@ -2239,7 +2316,12 @@ HRESULT ExtractGUI(
   // owns the deletion (dialog mode). In batch mode the file manager passed
   // -snd, so the archives stay until every archive has been extracted and
   // the file manager deletes them all in one shot.
-  if (!options.TestMode && extracter.Result == S_OK && extractCallback->IsOK())
+  const bool batchOk = !options.TestMode &&
+      extracter.Result == S_OK && extractCallback->IsOK();
+  ExtractFlowDiagLog(batchOk
+      ? L"[Q4] batch success condition=true"
+      : L"[Q4] batch success condition=false");
+  if (batchOk)
   {
     if (extractCallback->SharePasswordAuthorized &&
         (extractCallback->PasswordSource == NanaZipPassword::PasswordSource::Manual ||
@@ -2269,8 +2351,11 @@ HRESULT ExtractGUI(
   }
   if (prefetchThread.joinable())
   {
+    ExtractFlowDiagLog(L"[Q4] prefetch join begin");
     prefetchThread.join();
+    ExtractFlowDiagLog(L"[Q4] prefetch join end");
   }
+  ExtractFlowDiagLog(L"[Q4] ExtractGUI return");
   // **************** NanaZip Modification End ****************
   return extracter.Result;
 }
