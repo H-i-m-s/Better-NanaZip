@@ -767,6 +767,39 @@ static bool SssReadOkFile(const UString &path)
   return ok;
 }
 
+// Path of the cancel marker: 7zG writes %TEMP%\sss_batch_cancel.txt when
+// it exits with E_ABORT on the per-archive loop path (see
+// SssWriteBatchCancel in ExtractGUI.cpp).
+static UString SssCancelFilePath()
+{
+  wchar_t temp[MAX_PATH];
+  UString p;
+  if (::GetTempPathW(MAX_PATH, temp) != 0)
+  {
+    p = temp;
+    p += L"sss_batch_cancel.txt";
+  }
+  return p;
+}
+
+// Consumes the cancel marker: returns true when 7zG exited with a user
+// cancel (E_ABORT) instead of a real extraction failure. The marker is
+// deleted here; it is also deleted before each archive so a stale one
+// never affects the next archive.
+static bool SssReadCancelFile(const UString &path)
+{
+  if (path.IsEmpty())
+    return false;
+  HANDLE h = ::CreateFileW(path, GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return false;
+  ::CloseHandle(h);
+  NDir::DeleteFileAlways(path);
+  return true;
+}
+
 // Delete the successfully extracted archives in one shot after the whole
 // batch finished. Recycle Bin via SHFileOperationW (single operation), or
 // permanently via NDir::DeleteFileAlways.
@@ -816,6 +849,7 @@ struct CSssLoopArgs
   UString OwTempFile;
   UString OkFile;
   UString SkipFile;   // silent-skip mark (batch password session)
+  UString CancelFile; // cancel mark (7zG wrote E_ABORT on the loop path)
   UString DlgFile;     // per-run extract-dialog state (one-by-one only)
   UString DelFile;     // per-archive delete mark (one-by-one only)
   bool DeleteAfter;
@@ -965,13 +999,19 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     // file: each archive runs in its own 7zG process, so "Yes to All"
     // picked in one archive is forwarded to the next ones.
     UInt32 batchMode = (UInt32)(Int32)-1; // -1: let 7zG ask
+    bool wasCancelled = false; // a dialog cancel / parent shutdown
     for (unsigned i = 0; i < a->Paths.Size(); i++)
     {
       if (!::IsWindow(a->PanelHwnd))
+      {
+        wasCancelled = true; // panel destroyed: interrupted run
         break; // panel is gone: stop quietly
+      }
       SssPostLoopState(a->PanelHwnd, i, 1);
+      NDir::DeleteFileAlways(us2fs(a->CancelFile)); // drop stale cancel mark
       bool ok = false;
       bool skippedMark = false;
+      bool cancelMark = false;
       FString fullPathF;
       FString parentFolder;
       if (NFile::NName::GetFullPath(us2fs(a->Paths[i]), fullPathF) &&
@@ -992,6 +1032,7 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
           NDir::DeleteFileAlways(us2fs(a->DelFile)); // this archive's delete mark
           ::ExtractArchives(single, fs2us(parentFolder), true, false, a->Ci.WriteZone, true, false, batchMode, true, true, true);
           ok = SssReadOkFile(a->OkFile);
+          cancelMark = SssReadCancelFile(a->CancelFile);
           if (ok && SssReadDelFile(a->DelFile))
             okPaths.Add(fs2us(fullPathF)); // marked for deletion
           if (batchMode == (UInt32)(Int32)-1)
@@ -1008,6 +1049,7 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
           ::ExtractArchives(single, fs2us(parentFolder), false, false, a->Ci.WriteZone, true, false, batchMode, true, true, false, UString(), a->PasswordSessionId);
           SssBatchFlowDiagLog(L"[Q4-FM] ExtractArchives returned");
           ok = SssReadOkFile(a->OkFile);
+          cancelMark = SssReadCancelFile(a->CancelFile);
           if (!ok && !a->PasswordSessionId.IsEmpty())
             skippedMark = SssReadSkipFile(a->SkipFile);
           SssBatchFlowDiagLog(ok ? L"[Q4-FM] archive outcome=ok"
@@ -1030,6 +1072,14 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
         // archive and continue with the next one.
         skipped++;
       }
+      else if (cancelMark)
+      {
+        // 7zG was cancelled (dialog closed, or the File Manager went
+        // away while it ran): not a failure, and no summary for a
+        // cancelled run. A cancel stops the whole run, in both modes.
+        wasCancelled = true;
+        break;
+      }
       else
       {
         failed++;
@@ -1039,6 +1089,7 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     }
     NDir::DeleteFileAlways(us2fs(a->OwTempFile));
     NDir::DeleteFileAlways(us2fs(a->OkFile));
+    NDir::DeleteFileAlways(us2fs(a->CancelFile)); // leftover cancel mark
     if (!a->PasswordSessionId.IsEmpty())
       NDir::DeleteFileAlways(us2fs(a->SkipFile)); // leftover skip mark
     // Stop the batch password session and wait for its workers (the
@@ -1059,10 +1110,10 @@ static DWORD WINAPI SssExtractLoopThread(void *param)
     else if (a->DeleteAfter && !okPaths.IsEmpty())
       SssDeleteBatchArchives(okPaths, a->DeletePermanently);
     // Only report a summary when at least one archive was actually
-    // processed. If the run was cancelled or failed right away (e.g. the
-    // user opened the dialog and closed it without extracting anything),
-    // a "0 processed" popup would just be noise.
-    if (done > 0 || skipped > 0 || failed > 0)
+    // processed and the run was not cancelled. If the run was cancelled
+    // or interrupted (dialog closed without extracting, File Manager
+    // closed, process killed), a popup would just be noise.
+    if (!wasCancelled && (done > 0 || skipped > 0 || failed > 0))
     {
       UString msg = L"已解压 ";
       msg.Add_UInt32(done);
@@ -1120,6 +1171,7 @@ void CPanel::SssExtractAll(bool showDialog)
   args->OwTempFile = SssOwTempFilePath();
   args->OkFile = SssBatchOkFilePath();
   args->SkipFile = SssSkipFilePath();
+  args->CancelFile = SssCancelFilePath();
   // Batch password session: only when automatic lookup is enabled. 7zG
   // gets -sssid and verifies prefetched candidates itself; without the
   // session it falls back to the password dialog.
@@ -1186,6 +1238,7 @@ void CPanel::SssExtractOneByOne()
   args->OkFile = SssBatchOkFilePath();
   // One-by-one is interactive: no batch password session, no skip mark.
   args->SkipFile = UString();
+  args->CancelFile = SssCancelFilePath();
   args->PasswordSessionId = UString();
   args->DlgFile = SssDlgStateFilePath();
   args->DelFile = SssDelFilePath();

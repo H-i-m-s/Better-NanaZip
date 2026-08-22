@@ -124,6 +124,25 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::TextChangedEventArgs const& e);
 
+        // Blocks Enter on the password-book editor when the caret sits on
+        // a blank line, so repeated Enter cannot pile up empty lines (the
+        // text is never rewritten, so the caret never jumps). IME-confirmed
+        // Enter is left alone.
+        void ExtractBookKeyDown(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+
+        // TextCompositionStarted/Ended track the IME composition state of
+        // the password-book box. UWP's KeyRoutedEventArgs has no
+        // ImeProcessed (WPF concept); Enter while composing must be left to
+        // the IME so Chinese input keeps its candidate confirmation.
+        void ExtractBookImeCompositionStarted(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::TextCompositionStartedEventArgs const& e);
+        void ExtractBookImeCompositionEnded(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::TextCompositionEndedEventArgs const& e);
+
         void ExtractImportBookClick(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -142,6 +161,9 @@ namespace winrt::NanaZip::Modern::implementation
         // exactly on that measurement's minimum width.
         bool m_HasSavedWindowRect;
         bool m_InitGuard;
+        // True while the password-book box has an active IME composition
+        // (candidate window open); Enter must not be swallowed then.
+        bool m_IsImeComposing = false;
 
         winrt::Windows::UI::Xaml::Controls::CheckBox m_MenuChecks[13];
         winrt::Windows::UI::Xaml::Controls::CheckBox m_FileContextMenuChecks[28];

@@ -28,4 +28,12 @@ void CalcChecksum(const UStringVector &paths,
 
 void Benchmark(bool totalMode);
 
+// **************** SSS Modification Start ****************
+// Closes every 7zG process this File Manager started (polite WM_CLOSE,
+// then a hard kill after a short grace period). Called from the File
+// Manager exit paths so a dialog left open does not survive the main
+// window (see CompressCall.cpp).
+void SssShutdownChildProcesses();
+// **************** SSS Modification End ****************
+
 #endif

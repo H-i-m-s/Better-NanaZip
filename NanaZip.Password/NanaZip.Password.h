@@ -47,6 +47,12 @@ namespace NanaZipPassword
     // in their original order.
     bool LoadLocalCandidates(std::vector<Candidate>& candidates);
 
+    // Adds a password to the local password book (LocalState/passwords.txt,
+    // UTF-8, one entry per line). Idempotent: an exact duplicate is left
+    // untouched and still counts as success. Returns false for an empty
+    // password or a write failure.
+    bool AddPasswordToBook(const std::wstring& password);
+
     // Reads the automatic password lookup settings from the FileManager
     // registry. MatchPriority is 0 for local-first and nonzero for
     // cloud-first.

@@ -23,6 +23,7 @@
 #include <NanaZip.Password.h>
 
 #include <memory>
+#include <mutex>
 
 #include "ZipRegistry.h"
 #include "CompressCall.h"
@@ -134,13 +135,116 @@ static void ErrorMessageHRESULT(HRESULT res, LPCWSTR s = NULL)
   ErrorMessage(s2);
 }
 
+// **************** SSS Modification Start ****************
+// Child 7zG registry. The File Manager starts 7zG with CProcess::Create
+// and usually blocks waiting for it; when the main window closes while a
+// dialog is still up, that 7zG would otherwise keep its window (and
+// taskbar icon) alive with nobody to close it. Every created 7zG handle
+// is registered here and reclaimed on exit: first a polite WM_CLOSE to
+// every top-level window of the process (the 7zG dialogs treat WM_CLOSE
+// as cancel), then a short grace period, then a hard kill. The registry
+// is mutex-protected because the batch extraction loop starts 7zG
+// processes from a background thread.
+static std::mutex g_SssChildProcessesMutex;
+static CRecordVector<HANDLE> g_SssChildProcesses;
+
+static void SssRegisterChildProcess(HANDLE process)
+{
+  std::lock_guard<std::mutex> lock(g_SssChildProcessesMutex);
+  g_SssChildProcesses.Add(process);
+}
+
+// Returns true when the handle was still registered (i.e. not already
+// reclaimed by the shutdown path), so the caller knows whether it may
+// still CloseHandle it.
+static bool SssUnregisterChildProcess(HANDLE process)
+{
+  std::lock_guard<std::mutex> lock(g_SssChildProcessesMutex);
+  FOR_VECTOR (i, g_SssChildProcesses)
+  {
+    if (g_SssChildProcesses[i] == process)
+    {
+      g_SssChildProcesses.Delete(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+struct SssChildProcessEnumContext
+{
+  DWORD ProcessId;
+};
+
+static BOOL CALLBACK SssCloseChildWindowProc(HWND hwnd, LPARAM lParam)
+{
+  DWORD windowPid = 0;
+  ::GetWindowThreadProcessId(hwnd, &windowPid);
+  const SssChildProcessEnumContext &ctx =
+      *reinterpret_cast<const SssChildProcessEnumContext *>(lParam);
+  if (windowPid == ctx.ProcessId)
+  {
+    ::PostMessageW(hwnd, WM_CLOSE, 0, 0);
+  }
+  return TRUE;
+}
+
+static unsigned SssReclaimChildProcessesOnce()
+{
+  CRecordVector<HANDLE> processes;
+  {
+    std::lock_guard<std::mutex> lock(g_SssChildProcessesMutex);
+    processes = g_SssChildProcesses;
+    g_SssChildProcesses.Clear();
+  }
+  FOR_VECTOR (i, processes)
+  {
+    HANDLE process = processes[i];
+    if (::WaitForSingleObject(process, 0) == WAIT_OBJECT_0)
+    {
+      // Already exited: just drop the handle.
+      ::CloseHandle(process);
+      continue;
+    }
+    // Polite close: the 7zG dialogs treat WM_CLOSE as cancel (progress
+    // dialog: ModernCancel; classic dialog: EndDialog(IDCANCEL)).
+    SssChildProcessEnumContext ctx;
+    ctx.ProcessId = ::GetProcessId(process);
+    if (ctx.ProcessId != 0)
+    {
+      ::EnumWindows(SssCloseChildWindowProc, reinterpret_cast<LPARAM>(&ctx));
+    }
+    // Grace period, then hard kill as a last resort.
+    if (::WaitForSingleObject(process, 3000) == WAIT_TIMEOUT)
+    {
+      ::TerminateProcess(process, 1);
+    }
+    ::CloseHandle(process);
+  }
+  return processes.Size();
+}
+
+// Called when the File Manager is about to exit: close every 7zG it
+// started. A second pass after a short pause covers the race where the
+// batch extraction thread (already noticing the destroyed panel window)
+// registers one last child while the first pass runs. With no children
+// open the function returns immediately, so a plain File Manager close is
+// not slowed down.
+void SssShutdownChildProcesses()
+{
+  if (SssReclaimChildProcessesOnce() == 0)
+    return;
+  ::Sleep(300);
+  SssReclaimChildProcessesOnce();
+}
+// **************** SSS Modification End ****************
+
 // Waits for the 7zG process to exit while pumping the message queue:
 // without this, the File Manager UI thread blocks in WaitForSingleObject
 // and the window goes "Not Responding" whenever 7zG keeps a modal dialog
 // (the extract dialog) open for a while.
-static void SssWaitWithMessagePump(CProcess &process)
+static void SssWaitWithMessagePump(HANDLE handle)
 {
-  const HANDLE handle = process;
   for (;;)
   {
     const DWORD wait = ::MsgWaitForMultipleObjects(
@@ -166,26 +270,58 @@ static HRESULT Call7zGui(const UString &params,
   UString imageName = fs2us(NWindows::NDLL::GetModuleDirPrefix());
   imageName += k7zGui;
 
+  // Pass our own PID so 7zG can watch us: if the File Manager dies
+  // (crash or forced kill), every 7zG it started shuts itself down
+  // instead of leaving its dialogs behind (see GUI.cpp).
+  UString fullParams = params;
+  fullParams += L" -sspid";
+  fullParams.Add_UInt32(::GetCurrentProcessId());
+
   CProcess process;
-  const WRes wres = process.Create(imageName, params, NULL); // curDir);
+  const WRes wres = process.Create(imageName, fullParams, NULL); // curDir);
   if (wres != 0)
   {
     HRESULT hres = HRESULT_FROM_WIN32(wres);
     ErrorMessageHRESULT(hres, imageName);
     return hres;
   }
+
+  // Register the handle so a File Manager exit can reclaim this 7zG.
+  // Call7zGui owns the handle from here on (process.Detach keeps the
+  // stack object from closing it).
+  HANDLE processHandle = process.Detach();
+  SssRegisterChildProcess(processHandle);
+
   if (waitFinish)
-    SssWaitWithMessagePump(process);
+  {
+    SssWaitWithMessagePump(processHandle);
+  }
   else if (event != NULL)
   {
-    HANDLE handles[] = { process, *event };
+    HANDLE handles[] = { processHandle, *event };
     ::WaitForMultipleObjects(ARRAY_SIZE(handles), handles, FALSE, INFINITE);
     // The event only signals that 7zG parsed the archive map; it may
     // still be extracting every archive (or showing its dialog). Wait for
     // the process to really exit so the batch password session stays
     // alive for all of them - while pumping messages so the File Manager
     // window stays responsive.
-    SssWaitWithMessagePump(process);
+    SssWaitWithMessagePump(processHandle);
+  }
+  else
+  {
+    // Nobody waits on this one (benchmark): keep the handle registered so
+    // the shutdown path can still reclaim it when the File Manager exits.
+    return S_OK;
+  }
+
+  // 7zG has exited: the shutdown path only needs live processes, so drop
+  // the handle now instead of accumulating exited ones. When the handle is
+  // no longer registered, the exit-time reclaim already closed it (the
+  // File Manager window was closed while we were waiting for this 7zG),
+  // so it must not be closed twice.
+  if (SssUnregisterChildProcess(processHandle))
+  {
+    ::CloseHandle(processHandle);
   }
   return S_OK;
 }
@@ -495,10 +631,14 @@ static void SssShowBatchResultSummary(const UString &sessionId,
       break;
     pos = lineEnd + 1;
   }
-  // Archives with no result row (7zG aborted before handling them) count
-  // as failed; the summary still adds up to the submitted total.
+  // A normal run records exactly one row per archive (open failure,
+  // skip, or per-archive result). When rows are missing, 7zG exited
+  // before the batch finished (user cancelled the dialog, the File
+  // Manager was closed, or the process was killed mid-run). Show nothing
+  // in that case: the summary belongs to a completed batch, not to a
+  // cancelled or interrupted one.
   if (rows < total)
-    failed += (unsigned)(total - rows);
+    return;
 
   UString msg = L"已解压 ";
   msg.Add_UInt32(done);

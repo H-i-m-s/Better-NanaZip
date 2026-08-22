@@ -752,6 +752,12 @@ typedef BOOLEAN (WINAPI *K7_PASSWORD_ENCRYPTION_CHECK_CALLBACK)(
     _In_opt_ LPVOID CallbackContext,
     _In_ HWND NotifyWindow);
 
+// Adds the current password to the host's local password book. Returns
+// TRUE on success; FALSE when the password was empty or the book could
+// not be written (the page then silently keeps the '+' glyph).
+typedef BOOLEAN (WINAPI *K7_PASSWORD_ADD_CALLBACK)(
+    _In_ LPCWSTR Password);
+
 typedef struct _K7_EXTRACT_DIALOG_CONTEXT
 {
     // --- Input ---
@@ -822,6 +828,10 @@ typedef struct _K7_EXTRACT_DIALOG_CONTEXT
     // Optional: cancels an in-flight local/cloud password query. May be NULL
     // when the host has no query state.
     K7_PASSWORD_QUERY_CANCEL_CALLBACK QueryCancelCallback;
+    // Optional: adds the current password to the local password book. May be
+    // NULL when the host does not support the password book (the button is
+    // disabled then).
+    K7_PASSWORD_ADD_CALLBACK AddPasswordCallback;
     // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
     // 3 = command-line password.
     UINT32 PasswordSource;
@@ -1090,6 +1100,10 @@ typedef struct _K7_PASSWORD_DIALOG_CONTEXT
     // Optional: cancels an in-flight local/cloud password query. May be NULL
     // when the host has no query state.
     K7_PASSWORD_QUERY_CANCEL_CALLBACK QueryCancelCallback;
+    // Optional: adds the current password to the local password book. May be
+    // NULL when the host does not support the password book (the button is
+    // disabled then).
+    K7_PASSWORD_ADD_CALLBACK AddPasswordCallback;
     // 0 = typed/manual, 1 = cloud query, 2 = local candidate,
     // 3 = command-line password.
     UINT32 PasswordSource;

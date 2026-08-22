@@ -62,6 +62,10 @@ UString g_SssReleaseBeforeDeleteMarker;
 // archive's candidates instead of showing the password dialog, and skips
 // the archive when no candidate verifies.
 UString g_SssPasswordSessionId;
+// -sspid<pid>: the File Manager's process id. When set, this 7zG watches
+// that process and shuts itself down as soon as it exits (crash or forced
+// kill), so a dialog is never left behind without its owner (GUI.cpp).
+DWORD g_SssParentPid = 0;
 // **************** SSS Modification End ****************
 
 #ifdef Z7_LARGE_PAGES
@@ -238,6 +242,7 @@ enum Enum
   kSSSDlgState,
   kReleaseBeforeDelete,
   kSSSPasswordSession,
+  kSSSParentPid,
   // **************** SSS Modification End ****************
 
   kDeleteAfterCompressing,
@@ -404,6 +409,7 @@ static const CSwitchForm kSwitchForms[] =
   { "ssdlg", SWFRM_MINUS },
   { "srd", SWFRM_STRING_SINGL(0) },
   { "sssid", SWFRM_STRING_SINGL(0) },
+  { "sspid", SWFRM_STRING_SINGL(0) },
   // **************** SSS Modification End ****************
   
   { "sdel", SWFRM_SIMPLE },
@@ -1540,6 +1546,13 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
   if (parser[NKey::kSSSPasswordSession].ThereIs)
     g_SssPasswordSessionId =
         parser[NKey::kSSSPasswordSession].PostStrings[0];
+  if (parser[NKey::kSSSParentPid].ThereIs)
+  {
+    const wchar_t *pidText =
+        parser[NKey::kSSSParentPid].PostStrings[0];
+    const unsigned long pid = ::wcstoul(pidText, NULL, 10);
+    g_SssParentPid = (DWORD)pid;
+  }
   // **************** SSS Modification End ****************
   
   NWildcard::ECensorPathMode censorPathMode = NWildcard::k_RelatPath;

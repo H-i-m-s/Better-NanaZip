@@ -68,6 +68,17 @@ namespace
     wcsncpy_s(password, passwordCapacity, value.c_str(), _TRUNCATE);
     return K7_PASSWORD_QUERY_RESULT_MATCHED;
   }
+
+  // Adds the current password to the local password book (see
+  // NanaZip.Password). Filled into the password dialog context as
+  // AddPasswordCallback; the XAML page calls it from the "+" button next
+  // to the password box.
+  static BOOLEAN WINAPI SssAddPasswordToBookCallback(LPCWSTR password)
+  {
+    if (!password)
+      return FALSE;
+    return NanaZipPassword::AddPasswordToBook(password) ? TRUE : FALSE;
+  }
 }
 #include "FormatUtils.h"
 #include "LangUtils.h"
@@ -963,6 +974,7 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
         pwd.DeleteFrom(K7_PASSWORD_MAX_PASSWORD_LENGTH - 1);
       wcscpy_s(Context.Password, pwd.Ptr());
     }
+    Context.AddPasswordCallback = SssAddPasswordToBookCallback;
     ProgressDialog->WaitCreating();
     if (K7ModernShowPasswordDialog(*ProgressDialog, &Context) < 0 ||
         !Context.OK)

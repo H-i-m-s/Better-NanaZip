@@ -947,6 +947,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /* hPrevInstance */,
     }
     catch (...)
     {
+      // Even on a crash path, do not leave 7zG dialogs behind: the
+      // main window is going away and nobody would close them.
+      SssShutdownChildProcesses();
       g_ExitEventLauncher.Exit(true);
       throw;
     }
@@ -1297,6 +1300,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
       if (g_WindowWasCreated)
         SaveWindowInfo(hWnd);
+
+      // Close every 7zG this File Manager started (dialogs left open
+      // would otherwise survive the main window and keep a taskbar icon
+      // alive; see CompressCall.cpp). Called before the launcher exit so
+      // background waits on those processes wake up in time.
+      SssShutdownChildProcesses();
 
       g_ExitEventLauncher.Exit(true);
       PostQuitMessage(0);

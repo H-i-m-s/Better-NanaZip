@@ -12,11 +12,24 @@
 
 #include "../Common/ZipRegistry.h"
 
+#include <NanaZip.Password.h>
+
 #include "OpenCallback.h"
 #include "PasswordDialog.h"
 #include "NanaZip.Modern.h"
 
 using namespace NWindows;
+
+// Adds the current password to the local password book (see
+// NanaZip.Password). Filled into the password dialog context as
+// AddPasswordCallback; the XAML page calls it from the "+" button next to
+// the password box.
+static BOOLEAN WINAPI SssAddPasswordToBookCallback(LPCWSTR password)
+{
+  if (!password)
+    return FALSE;
+  return NanaZipPassword::AddPasswordToBook(password) ? TRUE : FALSE;
+}
 
 HRESULT COpenArchiveCallback::Open_SetTotal(const UInt64 *numFiles, const UInt64 *numBytes)
 // Z7_COM7F_IMF(COpenArchiveCallback::SetTotal(const UInt64 *numFiles, const UInt64 *numBytes))
@@ -110,6 +123,7 @@ HRESULT COpenArchiveCallback::Open_CryptoGetTextPassword(BSTR *password)
         pwd.DeleteFrom(K7_PASSWORD_MAX_PASSWORD_LENGTH - 1);
       wcscpy_s(Context.Password, pwd.Ptr());
     }
+    Context.AddPasswordCallback = SssAddPasswordToBookCallback;
     ProgressDialog.WaitCreating();
     if (K7ModernShowPasswordDialog(ProgressDialog, &Context) < 0 ||
         !Context.OK)

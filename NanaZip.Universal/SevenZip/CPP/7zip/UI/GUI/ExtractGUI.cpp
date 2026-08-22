@@ -1664,6 +1664,48 @@ static void SssWriteBatchOk()
   ExtractFlowDiagLog(message);
 }
 
+// Cancel marker: written when this 7zG exits with E_ABORT on the File
+// Manager's per-archive loop path (-snd). The File Manager deletes the
+// marker before each archive, checks it after 7zG exits, and uses it to
+// tell a user cancel / parent shutdown apart from a real extraction
+// failure (so the "extracted x, x failed" summary is not shown for
+// cancelled runs).
+static void SssWriteBatchCancel()
+{
+  wchar_t temp[MAX_PATH];
+  if (::GetTempPathW(MAX_PATH, temp) == 0)
+    return;
+  UString full(temp);
+  full += L"sss_batch_cancel.txt";
+  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  const wchar_t mark[] = L"cancelled";
+  DWORD written = 0;
+  ::WriteFile(h, mark, (DWORD)(wcslen(mark) * sizeof(wchar_t)),
+      &written, NULL);
+  ::CloseHandle(h);
+}
+
+// Only the per-archive loop path passes -snd (g_SssNoDelete); a plain
+// dialog extraction or a shell-invoked 7zG never writes the marker.
+static void SssWriteBatchCancelIfAborted(HRESULT result)
+{
+  if (result == E_ABORT && g_SssNoDelete)
+    SssWriteBatchCancel();
+}
+
+// Adds the current password to the local password book. Filled into the
+// dialog contexts as AddPasswordCallback; the XAML pages call it from the
+// "+" button next to the password box.
+static BOOLEAN WINAPI SssAddPasswordToBookCallback(LPCWSTR password)
+{
+  if (!password)
+    return FALSE;
+  return NanaZipPassword::AddPasswordToBook(password) ? TRUE : FALSE;
+}
+
 // The marker contains the deletion mode selected in the extract dialog:
 // '1' for permanent deletion, '0' for Recycle Bin. 7zG writes it only
 // after a fully successful extraction; the File Manager consumes it after
@@ -1921,6 +1963,7 @@ HRESULT ExtractGUI(
         ctx.QueryContext = &queryContext;
         ctx.QueryIsAsync = TRUE;
         ctx.QueryCancelCallback = CancelLocalPasswordMatch;
+        ctx.AddPasswordCallback = SssAddPasswordToBookCallback;
         bool autoQueryCloud = false;
         bool autoMatchLocal = false;
         DWORD matchPriority = 0;
@@ -2055,7 +2098,12 @@ HRESULT ExtractGUI(
         }
 
         if (!ctx.OK)
+        {
+          // User closed the dialog without extracting: mark the run as
+          // cancelled so the File Manager loop suppresses its summary.
+          SssWriteBatchCancelIfAborted(E_ABORT);
           return E_ABORT;
+        }
 
         // Write the results back (mirrors the Create/OnOK flow).
         dialog.DirPath = ctx.OutDirPath;
@@ -2256,6 +2304,7 @@ HRESULT ExtractGUI(
     // Create failed: the prefetch worker (if started) must be stopped and
     // joined before returning, otherwise destroying the joinable
     // std::thread terminates the process.
+    SssWriteBatchCancelIfAborted(createRes);
     g_PrefetchStopped = true;
     {
       std::lock_guard<std::mutex> lock(g_PrefetchMutex);
@@ -2357,5 +2406,6 @@ HRESULT ExtractGUI(
   }
   ExtractFlowDiagLog(L"[Q4] ExtractGUI return");
   // **************** NanaZip Modification End ****************
+  SssWriteBatchCancelIfAborted(extracter.Result);
   return extracter.Result;
 }

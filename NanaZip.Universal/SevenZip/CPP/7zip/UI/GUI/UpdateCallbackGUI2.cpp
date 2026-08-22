@@ -6,6 +6,8 @@
 #include "../FileManager/PasswordDialog.h"
 #include "NanaZip.Modern.h"
 
+#include <NanaZip.Password.h>
+
 #include "resource2.h"
 #include "resource3.h"
 #include "ExtractRes.h"
@@ -14,6 +16,17 @@
 #include "UpdateCallbackGUI.h"
 
 using namespace NWindows;
+
+// Adds the current password to the local password book (see
+// NanaZip.Password). Filled into the password dialog context as
+// AddPasswordCallback; the XAML page calls it from the "+" button next to
+// the password box.
+static BOOLEAN WINAPI SssAddPasswordToBookCallback(LPCWSTR password)
+{
+  if (!password)
+    return FALSE;
+  return NanaZipPassword::AddPasswordToBook(password) ? TRUE : FALSE;
+}
 
 static const UINT k_UpdNotifyLangs[] =
 {
@@ -93,6 +106,7 @@ HRESULT CUpdateCallbackGUI2::ShowAskPasswordDialog()
       pwd.DeleteFrom(K7_PASSWORD_MAX_PASSWORD_LENGTH - 1);
     wcscpy_s(Context.Password, pwd.Ptr());
   }
+  Context.AddPasswordCallback = SssAddPasswordToBookCallback;
   ProgressDialog->WaitCreating();
   if (K7ModernShowPasswordDialog(*ProgressDialog, &Context) < 0 ||
       !Context.OK)

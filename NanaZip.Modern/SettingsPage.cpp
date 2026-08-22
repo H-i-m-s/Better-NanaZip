@@ -37,6 +37,62 @@ static void SettingsPageDiagLog(const wchar_t* msg)
     }
 }
 
+// Normalizes password-book edit text so no blank lines can exist:
+// CR/LF runs collapse to a single CRLF, a leading newline is dropped (a
+// blank first line is meaningless), and a trailing newline is kept (the
+// caret sits on it while the user starts the next entry). Idempotent, so
+// re-applying it after TextBox.Text is set never loops. Only text that
+// actually differs is rewritten, so IME composition is never disturbed.
+// Collapses CR/LF runs so no blank lines can exist in the password-book
+// editor: a run of breaks becomes one CRLF, a leading run is dropped (a
+// blank first line is meaningless), and a trailing run is kept (the caret
+// sits on it while the user starts the next entry). Idempotent, so
+// re-applying the result never loops. Maps a caret position from the
+// original text into the collapsed text so the caret does not jump.
+static void SssCollapsePasswordBookBreaks(
+    const std::wstring& text, size_t caretIn,
+    std::wstring& out, size_t& caretOut)
+{
+    out.clear();
+    out.reserve(text.size());
+    const size_t n = text.size();
+    size_t i = 0;
+    while (i < n)
+    {
+        if (text[i] == L'\r' || text[i] == L'\n')
+        {
+            const size_t runStart = i;
+            while (i < n && (text[i] == L'\r' || text[i] == L'\n'))
+            {
+                i++;
+            }
+            // A leading run is dropped entirely (no blank first line).
+            if (!out.empty())
+            {
+                out += L"\r\n";
+            }
+            // Caret inside the run (or at its end) lands right after the
+            // single emitted break.
+            if (caretIn >= runStart && caretIn <= i)
+            {
+                caretOut = out.size();
+            }
+        }
+        else
+        {
+            if (caretIn == i)
+            {
+                caretOut = out.size();
+            }
+            out += text[i++];
+        }
+    }
+    if (caretIn == n)
+    {
+        caretOut = out.size();
+    }
+}
+
 // Recursively collects all visual children of a given type.
 template <typename T>
 static void FindVisualChildren(
@@ -1471,9 +1527,78 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
-        std::wstring Value = sender.as<winrt::Windows::UI::Xaml::Controls::TextBox>().
-            Text().c_str();
-        wcsncpy_s(this->m_Context->PasswordBook, 4096, Value.c_str(), _TRUNCATE);
+        auto Box = sender.as<winrt::Windows::UI::Xaml::Controls::TextBox>();
+        std::wstring Value(Box.Text().c_str());
+        const int CaretIn = Box.SelectionStart();
+        std::wstring Clean;
+        size_t CaretOut = 0;
+        SssCollapsePasswordBookBreaks(
+            Value, (CaretIn > 0) ? (size_t)CaretIn : 0, Clean, CaretOut);
+        if (Clean != Value)
+        {
+            // Idempotent rewrite; the nested TextChanged sees the same
+            // clean text and stops, so no recursion guard is needed. The
+            // caret is restored to its mapped position afterwards.
+            Box.Text(winrt::hstring(Clean));
+            Box.SelectionStart((int)CaretOut);
+        }
+        wcsncpy_s(this->m_Context->PasswordBook, 4096, Clean.c_str(), _TRUNCATE);
+    }
+
+    void SettingsPage::ExtractBookImeCompositionStarted(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Controls::TextCompositionStartedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->m_IsImeComposing = true;
+    }
+
+    void SettingsPage::ExtractBookImeCompositionEnded(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Controls::TextCompositionEndedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->m_IsImeComposing = false;
+    }
+
+    void SettingsPage::ExtractBookKeyDown(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (e.Key() != winrt::Windows::System::VirtualKey::Enter)
+        {
+            return;
+        }
+        // IME uses Enter to confirm the current composition; never swallow
+        // that (Chinese input would lose its candidate confirmation).
+        if (this->m_IsImeComposing)
+        {
+            return;
+        }
+        auto Box = this->ExtractPasswordBookBox();
+        const std::wstring Text(Box.Text().c_str());
+        const int SelStart = Box.SelectionStart();
+        if (SelStart < 0 || (size_t)SelStart > Text.size())
+        {
+            return;
+        }
+        const size_t pos = (size_t)SelStart;
+        // Inserting a break at this spot would create a blank line when
+        // the caret touches an existing break (start of the box, start of
+        // a line, or the end of a line that already has a break after
+        // it), so swallow Enter there. Typing on a real line is
+        // unaffected.
+        const bool touchesBreak =
+            pos == 0 ||
+            (pos > 0 && (Text[pos - 1] == L'\r' || Text[pos - 1] == L'\n')) ||
+            (pos < Text.size() && (Text[pos] == L'\r' || Text[pos] == L'\n'));
+        if (touchesBreak)
+        {
+            e.Handled(true);
+        }
     }
 
     void SettingsPage::ExtractImportBookClick(
@@ -1532,7 +1657,10 @@ namespace winrt::NanaZip::Modern::implementation
                     CP_UTF8, 0, Buffer.c_str(), (int)Buffer.size(), &Text[0], WLength);
             }
         }
-        ExtractPasswordBookBox().Text(winrt::hstring(Text));
-        wcsncpy_s(this->m_Context->PasswordBook, 4096, Text.c_str(), _TRUNCATE);
+        std::wstring Clean;
+        size_t CaretOut = 0;
+        SssCollapsePasswordBookBreaks(Text, Text.size(), Clean, CaretOut);
+        ExtractPasswordBookBox().Text(winrt::hstring(Clean));
+        wcsncpy_s(this->m_Context->PasswordBook, 4096, Clean.c_str(), _TRUNCATE);
     }
 }

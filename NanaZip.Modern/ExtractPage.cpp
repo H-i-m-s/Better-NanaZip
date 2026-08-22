@@ -9,10 +9,12 @@
 
 #include <shlobj.h>
 
+#include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Core.h>
 
 #include <vector>
@@ -484,6 +486,12 @@ namespace winrt::NanaZip::Modern::implementation
         // features, English fallback).
         CloudPasswordButton().Content(winrt::box_value(Res(2555, L"Query cloud password")));
         LocalPasswordButton().Content(winrt::box_value(Res(2556, L"Match local password")));
+        // 2559: the add-to-password-book button next to the password box.
+        AddPasswordButton().IsEnabled(
+            this->m_Context && this->m_Context->AddPasswordCallback != nullptr);
+        winrt::Windows::UI::Xaml::Controls::ToolTipService::SetToolTip(
+            this->AddPasswordButton(),
+            winrt::box_value(Res(2600, L"Add to password book")));
         OkButton().Content(winrt::box_value(Res(401, L"OK")));
         CancelButton().Content(winrt::box_value(Res(402, L"Cancel")));
 
@@ -654,6 +662,10 @@ namespace winrt::NanaZip::Modern::implementation
         // is a snapshot, so they can also finish alone; results are routed
         // by request id and are ignored once the page forgets the ids
         // below).
+        if (this->m_AddPasswordTimer)
+        {
+            this->m_AddPasswordTimer.Stop();
+        }
         if (this->m_Context && this->m_Context->QueryCancelCallback)
         {
             if (this->m_LocalMatchRequestId != 0)
@@ -1292,6 +1304,90 @@ namespace winrt::NanaZip::Modern::implementation
         // Placeholder: password sharing is implemented later.
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
+    }
+
+    void ExtractPage::OnAddPasswordClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        if (!this->m_Context || !this->m_Context->AddPasswordCallback)
+        {
+            return;
+        }
+        const std::wstring password(PasswordBox().Password().c_str());
+        if (password.empty())
+        {
+            return;
+        }
+        if (this->m_Context->AddPasswordCallback(password.c_str()) == FALSE)
+        {
+            // Silent failure: keep the '+' glyph.
+            return;
+        }
+        // Success: check mark on a translucent light-green background, then
+        // fade back to '+' after a short pause.
+        this->AddPasswordGlyph().Glyph(winrt::hstring(L"\uE73E"));
+        this->m_AddPasswordBrush =
+            winrt::Windows::UI::Xaml::Media::SolidColorBrush(
+                winrt::Windows::UI::ColorHelper::FromArgb(
+                    0x40, 0x6E, 0xC8, 0x6E));
+        this->AddPasswordButton().Background(this->m_AddPasswordBrush);
+        if (!this->m_AddPasswordTimer)
+        {
+            this->m_AddPasswordTimer =
+                winrt::Windows::UI::Xaml::DispatcherTimer();
+            this->m_AddPasswordTimer.Interval(
+                std::chrono::milliseconds(1200));
+            this->m_AddPasswordTimer.Tick(
+                [this](winrt::IInspectable const&, winrt::IInspectable const&)
+            {
+                this->RestoreAddPasswordButton();
+            });
+        }
+        this->m_AddPasswordTimer.Start();
+    }
+
+    void ExtractPage::RestoreAddPasswordButton()
+    {
+        if (this->m_AddPasswordTimer)
+        {
+            this->m_AddPasswordTimer.Stop();
+        }
+        // Swap the glyph back to '+' immediately and fade the green
+        // background out.
+        this->AddPasswordGlyph().Glyph(winrt::hstring(L"\uE710"));
+        if (this->m_AddPasswordBrush)
+        {
+            auto storyboard =
+                winrt::Windows::UI::Xaml::Media::Animation::Storyboard();
+            auto animation =
+                winrt::Windows::UI::Xaml::Media::Animation::ColorAnimation();
+            animation.From(this->m_AddPasswordBrush.Color());
+            animation.To(winrt::Windows::UI::Color{ 0, 0, 0, 0 });
+            animation.Duration(
+                winrt::Windows::UI::Xaml::DurationHelper::FromTimeSpan(
+                    winrt::Windows::Foundation::TimeSpan{
+                        std::chrono::milliseconds(250) }));
+            winrt::Windows::UI::Xaml::Media::Animation::Storyboard::
+                SetTarget(animation, this->m_AddPasswordBrush);
+            winrt::Windows::UI::Xaml::Media::Animation::Storyboard::
+                SetTargetProperty(animation, L"Color");
+            storyboard.Children().Append(animation);
+            auto button = this->AddPasswordButton();
+            auto brush = this->m_AddPasswordBrush;
+            storyboard.Completed(
+                [button, brush](winrt::IInspectable const&,
+                    winrt::IInspectable const&)
+            {
+                // The animation only faded the color; clear the brush so
+                // the button returns to its default look.
+                button.Background(nullptr);
+                brush.Color(winrt::Windows::UI::Color{ 0, 0, 0, 0 });
+            });
+            storyboard.Begin();
+        }
     }
 
     void ExtractPage::OnCancelClicked(

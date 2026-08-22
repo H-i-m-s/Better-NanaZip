@@ -1098,6 +1098,96 @@ namespace NanaZipPassword
         return true;
     }
 
+    bool AddPasswordToBook(const std::wstring& password)
+    {
+        if (password.empty())
+        {
+            return false;
+        }
+        std::wstring path;
+        if (!GetLocalStatePath(kPasswordBookFileName, path))
+        {
+            return false;
+        }
+        // Read the current book (it may not exist yet). The readers use
+        // FILE_SHARE_READ | FILE_SHARE_WRITE, so appending never breaks a
+        // concurrent load in the other process.
+        std::vector<BYTE> bytes;
+        const bool fileExists = ReadFileBytes(path, bytes);
+        if (fileExists)
+        {
+            // Idempotent: an exact duplicate is left untouched.
+            std::wstring text;
+            if (Utf8ToWide(bytes.data(), bytes.size(), text))
+            {
+                size_t start = 0;
+                const size_t len = text.size();
+                while (start <= len)
+                {
+                    size_t end = start;
+                    while (end < len &&
+                        text[end] != L'\n' && text[end] != L'\r')
+                    {
+                        end++;
+                    }
+                    if (text.substr(start, end - start) == password)
+                    {
+                        return true;
+                    }
+                    while (end < len &&
+                        (text[end] == L'\n' || text[end] == L'\r'))
+                    {
+                        end++;
+                    }
+                    start = end;
+                    if (end >= len)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        std::vector<BYTE> utf8;
+        if (!WideToUtf8(password, utf8))
+        {
+            return false;
+        }
+        // Append: keep every entry on its own line. OPEN_ALWAYS creates the
+        // file when it does not exist and never truncates an existing one.
+        HANDLE h = ::CreateFileW(
+            path.c_str(),
+            FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+        if (h == INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
+        bool ok = false;
+        // The previous line may not end with a newline; keep the book
+        // line-separated so LoadLocalCandidates sees clean entries.
+        if (fileExists && !bytes.empty() && bytes.back() != '\n')
+        {
+            const char lf = '\n';
+            DWORD written = 0;
+            ::WriteFile(h, &lf, 1, &written, nullptr);
+        }
+        if (!utf8.empty())
+        {
+            DWORD written = 0;
+            ok = ::WriteFile(h, utf8.data(),
+                static_cast<DWORD>(utf8.size()), &written, nullptr) != FALSE;
+        }
+        const char lf = '\n';
+        DWORD written2 = 0;
+        ok = ::WriteFile(h, &lf, 1, &written2, nullptr) != FALSE && ok;
+        ::CloseHandle(h);
+        return ok;
+    }
+
     bool QueryCloudPassword(
         const std::wstring& archivePath,
         std::wstring& password,

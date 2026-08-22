@@ -768,6 +768,9 @@
   <data name="Resource2559" xml:space="preserve">
     <value>混合（并行）</value>
   </data>
+  <data name="Resource2600" xml:space="preserve">
+    <value>添加到密码本</value>
+  </data>
   <data name="Resource2582" xml:space="preserve">
     <value>协议版本:</value>
   </data>

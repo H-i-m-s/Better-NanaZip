@@ -459,7 +459,10 @@
             AcceptsReturn="True"
             TextWrapping="Wrap"
             ScrollViewer.VerticalScrollBarVisibility="Auto"
-            TextChanged="ExtractBookTextChanged" />
+            TextChanged="ExtractBookTextChanged"
+            TextCompositionStarted="ExtractBookImeCompositionStarted"
+            TextCompositionEnded="ExtractBookImeCompositionEnded"
+            KeyDown="ExtractBookKeyDown" />
           <Button
             x:Name="ExtractImportBookButton"
             Margin="0,10,0,0"

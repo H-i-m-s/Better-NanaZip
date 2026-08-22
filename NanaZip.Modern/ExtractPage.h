@@ -86,6 +86,15 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
+        // Adds the current password to the local password book ("+" button
+        // next to the password box). On success the glyph becomes a check
+        // mark on a translucent light-green background for a moment and
+        // then fades back to '+'. Fails silently when the host has no
+        // password book or the box is empty.
+        void OnAddPasswordClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+
         void OnSharePasswordClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -192,11 +201,20 @@ namespace winrt::NanaZip::Modern::implementation
         UINT64 m_CloudQueryRequestId;
         bool m_AutoQueryStarted;
         bool m_AutoQueryActive;
+        // One-shot timer that restores the "+" glyph after a successful
+        // add-to-password-book click.
+        winrt::Windows::UI::Xaml::DispatcherTimer m_AddPasswordTimer{ nullptr };
+        // The translucent light-green background shown while the check mark
+        // is displayed; animated back to transparent when the timer fires.
+        winrt::Windows::UI::Xaml::Media::SolidColorBrush m_AddPasswordBrush{ nullptr };
 
         // Recomputes m_PasswordMatchRunning from the two outstanding ids.
         void UpdatePasswordMatchRunning();
         // Fills the password box and records the source for a matched
         // result, ending the automatic chain.
         void FillPassword(LPCWSTR Password, UINT32 Source);
+        // Restores the "+" glyph after a successful add: fades the button
+        // back to its normal look and clears the green background.
+        void RestoreAddPasswordButton();
     };
 }

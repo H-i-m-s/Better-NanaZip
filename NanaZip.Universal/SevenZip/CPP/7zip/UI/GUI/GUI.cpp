@@ -35,6 +35,8 @@
 
 #include "ExtractRes.h"
 
+#include <thread>
+
 using namespace NWindows;
 
 #ifdef Z7_EXTERNAL_CODECS
@@ -56,6 +58,77 @@ bool g_DisableUserQuestions;
 // completion/error popups that would otherwise keep the process alive
 // while the File Manager waits for the pipe session to wind down.
 extern UString g_SssPasswordSessionId;
+
+// **************** SSS Modification Start ****************
+// Set by the File Manager via -sspid<pid>: the process id this 7zG was
+// started from. When that process dies (crash, forced kill, or a normal
+// close of the File Manager), this 7zG closes its dialogs and exits
+// instead of leaving an orphan window behind (see SssParentWatchWorker).
+extern DWORD g_SssParentPid;
+
+static DWORD g_SssMainThreadId = 0;
+
+static BOOL CALLBACK SssParentWatchCloseProc(HWND hwnd, LPARAM /* lParam */)
+{
+  ::PostMessageW(hwnd, WM_CLOSE, 0, 0);
+  return TRUE;
+}
+
+// Runs on the watcher thread after the File Manager process is gone:
+// 1. WM_CLOSE to every window of the main thread - the classic dialogs
+//    EndDialog(IDCANCEL), the modern progress dialog cancels the
+//    operation. This is the graceful path.
+// 2. A WM_QUIT in the queue also covers the startup phase where no
+//    window exists yet (the first GetMessage that runs consumes it).
+// 3. Hard fallback: after a grace period the process is terminated
+//    regardless of any worker thread that might still be running.
+static void SssRequestShutdown()
+{
+  if (g_SssMainThreadId != 0)
+  {
+    ::EnumThreadWindows(g_SssMainThreadId, SssParentWatchCloseProc, 0);
+    ::PostThreadMessageW(g_SssMainThreadId, WM_QUIT, 0, 0);
+  }
+  ::Sleep(3000);
+  ::ExitProcess(0);
+}
+
+static void SssParentWatchWorker()
+{
+  if (g_SssParentPid == 0)
+    return;
+  HANDLE hParent = ::OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+      FALSE, g_SssParentPid);
+  if (hParent == NULL)
+  {
+    // The File Manager is already gone (startup race): shut down now.
+    SssRequestShutdown();
+    return;
+  }
+  const DWORD wait = ::WaitForSingleObject(hParent, INFINITE);
+  ::CloseHandle(hParent);
+  if (wait == WAIT_OBJECT_0)
+    SssRequestShutdown();
+}
+
+// Starts the watcher after command-line parsing (called from Main2). Only
+// active when the File Manager passed -sspid; a 7zG started on its own
+// (shell context menu) is never watched.
+static void SssStartParentWatch()
+{
+  if (g_SssParentPid == 0)
+    return;
+  g_SssMainThreadId = ::GetCurrentThreadId();
+  try
+  {
+    std::thread(SssParentWatchWorker).detach();
+  }
+  catch (...)
+  {
+  }
+}
+// **************** SSS Modification End ****************
 
 #ifndef UNDER_CE
 
@@ -171,6 +244,9 @@ static int Main2()
   parser.Parse1(commandStrings, options);
   g_DisableUserQuestions = options.YesToAll;
   parser.Parse2(options);
+  // Watch the File Manager process when this 7zG was started by one: if
+  // it dies, shut down instead of leaving a dialog behind.
+  SssStartParentWatch();
   // Batch silent mode (File Manager prefetch session): never show the
   // completion or error popups - the File Manager owns the result and
   // waits for this process to exit, so any modal box would hang it.
