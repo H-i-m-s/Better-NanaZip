@@ -12,6 +12,7 @@
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.Media.Animation.h>
@@ -31,6 +32,9 @@ namespace winrt::NanaZip::Modern::implementation
         m_InitGuard(false),
         m_OkClicked(false),
         m_FirstLayout(true),
+        m_HistoryFlyoutOpen(false),
+        m_IgnoreHistoryItemClick(false),
+        m_HistoryFlyoutClosedTick(0),
         m_WrapThresholdW(0.0),
         m_ProgrammaticPasswordChange(false),
         m_PasswordMatchRunning(false),
@@ -516,31 +520,8 @@ namespace winrt::NanaZip::Modern::implementation
             ? winrt::Windows::UI::Xaml::Visibility::Visible
             : winrt::Windows::UI::Xaml::Visibility::Collapsed);
 
-        PathCombo().Text(winrt::hstring(PathPrefix));
-
-        // Drop-down: the current path goes first, followed by the history
-        // (deduplicated), so the combo never hides what is shown in the box.
-        if (!PathPrefix.empty())
-        {
-            PathCombo().Items().Append(winrt::box_value(
-                winrt::hstring(PathPrefix)));
-        }
-        for (UINT32 i = 0; i < Context->NumPaths && i < 16; i++)
-        {
-            if (Context->Paths[i][0] &&
-                Context->Paths[i] != PathPrefix)
-            {
-                PathCombo().Items().Append(winrt::box_value(
-                    winrt::hstring(Context->Paths[i])));
-            }
-        }
-
-        // Guard against the editable combo blanking the path text when its
-        // drop-down is opened and closed.
-        PathCombo().DropDownOpened(
-            { this, &ExtractPage::OnPathComboDropDownOpened });
-        PathCombo().DropDownClosed(
-            { this, &ExtractPage::OnPathComboDropDownClosed });
+        PathBox().Text(winrt::hstring(PathPrefix));
+        FillPathHistory();
 
         // --- Path mode combo ---
         UINT32 PathMode = Context->PathMode;
@@ -712,92 +693,98 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    // Recursively collects all visual children of a given type.
-    template <typename T>
-    static void FindVisualChildren(
-        winrt::Windows::UI::Xaml::DependencyObject const& Node,
-        std::vector<T>& Out)
+    void ExtractPage::FillPathHistory()
     {
-        const int Count =
-            winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
-                GetChildrenCount(Node);
-        for (int i = 0; i < Count; i++)
+        if (!this->m_Context)
         {
-            auto Child =
-                winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
-                    GetChild(Node, i);
-            if (auto Tried = Child.try_as<T>())
+            return;
+        }
+        HistoryList().Items().Clear();
+        std::wstring Current = PathBox().Text().c_str();
+        for (UINT32 i = 0; i < this->m_Context->NumPaths && i < 16; i++)
+        {
+            if (this->m_Context->Paths[i][0] &&
+                this->m_Context->Paths[i] != Current)
             {
-                Out.push_back(Tried);
+                HistoryList().Items().Append(winrt::box_value(
+                    winrt::hstring(this->m_Context->Paths[i])));
             }
-            FindVisualChildren(Child, Out);
         }
     }
 
-    void ExtractPage::OnPathComboDropDownOpened(
+    void ExtractPage::OnHistoryButtonClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        auto Flyout = HistoryFlyout();
+        if (this->m_HistoryFlyoutOpen)
+        {
+            Flyout.Hide();
+            return;
+        }
+        // Light-dismiss of the flyout fires before this click. Ignore the
+        // reopen that would otherwise immediately follow a close.
+        if (::GetTickCount64() - this->m_HistoryFlyoutClosedTick < 200)
+        {
+            return;
+        }
+        FillPathHistory();
+        if (HistoryList().Items().Size() == 0)
+        {
+            return;
+        }
+        HistoryList().Width(PathBox().ActualWidth());
+        Flyout.ShowAt(PathBox());
+    }
+
+    void ExtractPage::OnHistoryFlyoutOpening(
         winrt::IInspectable const& sender,
         winrt::IInspectable const& e)
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-        this->m_PathTextSnapshot =
-            PathCombo().Text().c_str();
-
-        // Show the "x" on every history entry once the drop-down is open,
-        // but never on the first entry (the current path). Containers are
-        // generated asynchronously, so defer one dispatch.
-        this->Dispatcher().TryRunAsync(
-            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-            [this]()
-        {
-            const uint32_t Count = PathCombo().Items().Size();
-            for (uint32_t i = 0; i < Count; i++)
-            {
-                auto Container = PathCombo().ContainerFromIndex((int)i);
-                if (!Container)
-                {
-                    continue;
-                }
-                std::vector<
-                    winrt::Windows::UI::Xaml::Controls::Button> Buttons;
-                FindVisualChildren(
-                    Container.as<
-                        winrt::Windows::UI::Xaml::DependencyObject>(),
-                    Buttons);
-                const auto Vis = (i == 0)
-                    ? winrt::Windows::UI::Xaml::Visibility::Collapsed
-                    : winrt::Windows::UI::Xaml::Visibility::Visible;
-                for (auto& B : Buttons)
-                {
-                    B.Visibility(Vis);
-                }
-            }
-        });
+        HistoryList().Width(PathBox().ActualWidth());
     }
 
-    void ExtractPage::OnPathComboDropDownClosed(
+    void ExtractPage::OnHistoryFlyoutOpened(
         winrt::IInspectable const& sender,
         winrt::IInspectable const& e)
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-        if (!this->m_PathTextSnapshot.empty() &&
-            PathCombo().Text().empty())
-        {
-            PathCombo().Text(
-                winrt::hstring(this->m_PathTextSnapshot));
-        }
-        this->m_PathTextSnapshot.clear();
+        this->m_HistoryFlyoutOpen = true;
+    }
 
-        // Hide every "x" again; this also covers the closed-state
-        // selection renderer which would otherwise show an "x" in the box.
-        std::vector<
-            winrt::Windows::UI::Xaml::Controls::Button> Buttons;
-        FindVisualChildren(PathCombo(), Buttons);
-        for (auto& B : Buttons)
+    void ExtractPage::OnHistoryFlyoutClosed(
+        winrt::IInspectable const& sender,
+        winrt::IInspectable const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->m_HistoryFlyoutOpen = false;
+        this->m_HistoryFlyoutClosedTick = ::GetTickCount64();
+    }
+
+    void ExtractPage::OnHistoryItemClicked(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (this->m_IgnoreHistoryItemClick)
         {
-            B.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+            this->m_IgnoreHistoryItemClick = false;
+            return;
         }
+        auto Path = winrt::unbox_value_or<
+            winrt::hstring>(e.ClickedItem(), winrt::hstring());
+        if (Path.empty())
+        {
+            return;
+        }
+        PathBox().Text(Path);
+        HistoryFlyout().Hide();
     }
 
     void ExtractPage::OnDeleteHistoryPathClicked(
@@ -805,26 +792,24 @@ namespace winrt::NanaZip::Modern::implementation
         winrt::RoutedEventArgs const& e)
     {
         UNREFERENCED_PARAMETER(e);
+        this->m_IgnoreHistoryItemClick = true;
         auto Button = sender.as<
             winrt::Windows::UI::Xaml::Controls::Button>();
         auto Data = Button.DataContext();
         if (!Data)
         {
+            this->m_IgnoreHistoryItemClick = false;
             return;
         }
-        std::wstring Path =
-            winrt::unbox_value<winrt::hstring>(Data).c_str();
-
-        // The first entry mirrors the current path in the box; it is not a
-        // history entry, so its "x" does nothing.
-        if (Path.empty() ||
-            Path == PathCombo().Text().c_str())
+        std::wstring Path = winrt::unbox_value_or<
+            winrt::hstring>(Data, winrt::hstring()).c_str();
+        if (Path.empty())
         {
+            this->m_IgnoreHistoryItemClick = false;
             return;
         }
 
-        // Remove the entry from the drop-down list.
-        const auto& Items = PathCombo().Items();
+        const auto& Items = HistoryList().Items();
         for (uint32_t i = 0; i < Items.Size(); i++)
         {
             auto Item = Items.GetAt(i);
@@ -840,7 +825,6 @@ namespace winrt::NanaZip::Modern::implementation
             }
         }
 
-        // Record it so the caller can persist the removal (even on cancel).
         if (this->m_Context &&
             this->m_Context->NumRemovedPaths < 16)
         {
@@ -849,6 +833,29 @@ namespace winrt::NanaZip::Modern::implementation
                     this->m_Context->NumRemovedPaths],
                 Path.c_str());
             this->m_Context->NumRemovedPaths++;
+        }
+        if (this->m_Context)
+        {
+            UINT32 Write = 0;
+            for (UINT32 i = 0;
+                i < this->m_Context->NumPaths && i < 16; i++)
+            {
+                if (this->m_Context->Paths[i] != Path)
+                {
+                    if (Write != i)
+                    {
+                        wcscpy_s(
+                            this->m_Context->Paths[Write],
+                            this->m_Context->Paths[i]);
+                    }
+                    Write++;
+                }
+            }
+            this->m_Context->NumPaths = Write;
+        }
+        if (Items.Size() == 0)
+        {
+            HistoryFlyout().Hide();
         }
     }
 
@@ -980,7 +987,7 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(e);
 
         std::wstring Current =
-            PathCombo().Text().c_str();
+            PathBox().Text().c_str();
         std::wstring Title = Res(3402, L"Extract to folder").c_str();
 
         // Use the modern folder picker (IFileOpenDialog + FOS_PICKFOLDERS)
@@ -1026,7 +1033,7 @@ namespace winrt::NanaZip::Modern::implementation
                 if (SUCCEEDED(Result->GetDisplayName(
                     SIGDN_FILESYSPATH, &PathOut)))
                 {
-                    PathCombo().Text(winrt::hstring(PathOut));
+                    PathBox().Text(winrt::hstring(PathOut));
                     ::CoTaskMemFree(PathOut);
                 }
             }
@@ -1472,7 +1479,7 @@ namespace winrt::NanaZip::Modern::implementation
         Context->SplitDestEnable = SplitDest ? TRUE : FALSE;
 
         // Path: the combo text (without sub path) goes into history.
-        std::wstring PathText = PathCombo().Text().c_str();
+        std::wstring PathText = PathBox().Text().c_str();
         TrimString(PathText);
         std::wstring PathNoSub = NormalizeDirPathPrefix(PathText);
 

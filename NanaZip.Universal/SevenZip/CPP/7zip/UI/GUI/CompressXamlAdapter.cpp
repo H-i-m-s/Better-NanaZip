@@ -1079,10 +1079,27 @@ ECompressXamlResult K7ShowCompressDialogXaml(HWND hwndParent, CCompressDialogCor
 
   // On OK the page merged the current archive path into ctx->Paths (most
   // recent first, deduplicated, capped at 16); persist it for next time.
+  // ctx->Paths was captured when the dialog opened, so it still contains
+  // entries the user removed with the "x" buttons; exclude those so the
+  // removal survives the confirm (otherwise the stale list would be
+  // written back and the removed entries reappear next time).
   {
     UStringVector merged;
     for (UINT32 i = 0; i < ctx->NumPaths; i++)
-      merged.Add(ctx->Paths[i]);
+    {
+      UString p = ctx->Paths[i];
+      bool removed = false;
+      for (UINT32 r = 0; r < ctx->NumRemovedPaths && r < 16; r++)
+      {
+        if (p == ctx->RemovedPaths[r])
+        {
+          removed = true;
+          break;
+        }
+      }
+      if (!removed)
+        merged.Add(p);
+    }
     SaveCompressHistoryFile(merged);
   }
 

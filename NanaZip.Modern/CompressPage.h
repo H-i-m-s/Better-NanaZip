@@ -13,6 +13,7 @@ namespace winrt
     using Windows::Foundation::IInspectable;
     using Windows::UI::Xaml::RoutedEventArgs;
     using Windows::UI::Xaml::SizeChangedEventArgs;
+    using Windows::UI::Xaml::Controls::ItemClickEventArgs;
     using Windows::UI::Xaml::Controls::SelectionChangedEventArgs;
     using Windows::UI::Xaml::Controls::TextChangedEventArgs;
     using Windows::UI::Xaml::Input::KeyRoutedEventArgs;
@@ -103,15 +104,12 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
 
-        // Typed into the editable archive-path combo: the moment the text
-        // differs from the default name, the name is marked user-edited so
-        // option refreshes never overwrite the box again (Enter, option
-        // changes, checkbox clicks...). Program refreshes set the default
-        // text back, which does not differ from the snapshot, so they are
-        // never mistaken for user input.
+        // Typed into the archive-path box: the moment the text differs
+        // from the default name, the name is marked user-edited so option
+        // refreshes never overwrite the box again.
         void OnArchivePathTextChanged(
             winrt::IInspectable const& sender,
-            winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+            winrt::TextChangedEventArgs const& e);
 
         // Commits the archive-path box: marks the name user-edited, syncs
         // it to the core, then echoes back the extension-normalized name
@@ -122,22 +120,25 @@ namespace winrt::NanaZip::Modern::implementation
         // last commit, so Enter acts like clicking OK on the settled name.
         void CommitArchivePath(bool FromEnter);
         bool IsArchivePathFocused();
-        // Enter handling on the combo's internal editing box (the page
-        // level cannot rely on focus queries in this host, so the key is
-        // intercepted where it actually lands).
         void OnPathTextBoxPreviewKeyDown(
             winrt::IInspectable const& sender,
             winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
-        void HookPathTextBox();
 
-        void OnArchivePathDropDownOpened(
+        void OnHistoryButtonClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+        void OnHistoryFlyoutOpening(
             winrt::IInspectable const& sender,
             winrt::IInspectable const& e);
-
-        void OnArchivePathDropDownClosed(
+        void OnHistoryFlyoutOpened(
             winrt::IInspectable const& sender,
             winrt::IInspectable const& e);
-
+        void OnHistoryFlyoutClosed(
+            winrt::IInspectable const& sender,
+            winrt::IInspectable const& e);
+        void OnHistoryItemClicked(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs const& e);
         void OnDeleteHistoryPathClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -204,15 +205,9 @@ namespace winrt::NanaZip::Modern::implementation
 
         void UpdatePasswordControl();
 
-        // Fill the archive-path drop-down: the current path first, then the
-        // history (deduplicated, capped at 16), mirroring the extract page.
+        // Fill the history Flyout list from ctx->Paths, skipping the
+        // path currently shown in the box.
         void FillArchivePathHistory();
-        // Shows the delete "x" on every history entry while the drop-down
-        // is open. Item containers are generated asynchronously, so the
-        // work is retried across dispatcher turns until every container
-        // exists (bounded attempts); never on the first entry (the current
-        // path).
-        void ShowHistoryDeleteButtons(int attempt);
         void ApplyOptionList(
             winrt::Windows::UI::Xaml::Controls::ComboBox const& Combo,
             _In_ const K7_COMPRESS_OPTION_LIST& List);
@@ -272,11 +267,9 @@ namespace winrt::NanaZip::Modern::implementation
         // text unchanged from this value confirms the dialog (OK); Enter
         // with a different text commits the new name.
         std::wstring m_CommittedPath;
-        // Guards the PreviewKeyDown hook on the combo's internal text box:
-        // the page-level Enter handling cannot rely on focus queries in
-        // this host, so the key is handled on the editing box itself
-        // (same mechanism the address bar uses).
-        bool m_PathTextBoxHooked;
+        bool m_HistoryFlyoutOpen;
+        bool m_IgnoreHistoryItemClick;
+        ULONGLONG m_HistoryFlyoutClosedTick;
 
         // Layout state for the wrap-on-shrink behavior.
         bool m_FirstLayout;
@@ -286,9 +279,5 @@ namespace winrt::NanaZip::Modern::implementation
         double m_LeftWrapThresholdW;
         double m_EncryptionWrapThresholdW;
         double m_RightWrapThresholdW;
-
-        // Text shown in the editable archive-path combo when its drop-down
-        // opens; restored if the drop-down clears it.
-        std::wstring m_PathTextSnapshot;
     };
 }

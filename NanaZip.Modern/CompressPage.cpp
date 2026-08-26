@@ -8,6 +8,7 @@
 
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Core.h>
@@ -63,25 +64,6 @@ namespace winrt::NanaZip::Modern::implementation
         }
     }
 
-    template <typename T>
-    static void FindVisualChildren(
-        winrt::Windows::UI::Xaml::DependencyObject const& Node,
-        std::vector<T>& Out)
-    {
-        const int Count = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
-            GetChildrenCount(Node);
-        for (int i = 0; i < Count; i++)
-        {
-            auto Child = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::
-                GetChild(Node, i);
-            if (auto Tried = Child.try_as<T>())
-            {
-                Out.push_back(Tried);
-            }
-            FindVisualChildren(Child, Out);
-        }
-    }
-
     CompressPage::CompressPage(
         _In_opt_ HWND WindowHandle,
         _In_ PK7_COMPRESS_DIALOG_CONTEXT Context) :
@@ -91,7 +73,9 @@ namespace winrt::NanaZip::Modern::implementation
         m_OkClicked(false),
         m_PathUserEdited(false),
         m_CommittedPath(),
-        m_PathTextBoxHooked(false),
+        m_HistoryFlyoutOpen(false),
+        m_IgnoreHistoryItemClick(false),
+        m_HistoryFlyoutClosedTick(0),
         m_FirstLayout(true),
         m_LeftWrapped(false),
         m_EncryptionWrapped(false),
@@ -236,7 +220,7 @@ namespace winrt::NanaZip::Modern::implementation
         // with the default name again.
         if (!this->m_PathUserEdited)
         {
-            ArchivePathCombo().Text(winrt::hstring(Context->ArchivePath));
+            ArchivePathBox().Text(winrt::hstring(Context->ArchivePath));
         }
         ParametersBox().Text(winrt::hstring(Context->Parameters));
         VolumeCombo().Text(winrt::hstring(Context->VolumeText));
@@ -757,15 +741,6 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
         this->m_InitGuard = false;
-
-        // The page-level Esc handling is reliable (tunnelling from the
-        // root), but the Enter branch cannot rely on focus queries in this
-        // host: the editable combo's internal text box keeps the focus and
-        // a focus walk may fail to match. Hook the editing box directly
-        // (same mechanism the address bar uses) so Enter always lands in
-        // our commit/confirm logic instead of the ComboBox's default
-        // "select the highlighted item" behavior.
-        HookPathTextBox();
     }
 
     void CompressPage::OnUnloaded(
@@ -812,12 +787,6 @@ namespace winrt::NanaZip::Modern::implementation
         else if (e.Key() == winrt::Windows::System::VirtualKey::Enter &&
             IsArchivePathFocused())
         {
-            // Enter in the editable archive-path combo commits the typed
-            // name. Eat the key before the ComboBox's default handling
-            // runs, otherwise it would select the highlighted drop-down
-            // item (the default path) and replace the user's text. Enter
-            // with the name unchanged from the last commit confirms the
-            // dialog (OK).
             e.Handled(true);
             CommitArchivePath(true);
         }
@@ -1068,106 +1037,94 @@ namespace winrt::NanaZip::Modern::implementation
 
         PK7_COMPRESS_DIALOG_CONTEXT Context = this->m_Context;
 
-        std::wstring Current = ArchivePathCombo().Text().c_str();
-        if (!Current.empty())
-        {
-            ArchivePathCombo().Items().Append(winrt::box_value(
-                winrt::hstring(Current)));
-        }
+        HistoryList().Items().Clear();
+        std::wstring Current = ArchivePathBox().Text().c_str();
         for (UINT32 i = 0; i < Context->NumPaths && i < 16; i++)
         {
             if (Context->Paths[i][0] &&
                 Context->Paths[i] != Current)
             {
-                ArchivePathCombo().Items().Append(winrt::box_value(
+                HistoryList().Items().Append(winrt::box_value(
                     winrt::hstring(Context->Paths[i])));
             }
         }
     }
 
-    void CompressPage::OnArchivePathDropDownOpened(
+    void CompressPage::OnHistoryButtonClicked(
+        winrt::IInspectable const& sender,
+        winrt::RoutedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        auto Flyout = HistoryFlyout();
+        if (this->m_HistoryFlyoutOpen)
+        {
+            Flyout.Hide();
+            return;
+        }
+        // Light-dismiss of the flyout fires before this click. Ignore the
+        // reopen that would otherwise immediately follow a close.
+        if (::GetTickCount64() - this->m_HistoryFlyoutClosedTick < 200)
+        {
+            return;
+        }
+        FillArchivePathHistory();
+        if (HistoryList().Items().Size() == 0)
+        {
+            return;
+        }
+        HistoryList().Width(ArchivePathBox().ActualWidth());
+        Flyout.ShowAt(ArchivePathBox());
+    }
+
+    void CompressPage::OnHistoryFlyoutOpening(
         winrt::IInspectable const& sender,
         winrt::IInspectable const& e)
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-        this->m_PathTextSnapshot =
-            ArchivePathCombo().Text().c_str();
-
-        // The editing box exists as soon as the combo template is applied;
-        // hook Enter handling there if the Loaded hook missed it.
-        HookPathTextBox();
-
-        // Show the "x" on every history entry once the drop-down is open.
-        // Containers are generated asynchronously, so start the bounded
-        // retry chain.
-        this->Dispatcher().TryRunAsync(
-            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-            [this]()
-        {
-            this->ShowHistoryDeleteButtons(0);
-        });
+        HistoryList().Width(ArchivePathBox().ActualWidth());
     }
 
-    void CompressPage::ShowHistoryDeleteButtons(int attempt)
-    {
-        if (!ArchivePathCombo().IsDropDownOpen())
-        {
-            return; // closed meanwhile: OnArchivePathDropDownClosed hides all
-        }
-        bool allReady = true;
-        const uint32_t Count = ArchivePathCombo().Items().Size();
-        for (uint32_t i = 0; i < Count; i++)
-        {
-            auto Container = ArchivePathCombo().ContainerFromIndex((int)i);
-            if (!Container)
-            {
-                allReady = false;
-                continue;
-            }
-            std::vector<winrt::Windows::UI::Xaml::Controls::Button>
-                Buttons;
-            FindVisualChildren(Container, Buttons);
-            const auto Vis = (i == 0)
-                ? winrt::Windows::UI::Xaml::Visibility::Collapsed
-                : winrt::Windows::UI::Xaml::Visibility::Visible;
-            for (auto& B : Buttons)
-            {
-                B.Visibility(Vis);
-            }
-        }
-        if (!allReady && attempt < 5)
-        {
-            this->Dispatcher().TryRunAsync(
-                winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-                [this, attempt]()
-            {
-                this->ShowHistoryDeleteButtons(attempt + 1);
-            });
-        }
-    }
-
-    void CompressPage::OnArchivePathDropDownClosed(
+    void CompressPage::OnHistoryFlyoutOpened(
         winrt::IInspectable const& sender,
         winrt::IInspectable const& e)
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
-        if (!this->m_PathTextSnapshot.empty() &&
-            ArchivePathCombo().Text().empty())
-        {
-            ArchivePathCombo().Text(
-                winrt::hstring(this->m_PathTextSnapshot));
-        }
+        this->m_HistoryFlyoutOpen = true;
+    }
 
-        // Hide every "x" again, including the one in the closed selection
-        // renderer which would otherwise show in the box.
-        std::vector<winrt::Windows::UI::Xaml::Controls::Button> Buttons;
-        FindVisualChildren(ArchivePathCombo(), Buttons);
-        for (auto& B : Buttons)
+    void CompressPage::OnHistoryFlyoutClosed(
+        winrt::IInspectable const& sender,
+        winrt::IInspectable const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->m_HistoryFlyoutOpen = false;
+        this->m_HistoryFlyoutClosedTick = ::GetTickCount64();
+    }
+
+    void CompressPage::OnHistoryItemClicked(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        if (this->m_IgnoreHistoryItemClick)
         {
-            B.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+            this->m_IgnoreHistoryItemClick = false;
+            return;
         }
+        auto Path = winrt::unbox_value_or<
+            winrt::hstring>(e.ClickedItem(), winrt::hstring());
+        if (Path.empty())
+        {
+            return;
+        }
+        ArchivePathBox().Text(Path);
+        this->m_PathUserEdited = true;
+        HistoryFlyout().Hide();
+        CommitArchivePath(false);
     }
 
     void CompressPage::OnDeleteHistoryPathClicked(
@@ -1175,26 +1132,24 @@ namespace winrt::NanaZip::Modern::implementation
         winrt::RoutedEventArgs const& e)
     {
         UNREFERENCED_PARAMETER(e);
+        this->m_IgnoreHistoryItemClick = true;
         auto Button = sender.as<
             winrt::Windows::UI::Xaml::Controls::Button>();
         auto Data = Button.DataContext();
         if (!Data)
         {
+            this->m_IgnoreHistoryItemClick = false;
             return;
         }
         std::wstring Path = winrt::unbox_value_or<
             winrt::hstring>(Data, winrt::hstring()).c_str();
-
-        // The first entry mirrors the current path in the box; it is not a
-        // history entry, so its "x" does nothing.
-        if (Path.empty() ||
-            Path == ArchivePathCombo().Text().c_str())
+        if (Path.empty())
         {
+            this->m_IgnoreHistoryItemClick = false;
             return;
         }
 
-        // Remove the entry from the drop-down list.
-        const auto& Items = ArchivePathCombo().Items();
+        const auto& Items = HistoryList().Items();
         for (uint32_t i = 0; i < Items.Size(); i++)
         {
             auto Item = Items.GetAt(i);
@@ -1210,7 +1165,6 @@ namespace winrt::NanaZip::Modern::implementation
             }
         }
 
-        // Record it so the caller can persist the removal (even on cancel).
         if (this->m_Context &&
             this->m_Context->NumRemovedPaths < 16)
         {
@@ -1219,6 +1173,29 @@ namespace winrt::NanaZip::Modern::implementation
                     this->m_Context->NumRemovedPaths],
                 Path.c_str());
             this->m_Context->NumRemovedPaths++;
+        }
+        if (this->m_Context)
+        {
+            UINT32 Write = 0;
+            for (UINT32 i = 0;
+                i < this->m_Context->NumPaths && i < 16; i++)
+            {
+                if (this->m_Context->Paths[i] != Path)
+                {
+                    if (Write != i)
+                    {
+                        wcscpy_s(
+                            this->m_Context->Paths[Write],
+                            this->m_Context->Paths[i]);
+                    }
+                    Write++;
+                }
+            }
+            this->m_Context->NumPaths = Write;
+        }
+        if (Items.Size() == 0)
+        {
+            HistoryFlyout().Hide();
         }
     }
 
@@ -1231,27 +1208,6 @@ namespace winrt::NanaZip::Modern::implementation
         CommitArchivePath(false);
     }
 
-    void CompressPage::HookPathTextBox()
-    {
-        if (this->m_PathTextBoxHooked)
-        {
-            return;
-        }
-        std::vector<winrt::Windows::UI::Xaml::Controls::TextBox> Boxes;
-        FindVisualChildren(ArchivePathCombo(), Boxes);
-        if (Boxes.empty())
-        {
-            return;
-        }
-        // The first editing box inside the combo is its editable text
-        // area; Enter is handled where it actually lands so the ComboBox's
-        // default "select the highlighted item" behavior cannot replace
-        // the user's text.
-        Boxes[0].PreviewKeyDown(
-            { this, &CompressPage::OnPathTextBoxPreviewKeyDown });
-        this->m_PathTextBoxHooked = true;
-    }
-
     void CompressPage::OnPathTextBoxPreviewKeyDown(
         winrt::IInspectable const& sender,
         winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
@@ -1261,17 +1217,13 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
-        // Commit / confirm before the ComboBox's default Enter handling
-        // runs. Enter on a settled name confirms the dialog (OK); Enter on
-        // a changed name commits it, echoes back the suffixed form and
-        // selects it.
         e.Handled(true);
         CommitArchivePath(true);
     }
 
     void CompressPage::OnArchivePathTextChanged(
         winrt::IInspectable const& sender,
-        winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+        winrt::TextChangedEventArgs const& e)
     {
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
@@ -1279,14 +1231,7 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
-        // The user typed into the editable path combo (KeyUp, the UWP
-        // replacement for the TextChanged event ComboBox does not have):
-        // as soon as the text differs from the default (last applied
-        // snapshot), mark the name as user-edited so option refreshes
-        // never overwrite the box again. This covers every refresh
-        // trigger (Enter, format/level/method changes, checkbox clicks,
-        // ...) regardless of focus timing.
-        std::wstring Path = ArchivePathCombo().Text().c_str();
+        std::wstring Path = ArchivePathBox().Text().c_str();
         if (Path != this->m_Context->ArchivePath)
         {
             this->m_PathUserEdited = true;
@@ -1301,13 +1246,11 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return false;
         }
-        // The editable ComboBox may keep focus inside its internal text
-        // box, so walk up the visual tree looking for the combo itself.
         winrt::Windows::UI::Xaml::DependencyObject Node =
             Focused.try_as<winrt::Windows::UI::Xaml::DependencyObject>();
         while (Node)
         {
-            if (Node == ArchivePathCombo())
+            if (Node == ArchivePathBox())
             {
                 return true;
             }
@@ -1323,7 +1266,7 @@ namespace winrt::NanaZip::Modern::implementation
         {
             return;
         }
-        std::wstring Path = ArchivePathCombo().Text().c_str();
+        std::wstring Path = ArchivePathBox().Text().c_str();
         // Enter on a name that is already settled (same as the last
         // commit, including the format extension) confirms the dialog,
         // just like clicking OK.
@@ -1352,23 +1295,11 @@ namespace winrt::NanaZip::Modern::implementation
         if (this->m_Context->ArchivePath[0] &&
             Path != this->m_Context->ArchivePath)
         {
-            ArchivePathCombo().Text(
+            ArchivePathBox().Text(
                 winrt::hstring(this->m_Context->ArchivePath));
         }
-        // The name is now committed: remember the settled form (with the
-        // extension) so a later Enter on it can confirm the dialog.
         this->m_CommittedPath = this->m_Context->ArchivePath;
-        // Select the whole committed name (the same state the box opens
-        // with): the name is now "confirmed", and the next keystroke
-        // replaces it wholesale. Works for Enter (focus stays, the blue
-        // selection shows immediately) and for blur (the selection is set
-        // and shows the next time the box regains focus).
-        std::vector<winrt::Windows::UI::Xaml::Controls::TextBox> Boxes;
-        FindVisualChildren(ArchivePathCombo(), Boxes);
-        for (auto& B : Boxes)
-        {
-            B.SelectAll();
-        }
+        ArchivePathBox().SelectAll();
     }
 
     void CompressPage::OnParametersChanged(
@@ -1567,7 +1498,7 @@ namespace winrt::NanaZip::Modern::implementation
         // capped at 16 entries, so the drop-down has content next time.
         {
             std::wstring PathText =
-                ArchivePathCombo().Text().c_str();
+                ArchivePathBox().Text().c_str();
             TrimString(PathText);
             std::vector<std::wstring> History;
             auto AddUnique = [&History](std::wstring const& s)

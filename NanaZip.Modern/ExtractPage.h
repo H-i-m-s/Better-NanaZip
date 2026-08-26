@@ -10,6 +10,7 @@ namespace winrt
 {
     using Windows::Foundation::IInspectable;
     using Windows::UI::Xaml::RoutedEventArgs;
+    using Windows::UI::Xaml::Controls::ItemClickEventArgs;
 }
 
 namespace winrt::NanaZip::Modern::implementation
@@ -137,17 +138,21 @@ namespace winrt::NanaZip::Modern::implementation
         // to the context so the window subclass enforces it.
         void RecalcMinTrack();
 
-        // Keeps the path text from being blanked out by the editable combo
-        // when its drop-down is opened/closed.
-        void OnPathComboDropDownOpened(
+        void OnHistoryButtonClicked(
+            winrt::IInspectable const& sender,
+            winrt::RoutedEventArgs const& e);
+        void OnHistoryFlyoutOpening(
             winrt::IInspectable const& sender,
             winrt::IInspectable const& e);
-
-        void OnPathComboDropDownClosed(
+        void OnHistoryFlyoutOpened(
             winrt::IInspectable const& sender,
             winrt::IInspectable const& e);
-
-        // Removes a history entry via the "x" in the path drop-down.
+        void OnHistoryFlyoutClosed(
+            winrt::IInspectable const& sender,
+            winrt::IInspectable const& e);
+        void OnHistoryItemClicked(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs const& e);
         void OnDeleteHistoryPathClicked(
             winrt::IInspectable const& sender,
             winrt::RoutedEventArgs const& e);
@@ -179,12 +184,16 @@ namespace winrt::NanaZip::Modern::implementation
             BOOLEAN& Def1, BOOLEAN& Val1,
             BOOLEAN& Def2, BOOLEAN& Val2) const;
 
+        void FillPathHistory();
+
         HWND m_WindowHandle;
         PK7_EXTRACT_DIALOG_CONTEXT m_Context;
         bool m_InitGuard;
         bool m_OkClicked;
         bool m_FirstLayout;
-        std::wstring m_PathTextSnapshot;
+        bool m_HistoryFlyoutOpen;
+        bool m_IgnoreHistoryItemClick;
+        ULONGLONG m_HistoryFlyoutClosedTick;
         // Page width (DIPs) below which the mode combos wrap below their
         // labels; computed from the wrapped layout in RecalcMinTrack.
         double m_WrapThresholdW;
