@@ -273,9 +273,21 @@ static HRESULT Call7zGui(const UString &params,
   // Pass our own PID so 7zG can watch us: if the File Manager dies
   // (crash or forced kill), every 7zG it started shuts itself down
   // instead of leaving its dialogs behind (see GUI.cpp).
+  //
+  // The switch must go BEFORE the "--" stop-parsing marker: everything
+  // after "--" is treated as a file path, so appending "-sspid<pid>"
+  // at the end made 7zG scan a nonexistent "-sspid<pid>" file (the
+  // "cannot find the file" message) and left g_SssParentPid at 0,
+  // silently disabling the parent watch on the compress path. Paths
+  // without "--" (extract, hash, benchmark) keep the plain append.
   UString fullParams = params;
-  fullParams += L" -sspid";
-  fullParams.Add_UInt32(::GetCurrentProcessId());
+  UString sspid = L" -sspid";
+  sspid.Add_UInt32(::GetCurrentProcessId());
+  const int stopSwitchPos = fullParams.Find(L" --");
+  if (stopSwitchPos >= 0)
+    fullParams.Insert((unsigned)stopSwitchPos, sspid);
+  else
+    fullParams += sspid;
 
   CProcess process;
   const WRes wres = process.Create(imageName, fullParams, NULL); // curDir);
