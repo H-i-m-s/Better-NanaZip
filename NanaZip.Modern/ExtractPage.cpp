@@ -442,6 +442,9 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(e);
 
         this->m_InitGuard = false;
+        PathBox().Focus(
+            winrt::Windows::UI::Xaml::FocusState::Programmatic);
+        PathBox().SelectAll();
         // Run after the first layout so every control is ready; the dialog
         // is already visible by then, so the pre-check (and any lookup it
         // enables) never delays the dialog from appearing.

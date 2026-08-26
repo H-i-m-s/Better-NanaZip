@@ -233,6 +233,8 @@
                                                 <Setter Property="Padding" Value="0" />
                                                 <Setter Property="MinWidth" Value="0" />
                                                 <Setter Property="MaxWidth" Value="800" />
+                                                <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
+                                                <Setter Property="Background" Value="{ThemeResource FlyoutPresenterBackground}" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
                                         <ListView
@@ -240,6 +242,7 @@
                                             IsItemClickEnabled="True"
                                             SelectionMode="None"
                                             MaxHeight="240"
+                                            CornerRadius="{ThemeResource OverlayCornerRadius}"
                                             ItemClick="OnHistoryItemClicked">
                                             <ListView.ItemContainerStyle>
                                                 <Style TargetType="ListViewItem">

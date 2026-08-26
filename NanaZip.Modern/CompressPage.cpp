@@ -741,6 +741,9 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
         this->m_InitGuard = false;
+        ArchivePathBox().Focus(
+            winrt::Windows::UI::Xaml::FocusState::Programmatic);
+        ArchivePathBox().SelectAll();
     }
 
     void CompressPage::OnUnloaded(
