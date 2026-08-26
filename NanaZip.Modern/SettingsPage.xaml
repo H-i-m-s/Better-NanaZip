@@ -462,6 +462,7 @@
             TextChanged="ExtractBookTextChanged"
             TextCompositionStarted="ExtractBookImeCompositionStarted"
             TextCompositionEnded="ExtractBookImeCompositionEnded"
+            PreviewKeyDown="ExtractBookKeyDown"
             KeyDown="ExtractBookKeyDown" />
           <Button
             x:Name="ExtractImportBookButton"

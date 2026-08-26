@@ -43,48 +43,114 @@ static void SettingsPageDiagLog(const wchar_t* msg)
 // caret sits on it while the user starts the next entry). Idempotent, so
 // re-applying it after TextBox.Text is set never loops. Only text that
 // actually differs is rewritten, so IME composition is never disturbed.
-// Collapses CR/LF runs so no blank lines can exist in the password-book
-// editor: a run of breaks becomes one CRLF, a leading run is dropped (a
-// blank first line is meaningless), and a trailing run is kept (the caret
-// sits on it while the user starts the next entry). Idempotent, so
-// re-applying the result never loops. Maps a caret position from the
-// original text into the collapsed text so the caret does not jump.
-static void SssCollapsePasswordBookBreaks(
+// Removes every blank line (empty or whitespace-only) from the
+// password-book editor text, keeping only the trailing break the caret
+// sits on while the user starts the next entry. Breaks normalize to CRLF.
+// Idempotent, so re-applying the result never loops. Maps a caret
+// position from the original text into the cleaned text so the caret
+// does not jump.
+static void SssCleanPasswordBookText(
     const std::wstring& text, size_t caretIn,
     std::wstring& out, size_t& caretOut)
 {
     out.clear();
     out.reserve(text.size());
+    caretOut = 0;
     const size_t n = text.size();
-    size_t i = 0;
-    while (i < n)
+    struct Line
     {
-        if (text[i] == L'\r' || text[i] == L'\n')
+        size_t start, end, brkEnd;
+        bool blank;
+    };
+    std::vector<Line> lines;
+    size_t i = 0;
+    size_t ls = 0;
+    while (true)
+    {
+        size_t le = i;
+        while (i < n && text[i] != L'\r' && text[i] != L'\n')
         {
-            const size_t runStart = i;
-            while (i < n && (text[i] == L'\r' || text[i] == L'\n'))
+            i++;
+        }
+        le = i;
+        bool hasBreak = false;
+        while (i < n && (text[i] == L'\r' || text[i] == L'\n'))
+        {
+            i++;
+            hasBreak = true;
+        }
+        bool blank = true;
+        for (size_t k = ls; k < le; k++)
+        {
+            if (text[k] != L' ' && text[k] != L'\t')
             {
-                i++;
+                blank = false;
+                break;
             }
-            // A leading run is dropped entirely (no blank first line).
-            if (!out.empty())
+        }
+        lines.push_back({ls, le, i, blank});
+        // A trailing break means one more (empty) line follows; only stop
+        // once a line without a break has been consumed.
+        if (!hasBreak)
+        {
+            break;
+        }
+        ls = i;
+    }
+    const size_t lineCount = lines.size();
+    std::vector<bool> keep(lineCount, false);
+    std::vector<size_t> startOut(lineCount, 0);
+    std::vector<size_t> endOut(lineCount, 0);
+    bool first = true;
+    for (size_t li = 0; li < lineCount; li++)
+    {
+        const Line& L = lines[li];
+        keep[li] = !L.blank || (li + 1 == lineCount);
+        if (!keep[li])
+        {
+            continue;
+        }
+        if (!first)
+        {
+            out += L"\r\n";
+        }
+        startOut[li] = out.size();
+        out += text.substr(L.start, L.end - L.start);
+        endOut[li] = out.size();
+        first = false;
+    }
+    // Caret mapping: inside a kept line's content, inside its break (or a
+    // dropped blank line) lands at the next kept line start, or the end.
+    for (size_t li = 0; li < lineCount; li++)
+    {
+        const Line& L = lines[li];
+        if (keep[li])
+        {
+            if (caretIn >= L.start && caretIn <= L.end)
             {
-                out += L"\r\n";
+                caretOut = startOut[li] + (caretIn - L.start);
             }
-            // Caret inside the run (or at its end) lands right after the
-            // single emitted break.
-            if (caretIn >= runStart && caretIn <= i)
+            else if (caretIn > L.end && caretIn <= L.brkEnd)
             {
-                caretOut = out.size();
+                size_t next = li + 1;
+                while (next < lineCount && !keep[next])
+                {
+                    next++;
+                }
+                caretOut = (next < lineCount) ? startOut[next] : out.size();
             }
         }
         else
         {
-            if (caretIn == i)
+            if (caretIn >= L.start && caretIn <= L.brkEnd)
             {
-                caretOut = out.size();
+                size_t next = li + 1;
+                while (next < lineCount && !keep[next])
+                {
+                    next++;
+                }
+                caretOut = (next < lineCount) ? startOut[next] : out.size();
             }
-            out += text[i++];
         }
     }
     if (caretIn == n)
@@ -1532,7 +1598,7 @@ namespace winrt::NanaZip::Modern::implementation
         const int CaretIn = Box.SelectionStart();
         std::wstring Clean;
         size_t CaretOut = 0;
-        SssCollapsePasswordBookBreaks(
+        SssCleanPasswordBookText(
             Value, (CaretIn > 0) ? (size_t)CaretIn : 0, Clean, CaretOut);
         if (Clean != Value)
         {
@@ -1659,7 +1725,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
         std::wstring Clean;
         size_t CaretOut = 0;
-        SssCollapsePasswordBookBreaks(Text, Text.size(), Clean, CaretOut);
+        SssCleanPasswordBookText(Text, Text.size(), Clean, CaretOut);
         ExtractPasswordBookBox().Text(winrt::hstring(Clean));
         wcsncpy_s(this->m_Context->PasswordBook, 4096, Clean.c_str(), _TRUNCATE);
     }
