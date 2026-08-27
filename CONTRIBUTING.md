@@ -41,14 +41,17 @@
 
 ### How to build all targets of NanaZip
 
-Run `BuildAllTargets.bat` in the root of the repository.
+See [BUILDING.md](BUILDING.md) for the complete guide with prerequisites,
+output locations and troubleshooting.
+
+Short version: run `BuildAllTargets.cmd` in the root of the repository.
 
 ### How to modify or debugging NanaZip
 
 Recommend to run `RestoreNuGetPackages.cmd` in the root of the repository to
-restore NuGet packages if you have not run this script or `BuildAllTargets.bat`
-before. (Recent versions of Visual Studio 2026 has some issues to restore NuGet
-packages automatically.)
+restore NuGet packages if you have not run this script or
+`BuildAllTargets.cmd` before. (Recent versions of Visual Studio 2026 has some
+issues to restore NuGet packages automatically.)
 
 Open `NanaZip.slnx` in the root of the repository.
 
