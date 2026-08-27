@@ -790,10 +790,18 @@ EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
         // screen on high-DPI displays.
         int ClientW = (int)(Desired.Width * Scale + 0.5f);
         int ClientH = (int)(Desired.Height * Scale + 0.5f);
+        PropertiesDiagLog(
+            L"P08a dpi=%u scale=%.3f desired=%.0fx%.0f client=%dx%d minOuter=%ldx%ld",
+            Dpi,
+            Scale,
+            Desired.Width,
+            Desired.Height,
+            ClientW,
+            ClientH,
+            Self->MinTrackW,
+            Self->MinTrackH);
         {
-            const int MinW = (int)(480.0f * Scale + 0.5f);
             const int MinH = (int)(420.0f * Scale + 0.5f);
-            if (ClientW < MinW) ClientW = MinW;
             if (ClientH < MinH) ClientH = MinH;
         }
 
@@ -830,8 +838,10 @@ EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
                 ClientH = WorkH;
             }
         }
-        if (ClientW > 1600) ClientW = 1600;
-        if (ClientH > 1200) ClientH = 1200;
+        {
+            const int CapH = (int)(1000.0f * Scale + 0.5f);
+            if (ClientH > CapH) ClientH = CapH;
+        }
 
         RECT rc = { 0, 0, ClientW, ClientH };
         {
@@ -848,8 +858,11 @@ EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
             ((ParentRect.bottom - ParentRect.top - WindowH) / 2);
         RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
 
-        PropertiesDiagLog(L"P09 ShowXamlWindow enter (%d x %d)",
-            ClientW, ClientH);
+        PropertiesDiagLog(L"P09 ShowXamlWindow enter client=%dx%d outer=%dx%d",
+            ClientW,
+            ClientH,
+            WindowW,
+            WindowH);
         int Result = ::K7ModernShowXamlWindow(
             WindowHandle,
             ClientW,

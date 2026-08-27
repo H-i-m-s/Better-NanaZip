@@ -687,31 +687,69 @@ namespace winrt::NanaZip::Modern::implementation
         this->ApplyDialogFont(this->m_FontSizeDialog);
         PropertiesDiagLog(L"M19 dialog font applied");
 
+        // Keep the General tab as a borderless two-column table. Measure all
+        // labels after applying the dialog font, then assign the same width
+        // to every label so every value starts on one vertical grid line.
+        winrt::Windows::Foundation::Size Inf(100000.0f, 100000.0f);
+        double MaxGeneralLabelW = 0.0;
+        for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                this->GeneralTypeLabel(),
+                this->GeneralLocationLabel(),
+                this->GeneralSizeLabel(),
+                this->GeneralAllocSizeLabel(),
+                this->GeneralCreatedLabel(),
+                this->GeneralModifiedLabel(),
+                this->GeneralAccessedLabel() })
+        {
+            Label.Measure(Inf);
+            MaxGeneralLabelW = (std::max)(
+                MaxGeneralLabelW,
+                (double)Label.DesiredSize().Width);
+        }
+        if (MaxGeneralLabelW > 0.0)
+        {
+            for (auto const& Label : std::vector<winrt::Windows::UI::Xaml::Controls::TextBlock>{
+                    this->GeneralTypeLabel(),
+                    this->GeneralLocationLabel(),
+                    this->GeneralSizeLabel(),
+                    this->GeneralAllocSizeLabel(),
+                    this->GeneralCreatedLabel(),
+                    this->GeneralModifiedLabel(),
+                    this->GeneralAccessedLabel() })
+            {
+                Label.Width(MaxGeneralLabelW + 10.0);
+            }
+        }
+        PropertiesDiagLog(L"M19a generalLabelW=%.1f", MaxGeneralLabelW + 10.0);
+
         // Initial tab
         this->SwitchTab(0);
         PropertiesDiagLog(L"M20 initial tab switched");
 
-        // Default and minimum client sizes (DIPs). The default height is
-        // measured from the fully expanded General tab so the whole sheet
-        // fits without scrolling; the host clamps it to the work area.
+        // Same width formula as SettingsPage: the tab bar is the widest
+        // established control, so the default and the minimum both follow
+        // it. Measuring the whole page at infinite width (or adding a
+        // separate pixel floor) makes the window wider than the tabs and
+        // leaves unused room on the right of every other tab.
+        this->TabBar().Measure(Inf);
+        const float TabBarW = this->TabBar().DesiredSize().Width;
+        const float DefaultW = TabBarW;
+
         this->Measure(winrt::Windows::Foundation::Size(
-            640.0f,
+            DefaultW,
             std::numeric_limits<float>::infinity()));
         const float MeasuredHeight = this->DesiredSize().Height;
-        float DefaultH = MeasuredHeight + 16.0f;
+        float DefaultH = MeasuredHeight;
         if (DefaultH < 420.0f)
         {
             DefaultH = 420.0f;
         }
-        if (DefaultH > 1000.0f)
-        {
-            DefaultH = 1000.0f;
-        }
-        const float DefaultW = 640.0f;
-        PropertiesDiagLog(L"M21 measured height=%.0f default=%.0f",
-            MeasuredHeight,
-            DefaultH);
-        const int MinClientW = 480;
+        PropertiesDiagLog(L"M21 tabBarW=%.0f default=%.0fx%.0f measuredH=%.0f",
+            TabBarW,
+            DefaultW,
+            DefaultH,
+            MeasuredHeight);
+        int MinClientW = (int)(DefaultW + 0.5f);
         const int MinClientH = 420;
 
         const UINT Dpi = ::GetDpiForWindow(this->m_WindowHandle);

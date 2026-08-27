@@ -14,9 +14,9 @@
     <Page.Resources>
         <!-- Details tab: property name / value two-column list -->
         <DataTemplate x:Key="DetailItemTemplate">
-            <Grid Padding="6,4,6,4">
+            <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="240" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <TextBlock
@@ -33,7 +33,7 @@
 
         <!-- Signature tab: signer + status + detail -->
         <DataTemplate x:Key="SignatureItemTemplate">
-            <StackPanel Padding="6,4,6,4">
+            <StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock
                         Text="{Binding Signer}"
@@ -56,7 +56,7 @@
 
         <!-- Security tab: principal + permission summary -->
         <DataTemplate x:Key="SecurityItemTemplate">
-            <Grid Padding="6,4,6,4">
+            <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="220" />
@@ -75,7 +75,7 @@
 
         <!-- Previous versions tab: time + location -->
         <DataTemplate x:Key="VersionItemTemplate">
-            <StackPanel Padding="6,4,6,4">
+            <StackPanel>
                 <TextBlock
                     Text="{Binding Time}"
                     FontWeight="SemiBold"
@@ -91,31 +91,32 @@
 
         <!-- Custom tab: property name + type + value -->
         <DataTemplate x:Key="CustomPropertyItemTemplate">
-            <Grid Padding="6,4,6,4">
+            <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <TextBlock
                     Text="{Binding Name}"
                     TextWrapping="Wrap"
-                    FontWeight="SemiBold" />
+                    FontWeight="SemiBold"
+                    Margin="6,4,6,4" />
                 <TextBlock
                     Grid.Column="1"
                     Text="{Binding Type}"
                     Opacity="0.7"
-                    Margin="14,0,0,0" />
+                    Margin="14,4,6,4" />
                 <TextBlock
                     Grid.Column="2"
                     Text="{Binding Value}"
                     TextWrapping="Wrap"
-                    Margin="14,0,0,0" />
+                    Margin="14,4,6,4" />
             </Grid>
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Padding="14,12,14,12">
+    <Grid>
         <Grid.RowDefinitions>
             <!-- Header, tab bar, content, button row. The button row stays
                  reachable when the window is short. -->
@@ -126,7 +127,7 @@
         </Grid.RowDefinitions>
 
         <!-- ============ Header: large icon + name + type ============ -->
-        <Grid Grid.Row="0" Margin="0,0,0,12">
+        <Grid Grid.Row="0" Margin="12,12,12,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -194,7 +195,7 @@
         </StackPanel>
 
         <!-- ============ Content area ============ -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="2" Margin="12,0,12,0">
             <Border
                 BorderBrush="{ThemeResource CardStrokeColorDefault}"
                 BorderThickness="0,1,0,0" />
@@ -206,98 +207,97 @@
                 <StackPanel Padding="2,10,2,10">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                         <TextBlock
+                            x:Name="GeneralTypeLabel"
                             Text="类型"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralTypeValueText"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
-                    </Grid>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
                         <TextBlock
+                            x:Name="GeneralLocationLabel"
+                            Grid.Row="1"
                             Text="位置"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralLocationValueText"
+                            Grid.Row="1"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
-                    </Grid>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
                         <TextBlock
+                            x:Name="GeneralSizeLabel"
+                            Grid.Row="2"
                             Text="大小"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralSizeValueText"
+                            Grid.Row="2"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
-                    </Grid>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
                         <TextBlock
+                            x:Name="GeneralAllocSizeLabel"
+                            Grid.Row="3"
                             Text="占用空间"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralAllocSizeValueText"
+                            Grid.Row="3"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
-                    </Grid>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
                         <TextBlock
+                            x:Name="GeneralCreatedLabel"
+                            Grid.Row="4"
                             Text="创建时间"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralCreatedValueText"
+                            Grid.Row="4"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
-                    </Grid>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
                         <TextBlock
+                            x:Name="GeneralModifiedLabel"
+                            Grid.Row="5"
                             Text="修改时间"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralModifiedValueText"
+                            Grid.Row="5"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
-                    </Grid>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="250" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
                         <TextBlock
+                            x:Name="GeneralAccessedLabel"
+                            Grid.Row="6"
                             Text="访问时间"
-                            Opacity="0.75" />
+                            Opacity="0.75"
+                            VerticalAlignment="Top" />
                         <TextBlock
                             x:Name="GeneralAccessedValueText"
+                            Grid.Row="6"
                             Grid.Column="1"
                             TextWrapping="Wrap"
                             Margin="14,0,0,6" />
@@ -339,9 +339,19 @@
                     TextChanged="OnDetailsSearchChanged" />
                 <ListView
                     x:Name="DetailsListView"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
                     Grid.Row="1"
                     ItemTemplate="{StaticResource DetailItemTemplate}"
-                    SelectionMode="None" />
+                    SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="Padding" Value="6,4,6,4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
             </Grid>
 
             <!-- Digital signature tab -->
@@ -358,9 +368,19 @@
                     TextWrapping="Wrap" />
                 <ListView
                     x:Name="SignatureListView"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
                     Grid.Row="1"
                     ItemTemplate="{StaticResource SignatureItemTemplate}"
-                    SelectionMode="None" />
+                    SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="Padding" Value="6,4,6,4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
             </Grid>
 
             <!-- Security tab -->
@@ -395,9 +415,19 @@
                 </Grid>
                 <ListView
                     x:Name="SecurityListView"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
                     Grid.Row="2"
                     ItemTemplate="{StaticResource SecurityItemTemplate}"
-                    SelectionMode="None" />
+                    SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="Padding" Value="6,4,6,4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
                 <StackPanel
                     Grid.Row="3"
                     Orientation="Horizontal"
@@ -425,9 +455,19 @@
                     TextWrapping="Wrap" />
                 <ListView
                     x:Name="VersionsListView"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
                     Grid.Row="1"
                     ItemTemplate="{StaticResource VersionItemTemplate}"
-                    SelectionChanged="OnVersionSelectionChanged" />
+                    SelectionChanged="OnVersionSelectionChanged">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="Padding" Value="6,4,6,4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
                 <StackPanel
                     Grid.Row="2"
                     Orientation="Horizontal"
@@ -463,9 +503,28 @@
                     TextWrapping="Wrap" />
                 <ListView
                     x:Name="CustomListView"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    ScrollViewer.HorizontalScrollMode="Disabled"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                     Grid.Row="1"
                     ItemTemplate="{StaticResource CustomPropertyItemTemplate}"
-                    SelectionChanged="OnCustomSelectionChanged" />
+                    SelectionChanged="OnCustomSelectionChanged">
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsStackPanel HorizontalAlignment="Stretch" />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalAlignment" Value="Stretch" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinWidth" Value="0" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="Padding" Value="0" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
                 <StackPanel
                     Grid.Row="2"
                     Margin="0,8,0,0">
@@ -506,7 +565,9 @@
                             x:Name="CustomValueBox"
                             Margin="0,0,0,8"
                             HorizontalAlignment="Stretch" />
-                        <StackPanel Orientation="Horizontal">
+                        <StackPanel
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right">
                             <Button
                                 x:Name="CustomEditOkButton"
                                 MinWidth="88"
@@ -529,7 +590,7 @@
             Grid.Row="3"
             Orientation="Horizontal"
             HorizontalAlignment="Right"
-            Margin="0,10,0,0">
+            Margin="12,10,12,12">
             <Button
                 x:Name="OkButton"
                 x:Uid="/NanaZip.Modern/Common/OKButton"
