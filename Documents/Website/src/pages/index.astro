@@ -1,7 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PageSection from "../components/PageSection/PageSection.astro";
-import StoreBadge from "../components/StoreBadge/StoreBadge.astro";
+import InfoBar from "../components/InfoBar/InfoBar.astro";
 import ThemedLocalPicture from "../components/ThemedLocalPicture/ThemedLocalPicture.astro";
 import Tree from "../components/Tree/Tree.astro";
 
@@ -18,23 +18,26 @@ import ArchiveFile from "../assets/images/ArchiveFile.svg";
 import RightArrow from '@fluentui/svg-icons/icons/arrow_right_32_regular.svg';
 import FileIcon from '@fluentui/svg-icons/icons/document_20_regular.svg';
 import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
+import ShieldIcon from '@fluentui/svg-icons/icons/shield_20_regular.svg';
+import LockIcon from '@fluentui/svg-icons/icons/lock_closed_20_regular.svg';
+import BoxIcon from '@fluentui/svg-icons/icons/archive_20_regular.svg';
+import CheckmarkIcon from '@fluentui/svg-icons/icons/checkmark_20_regular.svg';
 ---
 
-<Layout description="NanaZip home page">
+<Layout description="NanaZip 定制版主页">
 	<main id="main">
-		<PageSection header="NanaZip">
+		<PageSection header="NanaZip 定制版">
 			<Fragment slot="description">
 				<p class="subtitle">
-					The 7-Zip derivative intended for the modern Windows
-					experience
+					面向现代 Windows 体验的开源压缩工具，基于 7-Zip 26.02 内核，
+					在本仓库中进行了深度定制：现代化界面、密码解决方案与交互优化。
 				</p>
-				<StoreBadge
-					productId="9n8g7tscl18r"
-					windowMode="full"
-					size="small"
-					campaignId="nanaziporg"
-				/>
-				<span>Or check out <a href="/downloads">alternative download options</a></span>
+				<p>
+					<a class="btn btn-accent" href="/downloads">立即下载</a>
+					<a class="btn" href="https://github.com/H-i-m-s/Better-NanaZip">
+						查看 GitHub 仓库
+					</a>
+				</p>
 			</Fragment>
 			<ThemedLocalPicture
 				lightSrc={heroImageLight}
@@ -45,17 +48,50 @@ import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
 			/>
 		</PageSection>
 
-		<PageSection header="Modern UI">
+		<PageSection header="密码解决方案">
 			<Fragment slot="description">
 				<p class="subtitle">
-					NanaZip supports the new Windows 11 context menu and adopts the
-					Fluent Design System, using the Mica material and adding dark
-					mode support.
+					本定制版的核心增强：围绕压缩包密码处理提供一整套工具，
+					解压过程全自动匹配密码，减少人工干预。
 				</p>
+			</Fragment>
 
+			<div class="format-list" role="list" aria-label="密码解决方案功能列表">
+				<div class="card" role="listitem">
+					<LockIcon width="20" height="20" fill="currentColor" />
+					本地密码本自动匹配
+				</div>
+				<div class="card" role="listitem">
+					<BoxIcon width="20" height="20" fill="currentColor" />
+					混合匹配模式（本地 + 云端）
+				</div>
+				<div class="card" role="listitem">
+					<CheckmarkIcon width="20" height="20" fill="currentColor" />
+					自动匹配并解压
+				</div>
+				<div class="card" role="listitem">
+					<CheckmarkIcon width="20" height="20" fill="currentColor" />
+					密码分享
+				</div>
+			</div>
+
+			<InfoBar title="侵权风险提示" severity="caution" wrap={true}>
+				云端密码查询功能基于对第三方解压软件通信协议的研究，存在侵权风险。
+				如何获取云端 API 由用户自行研究，本项目不提供任何指导，也不对使用
+				该功能产生的法律后果负责。建议仅用于合法用途。
+			</InfoBar>
+		</PageSection>
+
+		<PageSection header="现代化界面">
+			<Fragment slot="description">
 				<p class="subtitle">
-					NanaZip supports Windows accessibility features and
-					meets <a href="/section508">Section 508 compliance standards</a>.
+					将官方版本中遗留的 Win32 对话框逐步迁移到 XAML，风格统一并支持
+					Windows 11 新版右键菜单、Mica 材质与深色模式。
+				</p>
+				<p class="subtitle">
+					压缩、解压、设置、文件选择器、分割文件、密码、替换、基准测试等
+					界面全部现代化；信息与属性对话框做了高度自适应、字段对齐与
+					每显示器 DPI 修正。
 				</p>
 			</Fragment>
 
@@ -68,23 +104,22 @@ import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
 			/>
 		</PageSection>
 
-		<PageSection header="Smart Extraction">
+		<PageSection header="智能解压">
 			<Fragment slot="description">
 				<p class="subtitle">
-					Smart Extraction saves you clicks for archives with a single root item,
-					and keeps your files organized for those with multiple root items.
+					智能解压：根目录只有单个条目的压缩包直接解压，多个根条目的自动
+					放入新建文件夹，省去多余点击。
 				</p>
 				<p class="subtitle">
-					In addition, you can configure NanaZip to start Smart Extraction
-					upon opening an archive, instead of opening NanaZip File Manager.
+					本定制版还支持批量 / 单个循环解压、批量删除等批量操作优化。
 				</p>
 			</Fragment>
-			
-			<div class="se-demo-scenario" role="img" aria-label="A demonstration of Smart Extraction. Archives with a single file or a single folder in the root will be extracted directly. Archives with multiple root elements will have their contents placed in a newly created folder.">
+
+			<div class="se-demo-scenario" role="img" aria-label="智能解压演示：根目录只有单个文件或单个文件夹的压缩包直接解压；包含多个根条目的压缩包会将内容放入新建文件夹。">
 				<div class="card" aria-hidden="true">
 					<Tree text="Archive1.zip">
 						<ArchiveFile width="20" height="20" slot="icon" />
-				
+
 						<Tree text="Music.mp3">
 							<FileIcon fill="currentColor" slot="icon" />
 						</Tree>
@@ -92,7 +127,7 @@ import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
 
 					<Tree text="Archive2.zip">
 						<ArchiveFile width="20" height="20" slot="icon" />
-				
+
 						<Tree text="Image.jpg">
 							<FileIcon fill="currentColor" slot="icon" />
 						</Tree>
@@ -125,12 +160,13 @@ import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
 			</div>
 		</PageSection>
 
-		<PageSection header="File formats">
+		<PageSection header="文件格式">
 			<p slot="description" class="subtitle">
-				NanaZip supports additional file formats on top of 7-zip, such as Zstandard, WASM, Electron ASAR, and .NET Single File Bundle.
+				在 7-Zip 支持的基础上，额外支持 Zstandard、WASM、Electron ASAR、
+				.NET 单文件等格式。
 			</p>
 
-			<div class="format-list" role="list" aria-label="List of formats NanaZip supports on top of 7-zip's">
+			<div class="format-list" role="list" aria-label="NanaZip 额外支持的格式列表">
 				<div class="card" role="listitem">Brotli</div>
 				<div class="card" role="listitem">Lizard</div>
 				<div class="card" role="listitem">LZ4</div>
@@ -140,7 +176,7 @@ import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
 				<div class="card" role="listitem">NSIS</div>
 				<div class="card" role="listitem">UFS</div>
 				<div class="card" role="listitem">UFS2</div>
-				<div class="card" role="listitem">.NET Single File</div>
+				<div class="card" role="listitem">.NET 单文件</div>
 				<div class="card" role="listitem">Electron ASAR</div>
 				<div class="card" role="listitem">ROMFS</div>
 				<div class="card" role="listitem">ZealFS</div>
@@ -151,19 +187,38 @@ import FolderIcon from '@fluentui/svg-icons/icons/folder_20_regular.svg';
 			</div>
 		</PageSection>
 
-		<PageSection header="Security">
+		<PageSection header="安全">
 			<Fragment slot="description">
-				<p class="subtitle">NanaZip integrates multiple security mitigations to reduce the impact of vulnerabilities.</p>
-				<p class="subtitle">These mitigations are enabled by default and configurable using <a href="https://github.com/M2Team/NanaZip/blob/main/Documents/Policies.md">Group Policy</a>.</p>
+				<p class="subtitle">
+					内置多项安全缓解措施，默认启用，可通过
+					<a href="https://github.com/H-i-m-s/Better-NanaZip/blob/master/Documents/Policies.md">
+						组策略
+					</a>
+					配置。
+				</p>
 			</Fragment>
 
-			<div class="format-list" role="list" aria-label="Security mitigations NanaZip includes">
-				<div class="card" role="listitem">Control Flow Guard</div>
-				<div class="card" role="listitem">Shadow Stack</div>
-				<div class="card" role="listitem" style="width: max-content">Dynamic code generation prohibition</div>
-				<div class="card" role="listitem">Package Integrity</div>
-				<div class="card" role="listitem">Mark-Of-The-Web</div>
-				<div class="card" role="listitem" style="width: max-content">Archive format restrictions</div>
+			<div class="format-list" role="list" aria-label="NanaZip 内置的安全缓解措施">
+				<div class="card" role="listitem">
+					<ShieldIcon width="20" height="20" fill="currentColor" />
+					Control Flow Guard
+				</div>
+				<div class="card" role="listitem">
+					<ShieldIcon width="20" height="20" fill="currentColor" />
+					影子栈（Shadow Stack）
+				</div>
+				<div class="card" role="listitem" style="width: max-content">
+					<ShieldIcon width="20" height="20" fill="currentColor" />
+					禁用动态代码生成
+				</div>
+				<div class="card" role="listitem">
+					<ShieldIcon width="20" height="20" fill="currentColor" />
+					包完整性校验
+				</div>
+				<div class="card" role="listitem">
+					<ShieldIcon width="20" height="20" fill="currentColor" />
+					Mark-Of-The-Web
+				</div>
 			</div>
 		</PageSection>
 	</main>

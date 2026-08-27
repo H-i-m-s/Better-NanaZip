@@ -1,54 +1,54 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import StoreBadge from "../components/StoreBadge/StoreBadge.astro";
 import InfoBar from "../components/InfoBar/InfoBar.astro";
 ---
 
-<Layout title="Downloads" description="NanaZip download links">
+<Layout title="下载" description="NanaZip 定制版下载">
     <main id="main">
         <article>
-            <h1>Downloads</h1>
+            <h1>下载</h1>
 
-            <InfoBar title="Warning" severity="caution" wrap={true}>
-                Only GitHub, Microsoft Store, My Digital Life Forums,
-                SourceForge, and Windows App Community hosts official downloads.
+            <InfoBar title="注意" severity="attention" wrap={true}>
+                本项目仅通过
+                <a href="https://github.com/H-i-m-s/Better-NanaZip">GitHub</a>
+                官方 Releases 发布，请勿从其他来源下载，谨防假冒与恶意修改。
             </InfoBar>
-
-            <!-- Microsoft Store -->
-            <h2>Microsoft Store (recommended)</h2>
-
-            <p><b>NanaZip</b></p>
-            <StoreBadge
-                productId="9n8g7tscl18r"
-                windowMode="full"
-                size="small"
-				campaignId="nanaziporg"
-            />
-            <p><b>NanaZip Preview</b></p>
-            <StoreBadge
-                productId="9NZL0LRP1BNL"
-                windowMode="full"
-				campaignId="nanaziporg"
-                size="small"
-            />
-
-            <!-- SourceForge -->
-            <h2>SourceForge</h2>
-            <a class="btn btn-accent" href="https://sourceforge.net/projects/nanazip/">Go to SourceForge</a>
 
             <!-- GitHub Releases -->
             <h2>GitHub Releases</h2>
-            <InfoBar title="Attention" severity="attention" wrap={true}>
-                GitHub Releases include experimental portable versions. These
-                versions are intended for users without access to MSIX (such as
-                Windows PE and Wine).
-                <br />
-                Some features are not available (such as File Manager), and no support
-                is provided for these versions.
-            </InfoBar>
-            <a class="btn btn-accent" href="https://github.com/M2Team/NanaZip/releases/latest" >Latest stable release</a>
+
+            <p>下载最新稳定版安装包（MSIX，已用开发证书签名）：</p>
+            <a class="btn btn-accent" href="https://github.com/H-i-m-s/Better-NanaZip/releases/latest">
+                最新稳定版
+            </a>
             <br />
-            <a href="https://github.com/M2Team/NanaZip/releases">All releases</a>
+            <a href="https://github.com/H-i-m-s/Better-NanaZip/releases">所有版本</a>
+
+            <h2>安装说明</h2>
+
+            <p>安装包使用自签名证书（<code>CN=SSS NanaZip Development</code>）签名。
+            直接安装：</p>
+
+            <pre><code>Add-AppxPackage -Path "NanaZipPackage_x.x.x.x_x64_arm64.msixbundle"</code></pre>
+
+            <p>如提示证书不受信任，先导入公钥再安装：</p>
+
+            <pre><code>.\build\SSSDevSigning\Install-SSSDevCertificate.ps1
+.\build\SSSDevSigning\Install-SSSNanaZipPackage.ps1 -PackagePath "NanaZipPackage_x.x.x.x_x64_arm64.msixbundle"</code></pre>
+
+            <InfoBar title="提示" severity="information" wrap={true}>
+                安装后如右键菜单未出现，请在任务管理器中重启资源管理器
+                （explorer.exe）。
+            </InfoBar>
+
+            <h2>发布内容</h2>
+
+            <ul>
+                <li><b>MSIX 安装包</b>（x64 + ARM64，推荐）</li>
+                <li><b>扩展包安装器</b>（右键菜单增强）</li>
+                <li><b>便携版压缩包</b>（无需安装，适合特殊环境）</li>
+                <li><b>调试符号</b>（供开发者排查问题）</li>
+            </ul>
         </article>
     </main>
 </Layout>
@@ -57,5 +57,16 @@ import InfoBar from "../components/InfoBar/InfoBar.astro";
     a {
         margin-top: 8px;
         margin-bottom: 8px;
+    }
+    pre {
+        background: var(--fds-card-background-default);
+        border: 1px solid var(--fds-card-stroke-default);
+        border-radius: 8px;
+        padding: 12px 16px;
+        overflow-x: auto;
+    }
+    code {
+        font-family: Consolas, Menlo, monospace;
+        font-size: 13px;
     }
 </style>
