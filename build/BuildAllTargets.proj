@@ -1,20 +1,23 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project 
   DefaultTargets="RefreshVersion;Restore;Build;Packaging"
   xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="NanaZip.Project\NanaZip.Project.props" />
+    <PropertyGroup>
+    <RepoRoot>$(MSBuildThisFileDirectory)..\</RepoRoot>
+  </PropertyGroup>
+<Import Project="$(RepoRoot)NanaZip.Project\NanaZip.Project.props" />
   <UsingTask
     TaskName="NanaZip.Build.Tasks.RefreshAppxManifestResourceIdentifies"
-    AssemblyFile="$(MSBuildThisFileDirectory)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
+    AssemblyFile="$(RepoRoot)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
   <UsingTask
     TaskName="NanaZip.Build.Tasks.RefreshAppxManifestVersion"
-    AssemblyFile="$(MSBuildThisFileDirectory)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
+    AssemblyFile="$(RepoRoot)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
   <UsingTask
     TaskName="NanaZip.Build.Tasks.RefreshProjectBuildNumberDate"
-    AssemblyFile="$(MSBuildThisFileDirectory)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
+    AssemblyFile="$(RepoRoot)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
   <UsingTask
     TaskName="NanaZip.Build.Tasks.RefreshProjectResources"
-    AssemblyFile="$(MSBuildThisFileDirectory)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
+    AssemblyFile="$(RepoRoot)NanaZip.Project\NanaZip.Build.Tasks.dll"/>
   <Target Name="RefreshVersion">
     <Exec Command="git show -s --format=%25%25cs" ConsoleToMSBuild="true" IgnoreExitCode="true">
       <Output TaskParameter="ExitCode" PropertyName="GitExitCode" />
@@ -24,29 +27,29 @@
       <NanaZipBuildNumberDate Condition="'$(GitExitCode)' == '0' and '$(GitBuildNumberDate)' != ''">$(GitBuildNumberDate)</NanaZipBuildNumberDate>
     </PropertyGroup>
     <RefreshProjectBuildNumberDate
-      FilePath="$(MSBuildThisFileDirectory)NanaZip.Project\NanaZip.Project.Version.props"
+      FilePath="$(RepoRoot)NanaZip.Project\NanaZip.Project.Version.props"
       BuildNumberDate="$(NanaZipBuildNumberDate)" />
     <PropertyGroup>
       <MileProjectVersion>$(NanaZipMajorVersion).$(NanaZipMinorVersion).$([System.DateTime]::Parse('$(NanaZipBuildNumberDate)').Subtract($([System.DateTime]::Parse('$(NanaZipProjectCreationDate)'))).TotalDays).0</MileProjectVersion>
     </PropertyGroup>
     <RefreshAppxManifestVersion
-      FilePath="$(MSBuildThisFileDirectory)NanaZipPackage\Package.appxmanifest"
+      FilePath="$(RepoRoot)NanaZipPackage\Package.appxmanifest"
       Version="$(MileProjectVersion)" />
     <RefreshAppxManifestResourceIdentifies
-      FilePath="$(MSBuildThisFileDirectory)NanaZipPackage\Package.appxmanifest"/>
+      FilePath="$(RepoRoot)NanaZipPackage\Package.appxmanifest"/>
     <RefreshProjectResources
-      RootPath="$(MSBuildThisFileDirectory)"
+      RootPath="$(RepoRoot)"
       BuildPreviewRelease="$(NanaZipBuildPreviewRelease)" />
   </Target>
   <Target Name="Restore">
     <ItemGroup>
-      <RestoreProjectReference Include="$(MSBuildThisFileDirectory)NanaZip.slnx">
+      <RestoreProjectReference Include="$(RepoRoot)build\NanaZip.slnx">
         <AdditionalProperties>Configuration=Debug;Platform=x64</AdditionalProperties>   
       </RestoreProjectReference>
-      <RestoreProjectReference Include="$(MSBuildThisFileDirectory)NanaZip.slnx">
+      <RestoreProjectReference Include="$(RepoRoot)build\NanaZip.slnx">
         <AdditionalProperties>Configuration=Release;Platform=x64</AdditionalProperties>   
       </RestoreProjectReference>
-      <RestoreProjectReference Include="$(MSBuildThisFileDirectory)NanaZip.ExtensionPackage\NanaZip.ExtensionPackage.Installer.proj">
+      <RestoreProjectReference Include="$(RepoRoot)NanaZip.ExtensionPackage\NanaZip.ExtensionPackage.Installer.proj">
         <AdditionalProperties>Configuration=Release</AdditionalProperties>
       </RestoreProjectReference>
     </ItemGroup>
@@ -58,19 +61,19 @@
   </Target>
   <Target Name="Build">
     <MSBuild
-      Projects="$(MSBuildThisFileDirectory)NanaZipPackage\NanaZipPackage.wapproj"
+      Projects="$(RepoRoot)NanaZipPackage\NanaZipPackage.wapproj"
       Targets="Build"
       BuildInParallel="True"
       StopOnFirstFailure="True"
       Properties="PreferredToolArchitecture=x64;Configuration=Debug;Platform=x64" />
     <MSBuild
-      Projects="$(MSBuildThisFileDirectory)NanaZipPackage\NanaZipPackage.wapproj"
+      Projects="$(RepoRoot)NanaZipPackage\NanaZipPackage.wapproj"
       Targets="Build"
       BuildInParallel="True"
       StopOnFirstFailure="True"
       Properties="PreferredToolArchitecture=x64;Configuration=Release;Platform=x64" />
     <MSBuild
-      Projects="$(MSBuildThisFileDirectory)NanaZip.ExtensionPackage\NanaZip.ExtensionPackage.Installer.proj"
+      Projects="$(RepoRoot)NanaZip.ExtensionPackage\NanaZip.ExtensionPackage.Installer.proj"
       Targets="Build"
       BuildInParallel="True"
       StopOnFirstFailure="True"
@@ -78,9 +81,9 @@
   </Target>
   <Target Name="Packaging">
     <PropertyGroup>
-      <InputBinariesPath>$(MSBuildThisFileDirectory)Output\Binaries\Release\</InputBinariesPath>
-      <OutputBinariesPath>$(MSBuildThisFileDirectory)Output\Binaries\Root\Binaries\</OutputBinariesPath>
-      <OutputSymbolsPath>$(MSBuildThisFileDirectory)Output\Binaries\Root\Symbols\</OutputSymbolsPath>
+      <InputBinariesPath>$(RepoRoot)Output\Binaries\Release\</InputBinariesPath>
+      <OutputBinariesPath>$(RepoRoot)Output\Binaries\Root\Binaries\</OutputBinariesPath>
+      <OutputSymbolsPath>$(RepoRoot)Output\Binaries\Root\Symbols\</OutputSymbolsPath>
       <OutputFileNamePrefix Condition="'$(NanaZipBuildPreviewRelease)' != 'true'">NanaZip_$(MileProjectVersion)</OutputFileNamePrefix>
       <OutputFileNamePrefix Condition="'$(NanaZipBuildPreviewRelease)' == 'true'">NanaZipPreview_$(MileProjectVersion)</OutputFileNamePrefix>
     </PropertyGroup>
@@ -88,12 +91,12 @@
     <MakeDir Directories="$(OutputSymbolsPath)arm64" />
     <MakeDir Directories="$(OutputSymbolsPath)x64" />
 
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)License.md" DestinationFiles="$(OutputBinariesPath)License.txt" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)ReadMe.md" DestinationFiles="$(OutputBinariesPath)ReadMe.txt" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)Documents\People.md" DestinationFiles="$(OutputBinariesPath)People.txt" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)Documents\Policies.md" DestinationFiles="$(OutputBinariesPath)Policies.txt" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)Documents\ReleaseNotes.md" DestinationFiles="$(OutputBinariesPath)ReleaseNotes.txt" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)Documents\ReleaseNotesPreview.md" DestinationFiles="$(OutputBinariesPath)ReleaseNotesPreview.txt" />
+    <Copy SourceFiles="$(RepoRoot)License.md" DestinationFiles="$(OutputBinariesPath)License.txt" />
+    <Copy SourceFiles="$(RepoRoot)ReadMe.md" DestinationFiles="$(OutputBinariesPath)ReadMe.txt" />
+    <Copy SourceFiles="$(RepoRoot)Documents\People.md" DestinationFiles="$(OutputBinariesPath)People.txt" />
+    <Copy SourceFiles="$(RepoRoot)Documents\Policies.md" DestinationFiles="$(OutputBinariesPath)Policies.txt" />
+    <Copy SourceFiles="$(RepoRoot)Documents\ReleaseNotes.md" DestinationFiles="$(OutputBinariesPath)ReleaseNotes.txt" />
+    <Copy SourceFiles="$(RepoRoot)Documents\ReleaseNotesPreview.md" DestinationFiles="$(OutputBinariesPath)ReleaseNotesPreview.txt" />
     <Copy Condition="'$(NanaZipBuildWithSanitizers)' == 'true'" SourceFiles="$(InputBinariesPath)NanaZipPackage\arm64\clang_rt.asan_dynamic-aarch64.dll" DestinationFolder="$(OutputBinariesPath)arm64" />
     <Copy Condition="'$(NanaZipBuildWithSanitizers)' == 'true'" SourceFiles="$(InputBinariesPath)NanaZipPackage\arm64\clang_rt.asan_dynamic-x86_64.dll" DestinationFolder="$(OutputBinariesPath)arm64" />
     <Copy SourceFiles="$(InputBinariesPath)NanaZipPackage\arm64\K7Base.dll" DestinationFolder="$(OutputBinariesPath)arm64" />
@@ -120,7 +123,7 @@
     <Copy SourceFiles="$(InputBinariesPath)NanaZipPackage\x64\Mile.Xaml.Styles.SunValley.xbf" DestinationFolder="$(OutputBinariesPath)x64" />
     <Copy SourceFiles="$(InputBinariesPath)NanaZipPackage\x64\resources.pri" DestinationFolder="$(OutputBinariesPath)x64" />
 
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)License.md" DestinationFiles="$(OutputSymbolsPath)License.txt" />
+    <Copy SourceFiles="$(RepoRoot)License.md" DestinationFiles="$(OutputSymbolsPath)License.txt" />
     <Copy Condition="'$(NanaZipBuildWithSanitizers)' == 'true'" SourceFiles="$(InputBinariesPath)NanaZipPackage\arm64\clang_rt.asan_dynamic-aarch64.pdb" DestinationFolder="$(OutputSymbolsPath)arm64" />
     <Copy Condition="'$(NanaZipBuildWithSanitizers)' == 'true'" SourceFiles="$(InputBinariesPath)NanaZipPackage\arm64\clang_rt.asan_dynamic-x86_64.pdb" DestinationFolder="$(OutputSymbolsPath)arm64" />
     <Copy SourceFiles="$(InputBinariesPath)NanaZipPackage\arm64\K7Base.pdb" DestinationFolder="$(OutputSymbolsPath)arm64" />
@@ -147,7 +150,7 @@
     <Copy SourceFiles="$(InputBinariesPath)NanaZipPackage\x64\NanaZip.Modern.FileManager.pdb" DestinationFolder="$(OutputSymbolsPath)x64" />
     <Copy SourceFiles="$(InputBinariesPath)NanaZipPackage\x64\NanaZip.ShellExtension.pdb" DestinationFolder="$(OutputSymbolsPath)x64" />
 
-    <Exec Command="&quot;$(InputBinariesPath)NanaZipPackage\x64\NanaZip.Universal.Console.exe&quot; a -r .\Output\$(OutputFileNamePrefix)_Binaries.zip .\Output\Binaries\Root\Binaries\*.*" WorkingDirectory="$(MSBuildThisFileDirectory)"/>
-    <Exec Command="&quot;$(InputBinariesPath)NanaZipPackage\x64\NanaZip.Universal.Console.exe&quot; a -r .\Output\$(OutputFileNamePrefix)_DebugSymbols.zip .\Output\Binaries\Root\Symbols\*.*" WorkingDirectory="$(MSBuildThisFileDirectory)"/>
+    <Exec Command="&quot;$(InputBinariesPath)NanaZipPackage\x64\NanaZip.Universal.Console.exe&quot; a -r .\Output\$(OutputFileNamePrefix)_Binaries.zip .\Output\Binaries\Root\Binaries\*.*" WorkingDirectory="$(RepoRoot)"/>
+    <Exec Command="&quot;$(InputBinariesPath)NanaZipPackage\x64\NanaZip.Universal.Console.exe&quot; a -r .\Output\$(OutputFileNamePrefix)_DebugSymbols.zip .\Output\Binaries\Root\Symbols\*.*" WorkingDirectory="$(RepoRoot)"/>
   </Target>
 </Project>

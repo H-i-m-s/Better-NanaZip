@@ -50,7 +50,7 @@ jobs:
         }
 
     - name: Build
-      run: MSBuild -binaryLogger:Output\BuildAllTargets.binlog -m BuildAllTargets.proj
+      run: MSBuild -binaryLogger:Output\BuildAllTargets.binlog -m build\BuildAllTargets.proj
 
     - name: Locate MSIX package
       id: locate

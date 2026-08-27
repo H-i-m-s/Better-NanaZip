@@ -1,87 +1,79 @@
 ![NanaZip hero](assets/readme/hero.svg)
 
-NanaZip is an open-source file archiver for the modern Windows experience,
-forked from the [7-Zip] source code and rebuilt around today's Windows design
-language: native dark mode, Mica material, deep File Explorer integration, and
-MSIX packaging. The full 7-Zip 26.02 feature set is inherited and extended with
-additional formats, hash algorithms, and security hardening.
+NanaZip 是一款面向现代 Windows 体验的开源压缩工具，从 [7-Zip] 源码 fork，
+围绕 Windows 现代设计语言重建：原生深色模式、Mica 材质、深度的资源管理器
+集成与 MSIX 打包。完整继承 7-Zip 26.02 的全部能力，并扩展了额外格式、
+哈希算法与安全加固。
 
-[![License](https://img.shields.io/badge/license-MIT-58A6FF)](License.md)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%202004%2B-58A6FF)](BUILDING.md)
-[![Core](https://img.shields.io/badge/core-7--Zip%2026.02-3FB950)](https://www.7-zip.org/)
+[![License](https://img.shields.io/badge/许可证-MIT-58A6FF)](License.md)
+[![Platform](https://img.shields.io/badge/平台-Windows%2010%202004%2B-58A6FF)](docs/BUILDING.md)
+[![Core](https://img.shields.io/badge/内核-7--Zip%2026.02-3FB950)](https://www.7-zip.org/)
 
-## Highlights
+## 核心特性
 
-- **7-Zip 26.02 core** with the enhancements from [7-Zip ZS] and
-  [7-Zip NSIS] (Brotli, LZ4, LZ5, Lizard, Zstandard, Fast-LZMA2, NSIS scripts).
-- **Native dark mode** for every GUI component, with immersive Mica on the
-  main window.
-- **File Explorer integration**: full context menu and file associations on
-  Windows 10/11.
-- **MSIX packaging** for a clean, dependency-bundled deployment story.
-- **7-Zip execution alias** (`7z.exe` → NanaZip) to ease migration.
-- **Per-Monitor DPI awareness**, modern message boxes and folder pickers,
-  smart extraction, and Mark-of-the-Web propagation by default.
-- **Extra archive formats** (read-only): .NET Single File bundles, Electron
-  asar, ROMFS, UFS/UFS2, ZealFS, WebAssembly, littlefs.
-- **30+ hash algorithms**, including MD2–MD5, SHA family, SHA-3, BLAKE2b/3,
-  ED2K, GOST, Snefru, Tiger, TTH, Whirlpool, XXH32/64/3, SM3.
-- **Security hardening**: Control Flow Guard, CET Shadow Stack, Package
-  Integrity Check, strict handle validation, no dynamic code generation in
-  Release builds.
+- **7-Zip 26.02 内核**，集成 [7-Zip ZS] 与 [7-Zip NSIS] 的增强（Brotli、LZ4、
+  LZ5、Lizard、Zstandard、Fast-LZMA2、NSIS 脚本支持）。
+- **所有 GUI 组件原生深色模式**，主窗口沉浸式 Mica 效果。
+- **资源管理器深度集成**：Windows 10/11 右键菜单与文件关联。
+- **MSIX 打包**，依赖内置，部署干净，卸载不留残留。
+- **7-Zip 执行别名**（`7z.exe` 指向 NanaZip），从 7-Zip 迁移无痛。
+- **每显示器 DPI 感知**，现代化消息框与文件夹选择器，智能解压，
+  默认传递 Mark-of-the-Web（Zone.Identifier）。
+- **额外只读格式**：.NET 单文件应用、Electron asar、ROMFS、UFS/UFS2、
+  ZealFS、WebAssembly、littlefs。
+- **30 余种哈希算法**：MD2-MD5、SHA 系列、SHA-3、BLAKE2b/3、ED2K、GOST、
+  Snefru、Tiger、TTH、Whirlpool、XXH32/64/3、SM3。
+- **安全加固**：Control Flow Guard、CET 影子栈、包完整性校验、
+  严格句柄校验、Release 构建禁用动态代码生成。
 
-## Screenshots
+## 截图
 
-![NanaZip main window, dark mode](Documents/MainWindowDarkMode.png)
-![NanaZip main window, light mode](Documents/MainWindowLightMode.png)
-![NanaZip context menu](Documents/ContextMenu.png)
+![NanaZip 主窗口，深色模式](Documents/MainWindowDarkMode.png)
+![NanaZip 主窗口，浅色模式](Documents/MainWindowLightMode.png)
+![NanaZip 右键菜单](Documents/ContextMenu.png)
 
-## Install
+## 安装
 
-Grab the latest **MSIX bundle** from the
-[Releases](https://github.com/M2Team/NanaZip/releases) page and double-click
-it, or install for the current user from PowerShell:
+从 [Releases](https://github.com/M2Team/NanaZip/releases) 页面下载最新的
+**MSIX 安装包**，双击即可安装；或在 PowerShell 中执行：
 
 ```powershell
-Add-AppxPackage -Path "path\to\NanaZip_x64.msixbundle"
+Add-AppxPackage -Path "NanaZip_x64.msixbundle 的路径"
 ```
 
-The context menu appears after installation; if it is missing, restart File
-Explorer via Task Manager.
+安装后如右键菜单未出现，请在任务管理器中重启资源管理器（explorer.exe）。
 
-## Build from source
+## 从源码构建
 
-See [BUILDING.md](BUILDING.md) for the full guide. The short version:
+完整指南见 [docs/BUILDING.md](docs/BUILDING.md)。快速开始：
 
 ```bat
-git clone --recursive https://github.com/your-fork/NanaZip.git
+git clone --recursive https://github.com/你的账号/NanaZip.git
 cd NanaZip
-BuildAllTargets.cmd
+build\BuildAllTargets.cmd
 ```
 
-Artifacts land in `Output\Binaries`. The
-[Build Binaries](.github/workflows/BuildBinaries.yml) workflow builds the same
-targets on GitHub Actions without any signing setup, so a fresh fork builds
-out of the box.
+产物输出到 `Output\Binaries`。[构建二进制](.github/workflows/BuildBinaries.yml)
+工作流在 GitHub Actions 上构建同样的目标，无需签名、无需 secrets，
+fork 后即可开箱即用（Actions 页面手动触发）。
 
-## Documentation
+## 文档
 
-- [Building from source](BUILDING.md)
-- [Release Notes](Documents/ReleaseNotes.md)
-- [Contributing](CONTRIBUTING.md)
-- [License](License.md)
-- [Security Policy](Security.md)
-- [Privacy Policy](Documents/Privacy.md)
-- [Group Policy Administrative Templates (ADMX/ADML)](Documents/PolicyDefinitions)
-- [Section 508 Accessibility Conformance Report](Documents/Section508)
+- [从源码构建](docs/BUILDING.md)
+- [发布说明](Documents/ReleaseNotes.md)
+- [贡献指南](docs/CONTRIBUTING.md)
+- [许可证](License.md)
+- [安全政策](docs/Security.md)
+- [隐私政策](Documents/Privacy.md)
+- [组策略管理模板 (ADMX/ADML)](Documents/PolicyDefinitions)
+- [Section 508 无障碍符合性报告](Documents/Section508)
 
-## License
+## 许可证
 
-NanaZip is licensed under the [MIT License](License.md).
+NanaZip 以 [MIT 许可证](License.md) 发布。
 
-NanaZip is a fork of [7-Zip] by Igor Pavlov and builds on the work of the
-[7-Zip ZS] and [7-Zip NSIS] projects. Their licenses apply to the respective
-upstream code.
+NanaZip 是 [7-Zip]（作者 Igor Pavlov）的 fork，并基于 [7-Zip ZS] 与
+[7-Zip NSIS] 项目的成果。相关上游代码适用各自的许可证。
 
 [7-Zip]: https://www.7-zip.org/
 [7-Zip ZS]: https://github.com/mcmilk/7-Zip-zstd

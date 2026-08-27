@@ -1,8 +1,11 @@
 @setlocal
 @echo off
 
-rem Change to the current folder.
-cd "%~dp0"
+rem Change to the repository root (this script lives in build\).
+cd "%~dp0.."
+
+rem Remove the output folder for a fresh compile.
+rd /s /q Output
 
 rem Initialize Visual Studio environment
 set VisualStudioInstallerFolder="%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
@@ -15,6 +18,6 @@ popd
 call "%VisualStudioInstallDir%\VC\Auxiliary\Build\vcvarsall.bat" x86
 
 rem Build all targets
-MSBuild -t:Restore BuildAllTargets.proj
+MSBuild -binaryLogger:Output\BuildAllTargets.binlog -m build\BuildAllTargets.proj
 
 @endlocal

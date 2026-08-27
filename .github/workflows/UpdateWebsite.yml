@@ -1,12 +1,7 @@
 ﻿name: Update Website
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'Documents/Website/**'
-      - '.github/workflows/UpdateWebsite.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read

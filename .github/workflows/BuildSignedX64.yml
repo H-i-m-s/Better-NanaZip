@@ -50,10 +50,10 @@ jobs:
 
     # RefreshVersion writes the version number into Package.appxmanifest.
     - name: Refresh version
-      run: MSBuild BuildAllTargets.proj -t:RefreshVersion
+      run: MSBuild build\BuildAllTargets.proj -t:RefreshVersion
 
     - name: Restore
-      run: MSBuild BuildAllTargets.proj -t:Restore
+      run: MSBuild build\BuildAllTargets.proj -t:Restore
 
     # Release x64 only. AppxBundlePlatforms=x64 overrides the x64|arm64 default
     # hard-coded in NanaZipPackage.wapproj, so the ARM code is never built.

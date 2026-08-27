@@ -1,12 +1,7 @@
 ﻿name: Update Precompiled Build Tools
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'NanaZip.Build.Tasks/**'
-      - '.github/workflows/UpdatePrecompiledBuildTools.yml'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -26,7 +21,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
     - name: Refresh the build number
       run: |
-        MSBuild -target:RefreshVersion BuildAllTargets.proj
+        MSBuild -target:RefreshVersion build\BuildAllTargets.proj
         git commit -a -m "Refresh the build number for the precompiled build tools."
     - name: Prepare the compiled build tools binaries
       run: |
