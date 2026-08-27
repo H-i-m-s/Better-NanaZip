@@ -726,13 +726,28 @@ namespace winrt::NanaZip::Modern::implementation
         this->SwitchTab(0);
         PropertiesDiagLog(L"M20 initial tab switched");
 
-        // Same width formula as SettingsPage: the tab bar is the widest
-        // established control, so the default and the minimum both follow
-        // it. Measuring the whole page at infinite width (or adding a
-        // separate pixel floor) makes the window wider than the tabs and
-        // leaves unused room on the right of every other tab.
-        this->TabBar().Measure(Inf);
-        const float TabBarW = this->TabBar().DesiredSize().Width;
+        // The property-sheet width follows the actual tab strip: measure
+        // each tab button, then add the TabBar's symmetric left/right
+        // padding. In this XAML Island, StackPanel::DesiredSize may retain a
+        // wider previous constraint, while its children keep their natural
+        // widths. Using the strip's child widths keeps the content area's
+        // right edge aligned with the last tab instead of leaving a blank
+        // tail after it.
+        double TabButtonsW = 0.0;
+        for (auto const& Tab : std::vector<winrt::Windows::UI::Xaml::Controls::Primitives::ToggleButton>{
+                this->TabGeneralButton(),
+                this->TabDetailsButton(),
+                this->TabSignatureButton(),
+                this->TabSecurityButton(),
+                this->TabVersionsButton(),
+                this->TabCustomButton() })
+        {
+            Tab.Measure(Inf);
+            TabButtonsW += Tab.DesiredSize().Width;
+        }
+        const auto TabPadding = this->TabBar().Padding();
+        const float TabBarW = static_cast<float>(
+            TabButtonsW + TabPadding.Left + TabPadding.Right);
         const float DefaultW = TabBarW;
 
         this->Measure(winrt::Windows::Foundation::Size(
@@ -1819,6 +1834,7 @@ namespace winrt::NanaZip::Modern::implementation
             return;
         }
         this->m_CurrentTab = Index;
+        PropertiesDiagLog(L"L0 SwitchTab index=%d", Index);
         this->GeneralTabPanel().Visibility(Index == 0
             ? winrt::Windows::UI::Xaml::Visibility::Visible
             : winrt::Windows::UI::Xaml::Visibility::Collapsed);
@@ -1916,6 +1932,7 @@ namespace winrt::NanaZip::Modern::implementation
         if (Index >= 0)
         {
             this->SwitchTab(Index);
+            this->LogLayoutSnapshot(L"TabButtonClick");
         }
     }
 
@@ -2608,6 +2625,60 @@ namespace winrt::NanaZip::Modern::implementation
             this->m_AttributeDirty = false;
         }
         this->ApplyButton().IsEnabled(false);
+    }
+
+    void PropertiesPage::LogLayoutSnapshot(LPCWSTR Reason)
+    {
+        auto LogElement = [](LPCWSTR Name,
+            winrt::Windows::UI::Xaml::FrameworkElement const& Element)
+        {
+            auto Margin = Element.Margin();
+            auto Desired = Element.DesiredSize();
+            auto Render = Element.RenderSize();
+            PropertiesDiagLog(
+                L"L2 %ls actual=%.1fx%.1f desired=%.1fx%.1f render=%.1fx%.1f margin=%.1f,%.1f,%.1f,%.1f align=%d",
+                Name,
+                Element.ActualWidth(),
+                Element.ActualHeight(),
+                Desired.Width,
+                Desired.Height,
+                Render.Width,
+                Render.Height,
+                Margin.Left,
+                Margin.Top,
+                Margin.Right,
+                Margin.Bottom,
+                (int)Element.HorizontalAlignment());
+        };
+
+        PropertiesDiagLog(L"L1 layout snapshot reason=%ls tab=%d",
+            Reason ? Reason : L"",
+            this->m_CurrentTab);
+        LogElement(L"Page", *this);
+        LogElement(L"TabBar", this->TabBar());
+        LogElement(L"ContentArea", this->ContentArea());
+        LogElement(L"GeneralPanel", this->GeneralTabPanel());
+        LogElement(L"CustomPanel", this->CustomTabPanel());
+        LogElement(L"CustomStatus", this->CustomStatusText());
+        LogElement(L"CustomList", this->CustomListView());
+        LogElement(L"AddCustom", this->AddCustomButton());
+        LogElement(L"EditCustom", this->EditCustomButton());
+        LogElement(L"DeleteCustom", this->DeleteCustomButton());
+        LogElement(L"TabGeneral", this->TabGeneralButton());
+        LogElement(L"TabDetails", this->TabDetailsButton());
+        LogElement(L"TabSignature", this->TabSignatureButton());
+        LogElement(L"TabSecurity", this->TabSecurityButton());
+        LogElement(L"TabVersions", this->TabVersionsButton());
+        LogElement(L"TabCustom", this->TabCustomButton());
+    }
+
+    void PropertiesPage::OnPageSizeChanged(
+        winrt::IInspectable const& sender,
+        winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e)
+    {
+        UNREFERENCED_PARAMETER(sender);
+        UNREFERENCED_PARAMETER(e);
+        this->LogLayoutSnapshot(L"Page.SizeChanged");
     }
 
     void PropertiesPage::OnPageKeyDown(

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * PROJECT:    NanaZip.Modern
  * FILE:       NanaZip.Modern.cpp
  * PURPOSE:    Implementation for NanaZip Modern Experience
@@ -753,6 +753,50 @@ EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
             PropertiesDiagLog(L"P04b SetWindowSubclass FAILED");
             ::DestroyWindow(WindowHandle);
             return -1;
+        }
+
+        // 与设置对话框的 DPI seeding 对齐：先把隐藏的宿主窗口放到目标
+        // 显示器，再测量 DPI。属性对话框没有保存矩形，目标显示器取父
+        // 窗口所在显示器，无父窗口时取窗口当前所在显示器。窗口创建在
+        // CW_USEDEFAULT 初始位置时，GetDpiForWindow 会返回系统 DPI
+        // 设置值（注册表 LogPixels）而不是显示器实际生效值，导致尺寸
+        // 换算使用错误的缩放系数，窗口在显示器上比内容宽出一截。
+        {
+            HMONITOR TargetMonitor = nullptr;
+            POINT DpiSeedPoint = {};
+            if (ParentWindowHandle)
+            {
+                TargetMonitor = ::MonitorFromWindow(
+                    ParentWindowHandle,
+                    MONITOR_DEFAULTTONEAREST);
+            }
+            if (!TargetMonitor)
+            {
+                TargetMonitor = ::MonitorFromWindow(
+                    WindowHandle,
+                    MONITOR_DEFAULTTONEAREST);
+            }
+            if (TargetMonitor)
+            {
+                MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
+                if (::GetMonitorInfoW(TargetMonitor, &MonitorInfo))
+                {
+                    DpiSeedPoint.x = MonitorInfo.rcWork.left;
+                    DpiSeedPoint.y = MonitorInfo.rcWork.top;
+                }
+            }
+            ::SetWindowPos(
+                WindowHandle,
+                nullptr,
+                DpiSeedPoint.x,
+                DpiSeedPoint.y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            PropertiesDiagLog(L"P04c DpiSeed=%ld,%ld Dpi=%u",
+                DpiSeedPoint.x,
+                DpiSeedPoint.y,
+                ::GetDpiForWindow(WindowHandle));
         }
 
         PropertiesDiagLog(L"P05 SetXamlContent enter");

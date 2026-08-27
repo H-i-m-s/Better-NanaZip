@@ -106,6 +106,10 @@ namespace winrt::NanaZip::Modern::implementation
             winrt::IInspectable const& sender,
             winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs const& e);
 
+        void OnPageSizeChanged(
+            winrt::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::SizeChangedEventArgs const& e);
+
         // Physical-pixel minimum outer size, written by PrepareForShow and
         // read by the host window subclass.
         LONG MinTrackW;
@@ -150,6 +154,7 @@ namespace winrt::NanaZip::Modern::implementation
         void RefreshDetailsFilter();
         void MarkAttributeDirty();
         void RefreshCustomButtons();
+        void LogLayoutSnapshot(LPCWSTR Reason);
 
         HWND m_WindowHandle;
         std::vector<std::wstring> m_Paths;
