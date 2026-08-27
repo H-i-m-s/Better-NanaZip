@@ -187,6 +187,9 @@ static const CContextMenuItem kMenuItems[] =
   { IDS_CONTEXT_EXTRACT, kExtract },
   { IDS_CONTEXT_EXTRACT_HERE, kExtractHere },
   { IDS_CONTEXT_EXTRACT_HERE_SMART, kExtractHereSmart },
+  // **************** SSS Modification Start ****************
+  { IDS_CONTEXT_EXTRACT_HERE_SMART_DELETE, kExtractHereSmartDelete },
+  // **************** SSS Modification End ****************
   { IDS_CONTEXT_EXTRACT_TO, kExtractTo },
 
   { IDS_CONTEXT_COMPRESS, kCompress },

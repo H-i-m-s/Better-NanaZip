@@ -407,8 +407,8 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     BOOLEAN ExtractOnOpen;
     // 0..3, 0xFFFFFFFF means "Default" (write -1 to the registry).
     UINT32 WriteZone;
-    BOOLEAN ContextFlags[13];
-    WCHAR ContextNames[13][192];
+    BOOLEAN ContextFlags[14];
+    WCHAR ContextNames[14][192];
     BOOLEAN FileContextMenuFlags[28];
     WCHAR FileContextMenuNames[28][192];
     UINT32 ZoneSel;

@@ -41,6 +41,9 @@ public:
     // **************** NanaZip Modification Start ****************
     kExtractHereSmart,
     // **************** NanaZip Modification End ****************
+    // **************** SSS Modification Start ****************
+    kExtractHereSmartDelete,
+    // **************** SSS Modification End ****************
     kExtractTo,
     kTest,
     kCompress,

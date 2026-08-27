@@ -1435,6 +1435,10 @@ static void BrowseToPath(
 // manager deletes every archive of a batch together after all extraction
 // has finished (see SssExtractAll in PanelOperations.cpp).
 extern bool g_SssNoDelete;
+// Set by the file manager via -sfd (right-click "extract here (smart) and
+// delete"): delete the archive after a successful extraction even when the
+// global DeleteAfterExtract setting is off.
+extern bool g_SssForceDelete;
 // Set by the file manager via -ssdlg for a one-by-one extraction loop:
 // initialize this dialog from the state file written by the previous
 // archive's dialog, so the user's per-run choices stay consistent.
@@ -1944,6 +1948,9 @@ HRESULT ExtractGUI(
         dialog.PathMode = options.PathMode;
         dialog.PathMode_Force = options.PathMode_Force;
         dialog.ElimDup = options.ElimDup;
+        // -sfd forces the delete even when the global DeleteAfterExtract
+        // setting is off (right-click "extract here (smart) and delete").
+        deleteAfter = deleteAfter || g_SssForceDelete;
         dialog.DeleteAfterExtract = deleteAfter;
         dialog.OpenFolder = options.OpenFolder;
         if (archivePathsFull.Size() == 1)

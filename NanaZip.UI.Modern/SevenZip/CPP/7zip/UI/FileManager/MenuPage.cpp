@@ -55,6 +55,9 @@ static const CContextMenuItem kMenuItems[] =
 // **************** NanaZip Modification Start ****************
   { IDS_CONTEXT_EXTRACT_HERE_SMART, kExtractHereSmart },
 // **************** NanaZip Modification End ****************
+// **************** SSS Modification Start ****************
+  { IDS_CONTEXT_EXTRACT_HERE_SMART_DELETE, kExtractHereSmartDelete },
+// **************** SSS Modification End ****************
   { IDS_CONTEXT_EXTRACT_TO, kExtractTo },
 
   { IDS_CONTEXT_COMPRESS, kCompress },

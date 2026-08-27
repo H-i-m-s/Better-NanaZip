@@ -681,7 +681,7 @@ static void SssShowBatchResultSummary(const UString &sessionId,
 }
 
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker, const UString &passwordSessionId)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker, const UString &passwordSessionId, bool forceDeleteAfter)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
@@ -738,9 +738,17 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   }
   // Suppress 7zG's own delete-after-extract: the batch file manager deletes
   // every archive together once the whole batch has finished (see
-  // CPanel::SssExtractAll in PanelOperations.cpp).
-  if (suppressDelete || !releaseBeforeDeleteMarker.IsEmpty())
+  // CPanel::SssExtractAll in PanelOperations.cpp). A forced delete request
+  // (right-click "extract here (smart) and delete") wins over suppression
+  // and is never combined with it.
+  if ((suppressDelete || !releaseBeforeDeleteMarker.IsEmpty()) &&
+      !forceDeleteAfter)
     params += L" -snd";
+  // SSS: right-click "extract here (smart) and delete" - ask 7zG to delete
+  // the archive after a successful extraction even when the global
+  // DeleteAfterExtract setting is off.
+  if (forceDeleteAfter)
+    params += L" -sfd";
   // SSS: carry the previous archive's dialog choices into this one
   // (one-by-one extraction loop; see ExtractGUI.cpp SssReadDlgStateFile).
   if (useDlgState)

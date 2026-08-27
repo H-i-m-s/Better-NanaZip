@@ -48,6 +48,10 @@ extern bool g_PathTrailReplaceMode;
 // -snd: suppress delete-after-extract (the file manager deletes all
 // archives of a batch together after every archive has been extracted).
 bool g_SssNoDelete = false;
+// -sfd: force delete-after-extract regardless of the global
+// DeleteAfterExtract setting (right-click "extract here (smart) and
+// delete" command).
+bool g_SssForceDelete = false;
 // -ssdlg: use the dialog-state file (written by the previous archive's
 // extract dialog) to initialize this one - keeps the user's per-run
 // choices (path, path mode, overwrite mode, checkboxes, password)
@@ -239,6 +243,7 @@ enum Enum
 
   // **************** SSS Modification Start ****************
   kNoDelete,
+  kForceDelete,
   kSSSDlgState,
   kReleaseBeforeDelete,
   kSSSPasswordSession,
@@ -406,6 +411,7 @@ static const CSwitchForm kSwitchForms[] =
   
   // **************** SSS Modification Start ****************
   { "snd", SWFRM_MINUS },
+  { "sfd", SWFRM_MINUS },
   { "ssdlg", SWFRM_MINUS },
   { "srd", SWFRM_STRING_SINGL(0) },
   { "sssid", SWFRM_STRING_SINGL(0) },
@@ -1538,6 +1544,8 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
   // **************** SSS Modification Start ****************
   if (parser[NKey::kNoDelete].ThereIs)
     g_SssNoDelete = !parser[NKey::kNoDelete].WithMinus;
+  if (parser[NKey::kForceDelete].ThereIs)
+    g_SssForceDelete = !parser[NKey::kForceDelete].WithMinus;
   if (parser[NKey::kSSSDlgState].ThereIs)
     g_SssUseDlgState = !parser[NKey::kSSSDlgState].WithMinus;
   if (parser[NKey::kReleaseBeforeDelete].ThereIs)

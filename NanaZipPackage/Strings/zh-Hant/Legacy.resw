@@ -606,6 +606,9 @@
   <data name="Resource2331" xml:space="preserve">
     <value>解壓縮至此(自動)</value>
   </data>
+  <data name="Resource2332" xml:space="preserve">
+    <value>解壓縮至此(自動)並刪除</value>
+  </data>
   <data name="Resource2400" xml:space="preserve">
     <value>資料夾</value>
   </data>

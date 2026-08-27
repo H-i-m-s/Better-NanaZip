@@ -185,6 +185,7 @@ namespace NanaZip::ShellExtension
             Extract,
             ExtractHere,
             ExtractHereSmart,
+            ExtractHereSmartDelete,
             ExtractTo,
 
             Compress,
@@ -459,6 +460,7 @@ namespace NanaZip::ShellExtension
             case CommandID::Extract:
             case CommandID::ExtractHere:
             case CommandID::ExtractHereSmart:
+            case CommandID::ExtractHereSmartDelete:
             case CommandID::ExtractTo:
             {
                 if (!NeedExtract)
@@ -468,7 +470,8 @@ namespace NanaZip::ShellExtension
 
                 std::wstring Folder = BaseFolder;
                 if (this->m_CommandID != CommandID::ExtractHere &&
-                    this->m_CommandID != CommandID::ExtractHereSmart)
+                    this->m_CommandID != CommandID::ExtractHereSmart &&
+                    this->m_CommandID != CommandID::ExtractHereSmartDelete)
                 {
                     Folder += SpecFolder;
                 }
@@ -480,7 +483,16 @@ namespace NanaZip::ShellExtension
                     ((this->m_CommandID == CommandID::ExtractTo)
                     && this->m_ElimDup.Val),
                     this->m_WriteZone,
-                    (this->m_CommandID == CommandID::ExtractHereSmart));
+                    (this->m_CommandID == CommandID::ExtractHereSmart ||
+                     this->m_CommandID == CommandID::ExtractHereSmartDelete),
+                    false, // openFolder
+                    (UInt32)(Int32)-1, // overwriteMode
+                    false, // waitFinish
+                    false, // suppressDelete
+                    false, // useDlgState
+                    UString(), // releaseBeforeDeleteMarker
+                    UString(), // passwordSessionId
+                    (this->m_CommandID == CommandID::ExtractHereSmartDelete));
 
                 break;
             }
@@ -794,6 +806,20 @@ namespace NanaZip::ShellExtension
                                 TranslatedString.Ptr(),
                                 TranslatedString.Len()),
                             CommandID::ExtractHereSmart,
+                            ContextMenuElimDup,
+                            ContextMenuWriteZone));
+                }
+
+                if (ContextMenuFlags & NContextMenuFlags::kExtractHereSmartDelete)
+                {
+                    UString TranslatedString;
+                    LangString(IDS_CONTEXT_EXTRACT_HERE_SMART_DELETE, TranslatedString);
+                    this->m_SubCommands.push_back(
+                        winrt::make<ExplorerCommandBase>(
+                            std::wstring(
+                                TranslatedString.Ptr(),
+                                TranslatedString.Len()),
+                            CommandID::ExtractHereSmartDelete,
                             ContextMenuElimDup,
                             ContextMenuWriteZone));
                 }

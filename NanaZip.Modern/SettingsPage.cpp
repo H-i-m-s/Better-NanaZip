@@ -573,7 +573,7 @@ namespace winrt::NanaZip::Modern::implementation
 
         // Context menu item checkboxes.
         MenuContextListPanel().Children().Clear();
-        for (unsigned i = 0; i < 13; i++)
+        for (unsigned i = 0; i < 14; i++)
         {
             winrt::Windows::UI::Xaml::Controls::CheckBox Item;
             Item.Content(winrt::box_value(
@@ -1296,7 +1296,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
         else
         {
-            for (unsigned i = 0; i < 13; i++)
+            for (unsigned i = 0; i < 14; i++)
             {
                 if (sender == m_MenuChecks[i])
                 {

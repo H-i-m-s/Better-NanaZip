@@ -165,7 +165,7 @@ namespace winrt::NanaZip::Modern::implementation
         // (candidate window open); Enter must not be swallowed then.
         bool m_IsImeComposing = false;
 
-        winrt::Windows::UI::Xaml::Controls::CheckBox m_MenuChecks[13];
+        winrt::Windows::UI::Xaml::Controls::CheckBox m_MenuChecks[14];
         winrt::Windows::UI::Xaml::Controls::CheckBox m_FileContextMenuChecks[28];
 
         static winrt::hstring Res(UINT32 ResourceId, LPCWSTR Fallback);

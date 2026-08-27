@@ -12,5 +12,8 @@
 // **************** NanaZip Modification Start ****************
 #define IDS_CONTEXT_EXTRACT_HERE_SMART  2331
 // **************** NanaZip Modification End ****************
+// **************** SSS Modification Start ****************
+#define IDS_CONTEXT_EXTRACT_HERE_SMART_DELETE 2332
+// **************** SSS Modification End ****************
 
 #define IDB_MENU_LOGO  190
