@@ -277,6 +277,53 @@ void CPanel::Properties()
   _folder.QueryInterface(IID_IGetFolderArcProps, &getFolderArcProps);
   if (!getFolderArcProps)
   {
+    // **************** NanaZip Modification Start ****************
+    // The shell property sheet is replaced by the XAML properties page
+    // when the Modern experience is available and this folder maps to
+    // the real file system. The system sheet stays as the fallback.
+    if (IsFsOrPureDrivesFolder() && ::K7ModernAvailable())
+    {
+      CRecordVector<UInt32> operatedIndices;
+      GetOperatedItemIndices(operatedIndices);
+      if (!operatedIndices.IsEmpty())
+      {
+        K7_FILE_PROPERTIES_DIALOG_CONTEXT context = {};
+        for (unsigned i = 0; i < operatedIndices.Size(); i++)
+        {
+          if (context.PathCount >= K7_MODERN_FILE_PROPERTIES_MAX_PATHS)
+            break;
+          // The file-system folder does not expose kpidPath; the panel
+          // computes the full path from the folder root and the relative
+          // item path.
+          UString path = GetItemFullPath(operatedIndices[i]);
+          if (path.IsEmpty())
+            continue;
+          // Truncate both ends so a very long path stays recognizable
+          // inside the fixed MAX_PATH field.
+          const size_t maxLen = MAX_PATH - 1;
+          if (path.Len() > maxLen)
+          {
+            UString head = path.Left((UInt32)(maxLen / 2));
+            UString tail = path.Mid(
+                path.Len() - (UInt32)(maxLen / 2 - 3),
+                (UInt32)(maxLen / 2 - 3));
+            path = head + L"..." + tail;
+          }
+          wcscpy_s(context.Paths[context.PathCount], MAX_PATH, (LPCWSTR)path);
+          context.PathCount++;
+        }
+        if (context.PathCount > 0)
+        {
+          if (::K7ModernShowFilePropertiesDialog(
+            this->GetParent(),
+            &context) != -1)
+          {
+            return;
+          }
+        }
+      }
+    }
+    // **************** NanaZip Modification End ****************
     InvokeSystemCommand("properties");
     return;
   }

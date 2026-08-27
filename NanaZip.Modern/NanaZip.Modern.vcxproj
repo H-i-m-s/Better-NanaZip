@@ -50,7 +50,7 @@
       <PreprocessorDefinitions>WINRT_NO_SOURCE_LOCATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>runtimeobject.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>runtimeobject.lib;wbemuuid.lib;shlwapi.lib;propsys.lib;wintrust.lib;crypt32.lib;aclui.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -70,6 +70,9 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="InformationPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="PropertiesPage.xaml">
       <SubType>Designer</SubType>
     </Page>
     <Page Include="ProgressPage.xaml">
@@ -132,6 +135,10 @@
     </Midl>
     <Midl Include="InformationPage.idl">
       <DependentUpon>InformationPage.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Midl>
+    <Midl Include="PropertiesPage.idl">
+      <DependentUpon>PropertiesPage.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Midl>
     <Midl Include="ProgressPage.idl">
@@ -200,6 +207,10 @@
     </ClInclude>
     <ClInclude Include="InformationPage.h">
       <DependentUpon>InformationPage.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </ClInclude>
+    <ClInclude Include="PropertiesPage.h">
+      <DependentUpon>PropertiesPage.xaml</DependentUpon>
       <SubType>Code</SubType>
     </ClInclude>
     <ClInclude Include="NanaZip.Modern.h" />
@@ -272,6 +283,10 @@
     </ClCompile>
     <ClCompile Include="InformationPage.cpp">
       <DependentUpon>InformationPage.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </ClCompile>
+    <ClCompile Include="PropertiesPage.cpp">
+      <DependentUpon>PropertiesPage.xaml</DependentUpon>
       <SubType>Code</SubType>
     </ClCompile>
     <ClCompile Include="pch.cpp" />

@@ -292,6 +292,32 @@ EXTERN_C INT WINAPI K7ModernShowInformationDialog(
     return -1;
 }
 
+EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _In_ PK7_FILE_PROPERTIES_DIALOG_CONTEXT Context)
+{
+    using ProcType = decltype(::K7ModernShowFilePropertiesDialog)*;
+
+    static ProcType ProcAddress = reinterpret_cast<ProcType>([]() -> FARPROC
+    {
+        HMODULE ModuleHandle = ::GetNanaZipModernModuleHandle();
+        if (ModuleHandle)
+        {
+            return ::GetProcAddress(
+                ModuleHandle,
+                "K7ModernShowFilePropertiesDialog");
+        }
+        return nullptr;
+    }());
+
+    if (ProcAddress)
+    {
+        return ProcAddress(ParentWindowHandle, Context);
+    }
+
+    return -1;
+}
+
 EXTERN_C VOID WINAPI K7ModernUpdateProgressWindowStatus(
     _In_ HWND WindowHandle,
     _In_ PK7_PROGRESS_WINDOW_STATUS Status)

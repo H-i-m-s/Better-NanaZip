@@ -1,0 +1,553 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NanaZip.Modern.PropertiesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    IsTextScaleFactorEnabled="False"
+    KeyDown="OnPageKeyDown"
+    PreviewKeyDown="OnPageKeyDown"
+    Background="Transparent">
+
+    <Page.Resources>
+        <!-- Details tab: property name / value two-column list -->
+        <DataTemplate x:Key="DetailItemTemplate">
+            <Grid Padding="6,4,6,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="240" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Text="{Binding Name}"
+                    TextWrapping="Wrap"
+                    FontWeight="SemiBold" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding Value}"
+                    TextWrapping="Wrap"
+                    Margin="14,0,0,0" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- Signature tab: signer + status + detail -->
+        <DataTemplate x:Key="SignatureItemTemplate">
+            <StackPanel Padding="6,4,6,4">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock
+                        Text="{Binding Signer}"
+                        FontWeight="SemiBold"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        Text="{Binding Status}"
+                        Margin="10,0,0,0"
+                        Opacity="0.75"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock
+                    Text="{Binding Detail}"
+                    TextWrapping="Wrap"
+                    FontSize="12"
+                    Opacity="0.6"
+                    Margin="0,2,0,0" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Security tab: principal + permission summary -->
+        <DataTemplate x:Key="SecurityItemTemplate">
+            <Grid Padding="6,4,6,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="220" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Text="{Binding Name}"
+                    TextWrapping="Wrap"
+                    FontWeight="SemiBold" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding Access}"
+                    TextWrapping="Wrap"
+                    Margin="14,0,0,0" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- Previous versions tab: time + location -->
+        <DataTemplate x:Key="VersionItemTemplate">
+            <StackPanel Padding="6,4,6,4">
+                <TextBlock
+                    Text="{Binding Time}"
+                    FontWeight="SemiBold"
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    Text="{Binding Location}"
+                    TextWrapping="Wrap"
+                    FontSize="12"
+                    Opacity="0.6"
+                    Margin="0,2,0,0" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Custom tab: property name + type + value -->
+        <DataTemplate x:Key="CustomPropertyItemTemplate">
+            <Grid Padding="6,4,6,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Text="{Binding Name}"
+                    TextWrapping="Wrap"
+                    FontWeight="SemiBold" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding Type}"
+                    Opacity="0.7"
+                    Margin="14,0,0,0" />
+                <TextBlock
+                    Grid.Column="2"
+                    Text="{Binding Value}"
+                    TextWrapping="Wrap"
+                    Margin="14,0,0,0" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="14,12,14,12">
+        <Grid.RowDefinitions>
+            <!-- Header, tab bar, content, button row. The button row stays
+                 reachable when the window is short. -->
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Header: large icon + name + type ============ -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Image
+                x:Name="HeaderIconImage"
+                Width="48"
+                Height="48"
+                Margin="0,0,14,0"
+                VerticalAlignment="Top" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                <TextBlock
+                    x:Name="HeaderNameText"
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    TextWrapping="Wrap"
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    x:Name="HeaderTypeText"
+                    FontSize="13"
+                    Opacity="0.7"
+                    Margin="0,2,0,0"
+                    TextWrapping="Wrap"
+                    TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ============ Tab bar (mimics the property sheet tabs) ============ -->
+        <StackPanel
+            x:Name="TabBar"
+            Grid.Row="1"
+            Orientation="Horizontal"
+            Padding="12,8,12,0"
+            Margin="0,0,0,6">
+            <ToggleButton
+                x:Name="TabGeneralButton"
+                Padding="12,4"
+                Margin="0,0,4,0"
+                Click="TabButtonClick" />
+            <ToggleButton
+                x:Name="TabDetailsButton"
+                Padding="12,4"
+                Margin="0,0,4,0"
+                Click="TabButtonClick" />
+            <ToggleButton
+                x:Name="TabSignatureButton"
+                Padding="12,4"
+                Margin="0,0,4,0"
+                Click="TabButtonClick" />
+            <ToggleButton
+                x:Name="TabSecurityButton"
+                Padding="12,4"
+                Margin="0,0,4,0"
+                Click="TabButtonClick" />
+            <ToggleButton
+                x:Name="TabVersionsButton"
+                Padding="12,4"
+                Margin="0,0,4,0"
+                Click="TabButtonClick" />
+            <ToggleButton
+                x:Name="TabCustomButton"
+                Padding="12,4"
+                Margin="0,0,4,0"
+                Click="TabButtonClick" />
+        </StackPanel>
+
+        <!-- ============ Content area ============ -->
+        <Grid Grid.Row="2">
+            <Border
+                BorderBrush="{ThemeResource CardStrokeColorDefault}"
+                BorderThickness="0,1,0,0" />
+
+            <!-- General tab -->
+            <ScrollViewer
+                x:Name="GeneralTabPanel"
+                ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <StackPanel Padding="2,10,2,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="类型"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralTypeValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="位置"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralLocationValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="大小"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralSizeValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="占用空间"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralAllocSizeValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="创建时间"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralCreatedValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="修改时间"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralModifiedValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Text="访问时间"
+                            Opacity="0.75" />
+                        <TextBlock
+                            x:Name="GeneralAccessedValueText"
+                            Grid.Column="1"
+                            TextWrapping="Wrap"
+                            Margin="14,0,0,6" />
+                    </Grid>
+
+                    <Border
+                        Height="1"
+                        Background="{ThemeResource CardStrokeColorDefault}"
+                        Margin="0,12,0,10" />
+
+                    <TextBlock
+                        Text="属性"
+                        FontWeight="SemiBold"
+                        Margin="0,0,0,8" />
+                    <CheckBox
+                        x:Name="GeneralReadOnlyCheck"
+                        Content="只读"
+                        Margin="0,0,0,6"
+                        Click="OnReadOnlyCheckClicked" />
+                    <CheckBox
+                        x:Name="GeneralHiddenCheck"
+                        Content="隐藏"
+                        Click="OnHiddenCheckClicked" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Details tab -->
+            <Grid
+                x:Name="DetailsTabPanel"
+                Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBox
+                    x:Name="DetailsSearchBox"
+                    Margin="0,10,0,8"
+                    PlaceholderText="搜索属性"
+                    TextChanged="OnDetailsSearchChanged" />
+                <ListView
+                    x:Name="DetailsListView"
+                    Grid.Row="1"
+                    ItemTemplate="{StaticResource DetailItemTemplate}"
+                    SelectionMode="None" />
+            </Grid>
+
+            <!-- Digital signature tab -->
+            <Grid
+                x:Name="SignatureTabPanel"
+                Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    x:Name="SignatureStatusText"
+                    Margin="0,10,0,8"
+                    TextWrapping="Wrap" />
+                <ListView
+                    x:Name="SignatureListView"
+                    Grid.Row="1"
+                    ItemTemplate="{StaticResource SignatureItemTemplate}"
+                    SelectionMode="None" />
+            </Grid>
+
+            <!-- Security tab -->
+            <Grid
+                x:Name="SecurityTabPanel"
+                Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    x:Name="SecurityOwnerText"
+                    Margin="0,10,0,8"
+                    TextWrapping="Wrap" />
+                <Grid
+                    Grid.Row="1"
+                    Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="220" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Text="用户或组"
+                        Opacity="0.75" />
+                    <TextBlock
+                        Grid.Column="1"
+                        Text="权限"
+                        Margin="14,0,0,0"
+                        Opacity="0.75" />
+                </Grid>
+                <ListView
+                    x:Name="SecurityListView"
+                    Grid.Row="2"
+                    ItemTemplate="{StaticResource SecurityItemTemplate}"
+                    SelectionMode="None" />
+                <StackPanel
+                    Grid.Row="3"
+                    Orientation="Horizontal"
+                    Margin="0,8,0,0">
+                    <Button
+                        x:Name="SecurityAdvancedButton"
+                        MinWidth="110"
+                        Content="高级设置"
+                        Click="OnSecurityAdvancedClicked" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Previous versions tab -->
+            <Grid
+                x:Name="VersionsTabPanel"
+                Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    x:Name="VersionsStatusText"
+                    Margin="0,10,0,8"
+                    TextWrapping="Wrap" />
+                <ListView
+                    x:Name="VersionsListView"
+                    Grid.Row="1"
+                    ItemTemplate="{StaticResource VersionItemTemplate}"
+                    SelectionChanged="OnVersionSelectionChanged" />
+                <StackPanel
+                    Grid.Row="2"
+                    Orientation="Horizontal"
+                    Margin="0,8,0,0">
+                    <Button
+                        x:Name="OpenVersionButton"
+                        MinWidth="88"
+                        Content="打开"
+                        IsEnabled="False"
+                        Click="OnOpenVersionClicked" />
+                    <Button
+                        x:Name="CopyVersionButton"
+                        MinWidth="88"
+                        Margin="6,0,0,0"
+                        Content="复制"
+                        IsEnabled="False"
+                        Click="OnCopyVersionClicked" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Custom tab -->
+            <Grid
+                x:Name="CustomTabPanel"
+                Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    x:Name="CustomStatusText"
+                    Margin="0,10,0,8"
+                    TextWrapping="Wrap" />
+                <ListView
+                    x:Name="CustomListView"
+                    Grid.Row="1"
+                    ItemTemplate="{StaticResource CustomPropertyItemTemplate}"
+                    SelectionChanged="OnCustomSelectionChanged" />
+                <StackPanel
+                    Grid.Row="2"
+                    Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Button
+                            x:Name="AddCustomButton"
+                            MinWidth="88"
+                            Content="添加"
+                            Click="OnAddCustomClicked" />
+                        <Button
+                            x:Name="EditCustomButton"
+                            MinWidth="88"
+                            Margin="6,0,0,0"
+                            Content="编辑"
+                            IsEnabled="False"
+                            Click="OnEditCustomClicked" />
+                        <Button
+                            x:Name="DeleteCustomButton"
+                            MinWidth="88"
+                            Margin="6,0,0,0"
+                            Content="删除"
+                            IsEnabled="False"
+                            Click="OnDeleteCustomClicked" />
+                    </StackPanel>
+                    <StackPanel
+                        x:Name="CustomEditPanel"
+                        Visibility="Collapsed"
+                        Margin="0,10,0,0">
+                        <ComboBox
+                            x:Name="CustomNameCombo"
+                            Margin="0,0,0,6"
+                            HorizontalAlignment="Stretch" />
+                        <ComboBox
+                            x:Name="CustomTypeCombo"
+                            Margin="0,0,0,6"
+                            HorizontalAlignment="Stretch" />
+                        <TextBox
+                            x:Name="CustomValueBox"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Stretch" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button
+                                x:Name="CustomEditOkButton"
+                                MinWidth="88"
+                                Content="确定"
+                                Click="OnCustomEditOkClicked" />
+                            <Button
+                                x:Name="CustomEditCancelButton"
+                                MinWidth="88"
+                                Margin="6,0,0,0"
+                                Content="取消"
+                                Click="OnCustomEditCancelClicked" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- ============ Button row ============ -->
+        <StackPanel
+            Grid.Row="3"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            Margin="0,10,0,0">
+            <Button
+                x:Name="OkButton"
+                x:Uid="/NanaZip.Modern/Common/OKButton"
+                MinWidth="88"
+                Click="OnOkClicked" />
+            <Button
+                x:Name="CancelButton"
+                x:Uid="/NanaZip.Modern/Common/CancelButton"
+                MinWidth="88"
+                Margin="6,0,0,0"
+                Click="OnCancelClicked" />
+            <Button
+                x:Name="ApplyButton"
+                MinWidth="88"
+                Margin="6,0,0,0"
+                Content="应用"
+                IsEnabled="False"
+                Click="OnApplyClicked" />
+        </StackPanel>
+    </Grid>
+</Page>

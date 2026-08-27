@@ -107,6 +107,50 @@ EXTERN_C INT WINAPI K7ModernShowInformationDialog(
     _In_opt_ LPCWSTR Content);
 
 /**
+ * @brief The maximum number of items whose properties can be shown in the
+ *        file properties dialog. It matches the shell's practical limit.
+ */
+#define K7_MODERN_FILE_PROPERTIES_MAX_PATHS 32
+
+/**
+ * @brief The file properties dialog context. It carries only the selected
+ *        item paths; all property data is collected inside the XAML page
+ *        through Windows interfaces (IPropertyStore, WinVerifyTrust,
+ *        GetNamedSecurityInfo, WMI) so no 7-Zip business object crosses the
+ *        DLL boundary.
+ */
+typedef struct _K7_FILE_PROPERTIES_DIALOG_CONTEXT
+{
+    /**
+     * @brief The number of valid entries in the Paths array. Zero means the
+     *        caller did not fill the context.
+     */
+    UINT32 PathCount;
+
+    /**
+     * @brief The full paths of the selected items. Entries beyond PathCount
+     *        are undefined.
+     */
+    WCHAR Paths[K7_MODERN_FILE_PROPERTIES_MAX_PATHS][MAX_PATH];
+} K7_FILE_PROPERTIES_DIALOG_CONTEXT, *PK7_FILE_PROPERTIES_DIALOG_CONTEXT;
+
+/**
+ * @brief Show the file properties dialog (an XAML re-implementation of the
+ *        shell property sheet with General, Details, Digital Signatures,
+ *        Security, Previous Versions and Custom tabs).
+ * @param ParentWindowHandle A handle to the owner window of the dialog to be
+ *                           created. If this parameter is nullptr, the dialog
+ *                           has no owner window.
+ * @param Context The selected item paths. The page reads the paths during
+ *                construction and does not keep the pointer afterwards.
+ * @return The message loop exit code of the dialog, or -1 when the dialog
+ *         could not be created.
+ */
+EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _In_ PK7_FILE_PROPERTIES_DIALOG_CONTEXT Context);
+
+/**
  * @brief The progress window status structure.
  */
 typedef struct _K7_PROGRESS_WINDOW_STATUS

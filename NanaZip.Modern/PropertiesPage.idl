@@ -1,0 +1,44 @@
+namespace NanaZip.Modern
+{
+    [default_interface]
+    runtimeclass PropertiesPage : Windows.UI.Xaml.Controls.Page
+    {
+    }
+
+    [default_interface]
+    runtimeclass PropertyDetailItem
+    {
+        String Name;
+        String Value;
+    }
+
+    [default_interface]
+    runtimeclass SignatureItem
+    {
+        String Signer;
+        String Status;
+        String Detail;
+    }
+
+    [default_interface]
+    runtimeclass SecurityItem
+    {
+        String Name;
+        String Access;
+    }
+
+    [default_interface]
+    runtimeclass VersionItem
+    {
+        String Time;
+        String Location;
+    }
+
+    [default_interface]
+    runtimeclass CustomPropertyItem
+    {
+        String Name;
+        String Type;
+        String Value;
+    }
+}

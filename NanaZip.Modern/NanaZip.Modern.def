@@ -11,6 +11,7 @@ K7ModernUninitialize
 K7ModernShowSponsorDialog
 K7ModernShowAboutDialog
 K7ModernShowInformationDialog
+K7ModernShowFilePropertiesDialog
 K7ModernUpdateProgressWindowStatus
 K7ModernSetProgressWindowPausedMode
 K7ModernShowProgressWindow

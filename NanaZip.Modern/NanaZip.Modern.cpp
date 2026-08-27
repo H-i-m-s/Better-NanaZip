@@ -23,6 +23,7 @@
 #include "CompressPage.h"
 #include "OverwritePage.h"
 #include "InformationPage.h"
+#include "PropertiesPage.h"
 #include "ProgressPage.h"
 #include "CopyLocationPage.h"
 #include "SettingsPage.h"
@@ -41,6 +42,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <string>
 #include <map>
 
 namespace winrt
@@ -585,6 +587,301 @@ EXTERN_C INT WINAPI K7ModernShowInformationDialog(
         ParentWindowHandle);
 
     return Result;
+}
+
+EXTERN_C INT WINAPI K7ModernShowFilePropertiesDialog(
+    _In_opt_ HWND ParentWindowHandle,
+    _In_ PK7_FILE_PROPERTIES_DIALOG_CONTEXT Context)
+{
+    // Diagnostics: every phase is timestamped into
+    // %TEMP%\k7properties_diag.log; the last line before a hang or a
+    // fallback identifies the failing call.
+    static auto PropertiesDiagLog = [](LPCWSTR Format, ...) -> void
+    {
+        wchar_t Buffer[1024] = {};
+        va_list Args;
+        va_start(Args, Format);
+        (void)_vsnwprintf_s(
+            Buffer,
+            1024,
+            _TRUNCATE,
+            Format,
+            Args);
+        va_end(Args);
+
+        SYSTEMTIME Time = {};
+        ::GetLocalTime(&Time);
+        const DWORD ThreadId = ::GetCurrentThreadId();
+
+        wchar_t TempPath[MAX_PATH] = {};
+        DWORD TempLen = ::GetEnvironmentVariableW(
+            L"TEMP",
+            TempPath,
+            MAX_PATH);
+        if (TempLen == 0 || TempLen >= MAX_PATH)
+        {
+            (void)wcscpy_s(TempPath, L"C:\\Windows\\Temp");
+        }
+        std::wstring LogPath = std::wstring(TempPath) +
+            L"\\k7properties_diag.log";
+
+        FILE* File = nullptr;
+        if (_wfopen_s(&File, LogPath.c_str(), L"a, ccs=UTF-8") == 0 && File)
+        {
+            (void)fwprintf(
+                File,
+                L"[%02u:%02u:%02u.%03u T%u] %s\n",
+                Time.wHour,
+                Time.wMinute,
+                Time.wSecond,
+                Time.wMilliseconds,
+                ThreadId,
+                Buffer);
+            (void)fclose(File);
+        }
+        ::OutputDebugStringW(Buffer);
+    };
+
+    PropertiesDiagLog(
+        L"P01 ShowFilePropertiesDialog enter (paths=%u, parent=%p)",
+        Context ? Context->PathCount : 0,
+        ParentWindowHandle);
+
+    HWND WindowHandle = ::K7ModernCreateXamlDialog(ParentWindowHandle);
+    if (!WindowHandle)
+    {
+        PropertiesDiagLog(L"P02 CreateXamlDialog FAILED");
+        return -1;
+    }
+    PropertiesDiagLog(L"P02 CreateXamlDialog ok (hwnd=%p)",
+        WindowHandle);
+
+    // The dialog font is configured by the user; the page must not touch
+    // the registry, so the host reads it once and passes the value in.
+    UINT32 FontSizeDialog = 0;
+    {
+        HKEY Key = nullptr;
+        if (::RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            L"Software\\NanaZip\\Options",
+            0,
+            KEY_READ,
+            &Key) == ERROR_SUCCESS)
+        {
+            DWORD Value = 0;
+            DWORD Size = sizeof(Value);
+            if (::RegQueryValueExW(
+                Key,
+                L"FontSizeDialog",
+                nullptr,
+                nullptr,
+                reinterpret_cast<LPBYTE>(&Value),
+                &Size) == ERROR_SUCCESS)
+            {
+                FontSizeDialog = Value;
+            }
+            ::RegCloseKey(Key);
+        }
+    }
+    PropertiesDiagLog(L"P03 font size=%u", FontSizeDialog);
+
+    using Interface =
+        winrt::NanaZip::Modern::PropertiesPage;
+    using Implementation =
+        winrt::NanaZip::Modern::implementation::PropertiesPage;
+
+    try
+    {
+        Interface Window = winrt::make<Implementation>(
+            WindowHandle,
+            Context,
+            FontSizeDialog);
+        auto Self = winrt::get_self<Implementation>(Window);
+        PropertiesDiagLog(L"P04 page created");
+
+        ::MileAllowNonClientDefaultDrawingForWindow(WindowHandle, FALSE);
+
+        // The property sheet is resizable like the shell one.
+        {
+            LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+            Style |= WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
+            ::SetWindowLongPtrW(WindowHandle, GWL_STYLE, Style);
+        }
+
+        if (!::SetWindowSubclass(
+            WindowHandle,
+            [](
+                _In_ HWND hWnd,
+                _In_ UINT uMsg,
+                _In_ WPARAM wParam,
+                _In_ LPARAM lParam,
+                _In_ UINT_PTR uIdSubclass,
+                _In_ DWORD_PTR dwRefData) -> LRESULT
+        {
+            UNREFERENCED_PARAMETER(uIdSubclass);
+            if (uMsg == WM_GETMINMAXINFO)
+            {
+                LRESULT Result = ::DefSubclassProc(
+                    hWnd,
+                    uMsg,
+                    wParam,
+                    lParam);
+                const LONG *MinTrack = reinterpret_cast<const LONG *>(dwRefData);
+                if (MinTrack && MinTrack[0] > 0 && MinTrack[1] > 0)
+                {
+                    MINMAXINFO *MinMaxInfo =
+                        reinterpret_cast<MINMAXINFO *>(lParam);
+                    MinMaxInfo->ptMinTrackSize.x = MinTrack[0];
+                    MinMaxInfo->ptMinTrackSize.y = MinTrack[1];
+                }
+                return Result;
+            }
+            else if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE)
+            {
+                ::PostMessageW(hWnd, WM_CLOSE, 0, 0);
+                return 0;
+            }
+            return ::DefSubclassProc(
+                hWnd,
+                uMsg,
+                wParam,
+                lParam);
+        },
+            1,
+            reinterpret_cast<DWORD_PTR>(&Self->MinTrackW)))
+        {
+            PropertiesDiagLog(L"P04b SetWindowSubclass FAILED");
+            ::DestroyWindow(WindowHandle);
+            return -1;
+        }
+
+        PropertiesDiagLog(L"P05 SetXamlContent enter");
+        if (FAILED(::MileXamlSetXamlContentForContentWindow(
+            WindowHandle,
+            winrt::get_abi(Window))))
+        {
+            PropertiesDiagLog(L"P05 SetXamlContent FAILED");
+            ::DestroyWindow(WindowHandle);
+            return -1;
+        }
+        PropertiesDiagLog(L"P05 SetXamlContent ok");
+
+        if (ParentWindowHandle)
+        {
+            ::EnableWindow(ParentWindowHandle, FALSE);
+        }
+
+        PropertiesDiagLog(L"P07 PrepareForShow enter");
+        winrt::Windows::Foundation::Size Desired(640, 560);
+        Desired = Self->PrepareForShow();
+        PropertiesDiagLog(L"P08 PrepareForShow ok (%.0fx%.0f)",
+            Desired.Width,
+            Desired.Height);
+
+        const UINT Dpi = ::GetDpiForWindow(WindowHandle);
+        const float Scale = (float)Dpi / (float)USER_DEFAULT_SCREEN_DPI;
+
+        // ClientW / ClientH are physical pixels here because they are
+        // passed on through InitialRect to K7ModernShowXamlWindow, which
+        // applies no further scaling when an initial rectangle is given.
+        // Therefore the work-area caps must also be physical; dividing by
+        // Scale (the DIP-style clamp used by dialogs that pass bare
+        // client sizes) would shrink the window to a fraction of the
+        // screen on high-DPI displays.
+        int ClientW = (int)(Desired.Width * Scale + 0.5f);
+        int ClientH = (int)(Desired.Height * Scale + 0.5f);
+        {
+            const int MinW = (int)(480.0f * Scale + 0.5f);
+            const int MinH = (int)(420.0f * Scale + 0.5f);
+            if (ClientW < MinW) ClientW = MinW;
+            if (ClientH < MinH) ClientH = MinH;
+        }
+
+        RECT ParentRect = {};
+        if (ParentWindowHandle)
+        {
+            ::GetWindowRect(ParentWindowHandle, &ParentRect);
+        }
+        else
+        {
+            HMONITOR MonitorHandle = ::MonitorFromWindow(
+                WindowHandle,
+                MONITOR_DEFAULTTONEAREST);
+            if (MonitorHandle)
+            {
+                MONITORINFO MonitorInfo;
+                MonitorInfo.cbSize = sizeof(MONITORINFO);
+                if (::GetMonitorInfoW(MonitorHandle, &MonitorInfo))
+                {
+                    ParentRect = MonitorInfo.rcWork;
+                }
+            }
+        }
+        if (ParentRect.right > ParentRect.left)
+        {
+            const int WorkW = ParentRect.right - ParentRect.left - 48;
+            if (ClientW > WorkW)
+            {
+                ClientW = WorkW;
+            }
+            const int WorkH = ParentRect.bottom - ParentRect.top - 48;
+            if (ClientH > WorkH)
+            {
+                ClientH = WorkH;
+            }
+        }
+        if (ClientW > 1600) ClientW = 1600;
+        if (ClientH > 1200) ClientH = 1200;
+
+        RECT rc = { 0, 0, ClientW, ClientH };
+        {
+            const LONG_PTR Style = ::GetWindowLongPtrW(WindowHandle, GWL_STYLE);
+            const LONG_PTR ExStyle = ::GetWindowLongPtrW(WindowHandle, GWL_EXSTYLE);
+            ::AdjustWindowRectEx(&rc, (DWORD)Style, FALSE, (DWORD)ExStyle);
+        }
+
+        const int WindowW = rc.right - rc.left;
+        const int WindowH = rc.bottom - rc.top;
+        const int PosX = ParentRect.left +
+            ((ParentRect.right - ParentRect.left - WindowW) / 2);
+        const int PosY = ParentRect.top +
+            ((ParentRect.bottom - ParentRect.top - WindowH) / 2);
+        RECT InitialRect = { PosX, PosY, PosX + WindowW, PosY + WindowH };
+
+        PropertiesDiagLog(L"P09 ShowXamlWindow enter (%d x %d)",
+            ClientW, ClientH);
+        int Result = ::K7ModernShowXamlWindow(
+            WindowHandle,
+            ClientW,
+            ClientH,
+            ParentWindowHandle,
+            &InitialRect);
+        PropertiesDiagLog(L"P10 ShowXamlWindow exit (result=%d)",
+            Result);
+        return Result;
+    }
+    catch (winrt::hresult_error const& Error)
+    {
+        PropertiesDiagLog(L"P99 EXCEPTION 0x%08X: %ls",
+            (UINT32)Error.code().value,
+            Error.message().c_str());
+        if (ParentWindowHandle)
+        {
+            ::EnableWindow(ParentWindowHandle, TRUE);
+        }
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
+    catch (...)
+    {
+        PropertiesDiagLog(L"P99 UNKNOWN EXCEPTION");
+        if (ParentWindowHandle)
+        {
+            ::EnableWindow(ParentWindowHandle, TRUE);
+        }
+        ::DestroyWindow(WindowHandle);
+        return -1;
+    }
 }
 
 EXTERN_C VOID WINAPI K7ModernUpdateProgressWindowStatus(

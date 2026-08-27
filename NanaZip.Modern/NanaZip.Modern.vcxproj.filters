@@ -44,6 +44,7 @@
     <Page Include="AddressBarTemplate.xaml" />
     <Page Include="StatusBarTemplate.xaml" />
     <Page Include="InformationPage.xaml" />
+    <Page Include="PropertiesPage.xaml" />
     <Page Include="ProgressPage.xaml" />
     <Page Include="CopyLocationPage.xaml" />
     <Page Include="OverwritePage.xaml" />
