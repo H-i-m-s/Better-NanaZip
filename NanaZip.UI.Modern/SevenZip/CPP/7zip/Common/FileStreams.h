@@ -84,6 +84,16 @@ public:
     return File.Open(fileName);
   }
 
+  // **************** SSS Modification Start ****************
+  // Allow another process to delete the archive while this stream stays
+  // open (FILE_SHARE_DELETE); see CInFile::Open_AllowDelete.
+  bool Open_AllowDelete(CFSTR fileName)
+  {
+    _info_WasLoaded = false;
+    return File.Open_AllowDelete(fileName);
+  }
+  // **************** SSS Modification End ****************
+
   bool OpenShared(CFSTR fileName, bool shareForWrite)
   {
     _info_WasLoaded = false;

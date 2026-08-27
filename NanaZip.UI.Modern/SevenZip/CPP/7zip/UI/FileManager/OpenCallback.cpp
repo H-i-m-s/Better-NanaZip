@@ -159,7 +159,10 @@ STDMETHODIMP COpenArchiveCallback::GetStream(const wchar_t *name, IInStream **in
     return S_FALSE;
   CInFileStream *inFile = new CInFileStream;
   CMyComPtr<IInStream> inStreamTemp = inFile;
-  if (!inFile->Open(fullPath))
+  // SSS: open with FILE_SHARE_DELETE so an extraction launched from
+  // Explorer can delete this archive while the File Manager is still
+  // browsing it.
+  if (!inFile->Open_AllowDelete(fullPath))
     return ::GetLastError();
   *inStream = inStreamTemp.Detach();
   return S_OK;

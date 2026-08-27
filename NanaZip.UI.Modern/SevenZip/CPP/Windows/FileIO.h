@@ -253,6 +253,18 @@ public:
   bool OpenShared(CFSTR fileName, bool shareForWrite);
   bool Open(CFSTR fileName);
 
+  // **************** SSS Modification Start ****************
+  // Open for reading while allowing other processes to delete the file
+  // (FILE_SHARE_DELETE). The File Manager uses this when browsing an
+  // archive so an extraction launched from Explorer can still remove the
+  // archive afterwards (OpenCallback.cpp / SssBatchFolder.cpp).
+  bool Open_AllowDelete(CFSTR fileName)
+  {
+    return Open(fileName, FILE_SHARE_READ | FILE_SHARE_DELETE,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL);
+  }
+  // **************** SSS Modification End ****************
+
   #ifndef UNDER_CE
 
   bool Open_for_ReadAttributes(CFSTR fileName)

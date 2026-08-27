@@ -158,7 +158,9 @@ STDMETHODIMP CSssBatchFolder::BindToFolder(UInt32 index, IFolderFolder **resultF
   CMyComPtr<IInStream> inStream;
   CInFileStream *inStreamSpec = new CInFileStream;
   inStream = inStreamSpec;
-  if (!inStreamSpec->Open(us2fs(_paths[index])))
+  // SSS: open with FILE_SHARE_DELETE so an extraction launched from
+  // Explorer can delete this archive while the batch window still holds it.
+  if (!inStreamSpec->Open_AllowDelete(us2fs(_paths[index])))
     return E_FAIL;
   CArchiveFolderManager manager;
   CMyComPtr<IFolderFolder> folder;
