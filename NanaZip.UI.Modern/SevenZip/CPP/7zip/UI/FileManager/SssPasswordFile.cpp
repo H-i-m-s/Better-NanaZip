@@ -285,8 +285,8 @@ void SssApiConfig::Clear()
   SigningKey.Empty();
   PackageName.Empty();
   Fingerprint.Empty();
-  ProtocolVersion = L"2.2.3";
-  TimeoutSeconds = 5;
+  ProtocolVersion.Empty();
+  TimeoutSeconds = 0;
 }
 
 bool SssApiConfig::IsComplete() const
@@ -361,7 +361,11 @@ bool SssSaveApiConfig(const SssApiConfig &cfg)
         return false;
     }
     else if (k == 6) value = cfg.ProtocolVersion;
-    else value.Add_UInt32(cfg.TimeoutSeconds);
+    else
+    {
+      if (cfg.TimeoutSeconds != 0)
+        value.Add_UInt32(cfg.TimeoutSeconds);
+    }
     if (k != 0)
       text += L"\r\n";
     text += kApiKeys[k];

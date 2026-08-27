@@ -34,7 +34,7 @@ bool SssLoadPasswordBook(SssPasswordBook &book);
 bool SssSavePasswordBook(const UStringVector &lines);
 
 // ---- API 配置 api_config.txt ----
-// 六项 key=value，UTF-8；默认全空白不硬编码；懒创建
+// 八项 key=value，UTF-8；默认全空白不硬编码；懒创建
 struct SssApiConfig
 {
   UString Url;         // CloudApiUrl
@@ -43,8 +43,8 @@ struct SssApiConfig
   UString SigningKey;  // CloudSigningKey
   UString PackageName; // CloudPackageName
   UString Fingerprint; // CloudFingerprint
-  UString ProtocolVersion; // CloudProtocolVersion, default 2.2.3
-  UInt32 TimeoutSeconds; // CloudTimeoutSeconds, default 5
+  UString ProtocolVersion; // CloudProtocolVersion; empty = 请求时用协议常量
+  UInt32 TimeoutSeconds; // CloudTimeoutSeconds; 0 = 未设置（请求时用协议默认）
 
   SssApiConfig() { Clear(); }
   void Clear();

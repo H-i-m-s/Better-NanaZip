@@ -471,8 +471,8 @@ static std::map<std::wstring, std::shared_ptr<SssPrefetchResult>>
 static std::atomic<bool> g_PrefetchStopped{false};
 
 // Upper bound on how long the extract thread waits for a prefetch
-// verdict. The cloud lookup honors CloudTimeoutSeconds (4s by default)
-// and the pipe read is bounded, so a verdict normally arrives in a few
+// verdict. The cloud lookup honors CloudTimeoutSeconds (5s default when
+// unset) and the pipe read is bounded, so a verdict normally arrives in a few
 // seconds; this timeout only guards against a stuck prefetch worker.
 static constexpr std::chrono::milliseconds kPrefetchVerdictTimeout(30000);
 

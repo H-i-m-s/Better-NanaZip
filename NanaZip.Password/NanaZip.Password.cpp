@@ -781,6 +781,8 @@ namespace
         DWORD timeoutSeconds = 0)
     {
         response.clear();
+        const std::wstring version = config.ProtocolVersion.empty()
+            ? kProtocolVersion : config.ProtocolVersion;
         if (!IsHttpsUrl(config.Url))
         {
             return false;
@@ -802,7 +804,7 @@ namespace
             components.nScheme != INTERNET_SCHEME_HTTPS ||
             components.dwHostNameLength == 0 ||
             HasHeaderControlCharacter(config.AppId) ||
-            HasHeaderControlCharacter(config.ProtocolVersion))
+            HasHeaderControlCharacter(version))
         {
             return false;
         }
@@ -836,8 +838,11 @@ namespace
         }
         // timeoutSeconds != 0 overrides the configured timeout: the batch
         // prefetch thread must never stall the session teardown for long.
-        const DWORD timeout = (timeoutSeconds != 0
-            ? timeoutSeconds : config.TimeoutSeconds) * 1000;
+        const DWORD timeoutSecondsEffective = timeoutSeconds != 0
+            ? timeoutSeconds
+            : (config.TimeoutSeconds != 0
+                ? config.TimeoutSeconds : kDefaultTimeoutSeconds);
+        const DWORD timeout = timeoutSecondsEffective * 1000;
         ::WinHttpSetTimeouts(session, timeout, timeout, timeout, timeout);
         HINTERNET connection = ::WinHttpConnect(
             session,
@@ -870,7 +875,7 @@ namespace
         std::wstring headers = L"Content-Type: application/json\r\nappid: ";
         headers += config.AppId;
         headers += L"\r\nversion: ";
-        headers += config.ProtocolVersion;
+        headers += version;
         headers += L"\r\nplatform: windows\r\n";
         if (accessHeader)
         {
@@ -1011,9 +1016,16 @@ namespace
 
 namespace NanaZipPassword
 {
+    // Protocol constants of the UNIS password service. These are service
+    // protocol values, not user configuration: an unset
+    // CloudProtocolVersion falls back here, and an unset
+    // CloudTimeoutSeconds uses kDefaultTimeoutSeconds.
+    static const wchar_t* const kProtocolVersion = L"2.2.3";
+    static const DWORD kDefaultTimeoutSeconds = 5;
+
     ApiConfig::ApiConfig() :
-        ProtocolVersion(L"2.2.3"),
-        TimeoutSeconds(5)
+        ProtocolVersion(),
+        TimeoutSeconds(0)
     {
     }
 

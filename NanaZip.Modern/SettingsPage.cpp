@@ -652,7 +652,10 @@ namespace winrt::NanaZip::Modern::implementation
         ExtractApiPackageBox().Text(winrt::hstring(this->m_Context->ApiPackageName));
         ExtractApiFingerprintBox().Text(winrt::hstring(this->m_Context->ApiFingerprint));
         ExtractApiProtocolVersionBox().Text(winrt::hstring(this->m_Context->ApiProtocolVersion));
-        ExtractApiTimeoutBox().Text(winrt::to_hstring(this->m_Context->ApiTimeoutSeconds));
+        ExtractApiTimeoutBox().Text(
+            this->m_Context->ApiTimeoutSeconds == 0
+                ? winrt::hstring()
+                : winrt::to_hstring(this->m_Context->ApiTimeoutSeconds));
 
         ExtractAutoMatchLocalCheck().Content(winrt::box_value(Res(2531, L"Auto match local password")));
         ExtractAutoMatchLocalCheck().IsChecked(BoxBool(this->m_Context->AutoMatchLocal != FALSE));
@@ -1553,7 +1556,7 @@ namespace winrt::NanaZip::Modern::implementation
             if (Timeout >= 1 && Timeout <= 30)
                 this->m_Context->ApiTimeoutSeconds = static_cast<UINT32>(Timeout);
             else
-                this->m_Context->ApiTimeoutSeconds = 5;
+                this->m_Context->ApiTimeoutSeconds = 0; // 未配置，与其余字段空白默认一致
             this->m_Context->DirtyApi = TRUE;
             return;
         }

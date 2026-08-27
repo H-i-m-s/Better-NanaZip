@@ -167,7 +167,8 @@ void CExtractSettingsPage::LoadApiToEdits()
   SetItemText(IDX_SETTINGS_API_FINGERPRINT, cfg.Fingerprint);
   SetItemText(IDX_SETTINGS_API_PROTOCOL_VERSION, cfg.ProtocolVersion);
   UString timeout;
-  timeout.Add_UInt32(cfg.TimeoutSeconds);
+  if (cfg.TimeoutSeconds != 0)
+    timeout.Add_UInt32(cfg.TimeoutSeconds);
   SetItemText(IDX_SETTINGS_API_TIMEOUT_SECONDS, timeout);
 }
 
