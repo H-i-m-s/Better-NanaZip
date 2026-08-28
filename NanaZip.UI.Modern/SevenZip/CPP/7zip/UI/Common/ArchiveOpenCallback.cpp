@@ -132,7 +132,9 @@ STDMETHODIMP COpenCallbackImp::GetStream(const wchar_t *name, IInStream **inStre
     return S_FALSE;
   CInFileStreamVol *inFile = new CInFileStreamVol;
   CMyComPtr<IInStream> inStreamTemp = inFile;
-  if (!inFile->Open(fullPath))
+  // SSS: multi-volume parts also open with FILE_SHARE_DELETE so a
+  // browsed archive (.001/.002/...) can be deleted from Explorer.
+  if (!inFile->Open_AllowDelete(fullPath))
   {
     return GetLastError_noZero_HRESULT();
   }

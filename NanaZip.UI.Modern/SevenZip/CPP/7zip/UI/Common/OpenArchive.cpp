@@ -3103,7 +3103,10 @@ HRESULT CArc::OpenStreamOrFile(COpenOptions &op)
     fileStreamSpec = new CInFileStream;
     fileStream = fileStreamSpec;
     Path = filePath;
-    if (!fileStreamSpec->Open(us2fs(Path)))
+    // SSS: open with FILE_SHARE_DELETE so an extraction launched from
+    // Explorer can delete this archive while the File Manager is still
+    // browsing it (the main archive-open path).
+    if (!fileStreamSpec->Open_AllowDelete(us2fs(Path)))
       return GetLastError_noZero_HRESULT();
     op.stream = fileStream;
     #ifdef _SFX
@@ -3154,7 +3157,7 @@ HRESULT CArc::OpenStreamOrFile(COpenOptions &op)
         }
         if (isOk)
         {
-          if (fileStreamSpec->Open(us2fs(Path)))
+          if (fileStreamSpec->Open_AllowDelete(us2fs(Path)))
           {
             op.stream = fileStream;
             NonOpen_ErrorInfo.ClearErrors_Full();
@@ -3523,7 +3526,8 @@ HRESULT CArchiveLink::ReOpen(COpenOptions &op)
 
   CInFileStream *fileStreamSpec = new CInFileStream;
   CMyComPtr<IInStream> stream(fileStreamSpec);
-  if (!fileStreamSpec->Open(us2fs(op.filePath)))
+  // SSS: same FILE_SHARE_DELETE policy as the main open path (ReOpen).
+  if (!fileStreamSpec->Open_AllowDelete(us2fs(op.filePath)))
     return GetLastError_noZero_HRESULT();
   op.stream = stream;
 
