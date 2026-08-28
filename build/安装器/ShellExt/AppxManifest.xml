@@ -1,0 +1,65 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Package
+	xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+	xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+	xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+	xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+	xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+	xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+	xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+	xmlns:desktop10="http://schemas.microsoft.com/appx/manifest/desktop/windows10/10"
+	xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+	IgnorableNamespaces="uap rescap desktop desktop4 desktop5 desktop10 com">
+
+	<Identity Name="SSS.NanaZip.ShellExtension" ProcessorArchitecture="x64" Publisher="CN=SSS NanaZip Development" Version="{VERSION}" />
+
+	<Properties>
+		<DisplayName>NanaZip Shell Extension</DisplayName>
+		<PublisherDisplayName>SSS NanaZip</PublisherDisplayName>
+		<Logo>StoreLogo.png</Logo>
+		<uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+	</Properties>
+
+	<Dependencies>
+		<TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.18950.0" MaxVersionTested="10.0.26200.0" />
+	</Dependencies>
+
+	<Capabilities>
+		<rescap:Capability Name="runFullTrust" />
+		<rescap:Capability Name="unvirtualizedResources" />
+	</Capabilities>
+
+	<Applications>
+		<Application Id="NanaZip.ShellExtension" Executable="NanaZip.Modern.FileManager.exe" uap10:TrustLevel="mediumIL" EntryPoint="Windows.FullTrustApplication">
+			<uap:VisualElements AppListEntry="none" DisplayName="NanaZip Shell Extension" Description="NanaZip 右键菜单扩展（exe 安装版）" BackgroundColor="transparent" Square150x150Logo="StoreLogo.png" Square44x44Logo="StoreLogo.png">
+				<uap:DefaultTile Wide310x150Logo="StoreLogo.png" Square71x71Logo="StoreLogo.png" Square310x310Logo="StoreLogo.png" />
+			</uap:VisualElements>
+
+			<Extensions>
+				<!-- 注册 COM 组件（NanaZip.ShellExtension.dll，与官方 MSIX 主包同一 CLSID）-->
+				<com:Extension Category="windows.comServer">
+					<com:ComServer>
+						<com:SurrogateServer DisplayName="NanaZip.ShellExtension">
+							<com:Class Id="CAE3F1D4-7765-4D98-A060-52CD14D56EAB" Path="NanaZip.ShellExtension.dll" ThreadingModel="STA"/>
+						</com:SurrogateServer>
+					</com:ComServer>
+				</com:Extension>
+
+				<!-- Win11 新版右键菜单：所有文件 / 文件夹 / 驱动器 -->
+				<desktop4:Extension Category="windows.fileExplorerContextMenus">
+					<desktop4:FileExplorerContextMenus>
+						<desktop4:ItemType Type="*">
+							<desktop4:Verb Id="0000NanaZipShellExtension" Clsid="CAE3F1D4-7765-4D98-A060-52CD14D56EAB" />
+						</desktop4:ItemType>
+						<desktop5:ItemType Type="Directory">
+							<desktop5:Verb Id="0000NanaZipShellExtension" Clsid="CAE3F1D4-7765-4D98-A060-52CD14D56EAB" />
+						</desktop5:ItemType>
+						<desktop10:ItemType Type="Drive">
+							<desktop10:Verb Id="0000NanaZipShellExtension" Clsid="CAE3F1D4-7765-4D98-A060-52CD14D56EAB" />
+						</desktop10:ItemType>
+					</desktop4:FileExplorerContextMenus>
+				</desktop4:Extension>
+			</Extensions>
+		</Application>
+	</Applications>
+</Package>
