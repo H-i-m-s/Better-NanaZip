@@ -1870,6 +1870,10 @@ HRESULT ExtractGUI(
   bool deleteAfter = false;
   bool deletePermanently = false;
   SssReadDeleteSettings(deleteAfter, deletePermanently);
+  // -sfd forces the delete even when the global DeleteAfterExtract
+  // setting is off (right-click "extract here (smart) and delete"
+  // command). Merge it here so every path (dialog, command line) deletes.
+  deleteAfter = deleteAfter || g_SssForceDelete;
   // **************** SSS Modification End ****************
 
   // **************** 7-Zip ZS Modification Start ****************
@@ -1948,9 +1952,6 @@ HRESULT ExtractGUI(
         dialog.PathMode = options.PathMode;
         dialog.PathMode_Force = options.PathMode_Force;
         dialog.ElimDup = options.ElimDup;
-        // -sfd forces the delete even when the global DeleteAfterExtract
-        // setting is off (right-click "extract here (smart) and delete").
-        deleteAfter = deleteAfter || g_SssForceDelete;
         dialog.DeleteAfterExtract = deleteAfter;
         dialog.OpenFolder = options.OpenFolder;
         if (archivePathsFull.Size() == 1)

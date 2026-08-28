@@ -33,6 +33,13 @@ namespace
     constexpr wchar_t kAutoMatchLocal[] = L"AutoMatchLocal";
     constexpr wchar_t kMatchPriority[] = L"MatchPriority";
 
+    // Protocol constants of the UNIS password service. These are service
+    // protocol values, not user configuration: an unset
+    // CloudProtocolVersion falls back here, and an unset
+    // CloudTimeoutSeconds uses kDefaultTimeoutSeconds.
+    static const wchar_t* const kProtocolVersion = L"2.2.3";
+    static const DWORD kDefaultTimeoutSeconds = 5;
+
     // Diagnostic log for the batch password session (server and client
     // sides). Only events and error codes are recorded; passwords never
     // appear here. A separate file keeps it free of cross-process writes
@@ -1016,13 +1023,6 @@ namespace
 
 namespace NanaZipPassword
 {
-    // Protocol constants of the UNIS password service. These are service
-    // protocol values, not user configuration: an unset
-    // CloudProtocolVersion falls back here, and an unset
-    // CloudTimeoutSeconds uses kDefaultTimeoutSeconds.
-    static const wchar_t* const kProtocolVersion = L"2.2.3";
-    static const DWORD kDefaultTimeoutSeconds = 5;
-
     ApiConfig::ApiConfig() :
         ProtocolVersion(),
         TimeoutSeconds(0)
