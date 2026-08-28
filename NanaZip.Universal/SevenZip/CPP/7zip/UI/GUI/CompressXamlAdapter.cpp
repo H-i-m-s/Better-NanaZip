@@ -818,8 +818,9 @@ static UINT32 ReadFontSizeDialog()
   return pt;
 }
 
-// Archive-path history is stored in a plain file under the packaged app's
-// LocalState directory (same location as ExtractHistory.txt): the packaged
+// Archive-path history is stored in a plain file under the local data directory
+// (%LOCALAPPDATA%\NanaZip\ for unpackaged/exe builds, packaged LocalState
+// when running with package identity) instead of the registry: the packaged
 // (MSIX) environment isolates registry writes made by the helper process, so
 // registry-based history never survives. This mirrors the extract dialog.
 static FString GetCompressHistoryFilePath()
@@ -831,8 +832,7 @@ static FString GetCompressHistoryFilePath()
   if (len == 0 || len >= MAX_PATH)
     return result;
   result = envBuf;
-  result += L"\\Packages\\SSS.NanaZip.RemotePassword_t9byekn60qs4j"
-      L"\\LocalState\\CompressHistory.txt";
+  result += L"\\NanaZip\\CompressHistory.txt";
   return result;
 }
 
@@ -841,6 +841,10 @@ static void SaveCompressHistoryFile(const UStringVector &paths)
   FString path = GetCompressHistoryFilePath();
   if (path.IsEmpty())
     return;
+  // Ensure the parent directory exists (first write in exe builds)
+  const int sep = path.ReverseFind(FCHAR_PATH_SEPARATOR);
+  if (sep >= 0)
+    NWindows::NFile::NDir::CreateComplexDir(path.Left((unsigned)sep));
   // One path per line, CRLF, native UTF-16 (wchar_t) bytes.
   size_t total = 1;
   FOR_VECTOR (i, paths)
@@ -916,8 +920,7 @@ static FString GetCompressDialogRectFilePath()
   if (len == 0 || len >= MAX_PATH)
     return result;
   result = envBuf;
-  result += L"\\Packages\\SSS.NanaZip.RemotePassword_t9byekn60qs4j"
-      L"\\LocalState\\CompressDialogRect.bin";
+  result += L"\\NanaZip\\CompressDialogRect.bin";
   return result;
 }
 

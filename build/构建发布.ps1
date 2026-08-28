@@ -74,20 +74,14 @@ if ($Mode -in @('构建', '全量')) {
     Invoke-Step '01-编译.ps1' @('-Mode', $compileMode)
 }
 
-# ---------------- 构建/全量：打 msix 包 ----------------
-$bundlePath = $null
-if ($Format -in @('msix', 'all')) {
-    $stepArgs = @('-Arch', $Arch)
-    if ($Version) { $stepArgs += @('-Version', $Version) }
-    if (-not $Sign) { $stepArgs += @('-Sign:$false') }
-    $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $steps '02-打包msix.ps1') @stepArgs
-    $bundlePath = ($out | Select-String '^BUNDLE=' | Select-Object -Last 1).ToString().Replace('BUNDLE=', '').Trim()
-    if (-not $bundlePath) { throw '02 未输出 BUNDLE 路径' }
-    if (-not $Version) { $Version = VersionFrom-Bundle $bundlePath }
-} else {
-    # 不打 msix 也要版本号（exe/green 需要）
-    if (-not $Version) { $Version = VersionFrom-Bundle (Resolve-LatestBundle).FullName }
-}
+# ---------------- 构建/全量：总是打 msix bundle（exe/green 组装也依赖它）----------------
+$stepArgs = @('-Arch', $Arch)
+if ($Version) { $stepArgs += @('-Version', $Version) }
+if (-not $Sign) { $stepArgs += @('-Sign:$false') }
+$out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $steps '02-打包msix.ps1') @stepArgs
+$bundlePath = ($out | Select-String '^BUNDLE=' | Select-Object -Last 1).ToString().Replace('BUNDLE=', '').Trim()
+if (-not $bundlePath) { throw '02 未输出 BUNDLE 路径' }
+if (-not $Version) { $Version = VersionFrom-Bundle $bundlePath }
 
 # ---------------- 打包 / 构建 / 全量 的 exe/green ----------------
 if ($Mode -eq '打包') {

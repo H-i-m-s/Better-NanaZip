@@ -26,8 +26,10 @@ namespace
 {
     constexpr wchar_t kApiConfigFileName[] = L"api_config.txt";
     constexpr wchar_t kPasswordBookFileName[] = L"passwords.txt";
-    constexpr wchar_t kNanaZipPackageFamilyName[] =
-        L"SSS.NanaZip.RemotePassword_t9byekn60qs4j";
+    // Unpackaged (exe/green) processes have no package identity: keep
+    // config/history in an independent dir %LOCALAPPDATA%\NanaZip\ instead
+    // of the MSIX package data dir (removed together with the package).
+    constexpr wchar_t kUnpackagedDataDirName[] = L"NanaZip";
     constexpr wchar_t kRegistryPath[] = L"Software\\NanaZip\\FM";
     constexpr wchar_t kAutoQueryCloud[] = L"AutoQueryCloud";
     constexpr wchar_t kAutoMatchLocal[] = L"AutoMatchLocal";
@@ -226,6 +228,19 @@ namespace
             nullptr) == count;
     }
 
+    static bool EnsureParentDirectory(const std::wstring& path)
+    {
+        const size_t pos = path.find_last_of(L"\\/");
+        if (pos == std::wstring::npos)
+            return true;
+        const std::wstring dir = path.substr(0, pos);
+        if (dir.empty())
+            return true;
+        if (::SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr) == ERROR_SUCCESS)
+            return true;
+        return ::GetLastError() == ERROR_ALREADY_EXISTS;
+    }
+
     static bool GetLocalStatePath(
         const wchar_t* name,
         std::wstring& path)
@@ -252,11 +267,11 @@ namespace
         {
             path.assign(localAppData);
             ::CoTaskMemFree(localAppData);
-            path += L"\\Packages\\";
-            path += kNanaZipPackageFamilyName;
-            path += L"\\LocalState\\";
+            path += L"\\";
+            path += kUnpackagedDataDirName;
+            path += L"\\";
             path += name;
-            return true;
+            return EnsureParentDirectory(path);
         }
 
         std::vector<BYTE> packageBuffer(bufferLength);
@@ -268,18 +283,28 @@ namespace
         {
             path.assign(localAppData);
             ::CoTaskMemFree(localAppData);
-            path += L"\\Packages\\";
-            path += kNanaZipPackageFamilyName;
-            path += L"\\LocalState\\";
+            path += L"\\";
+            path += kUnpackagedDataDirName;
+            path += L"\\";
             path += name;
-            return true;
+            return EnsureParentDirectory(path);
         }
 
         const auto* package = reinterpret_cast<const PACKAGE_INFO*>(packageBuffer.data());
         const wchar_t* packageFamilyName =
             (package->packageFamilyName && package->packageFamilyName[0])
                 ? package->packageFamilyName
-                : kNanaZipPackageFamilyName;
+                : nullptr;
+        if (packageFamilyName == nullptr)
+        {
+            path.assign(localAppData);
+            ::CoTaskMemFree(localAppData);
+            path += L"\\";
+            path += kUnpackagedDataDirName;
+            path += L"\\";
+            path += name;
+            return EnsureParentDirectory(path);
+        }
 
         path.assign(localAppData);
         ::CoTaskMemFree(localAppData);
@@ -287,7 +312,7 @@ namespace
         path += packageFamilyName;
         path += L"\\LocalState\\";
         path += name;
-        return true;
+        return EnsureParentDirectory(path);
     }
 
     static void SplitLines(

@@ -12,6 +12,7 @@
 #include "../../../Common/StringConvert.h"
 #include "../../../Common/MyBuffer.h"
 #include "../../../Windows/FileIO.h"
+#include "../../../Windows/FileDir.h"
 
 using namespace NWindows;
 using namespace NWindows::NFile;
@@ -20,11 +21,10 @@ using namespace NWindows::NFile;
 
 static const wchar_t * const kPasswordFileName = L"passwords.txt";
 static const wchar_t * const kApiConfigFileName = L"api_config.txt";
-// NanaZip's packaged FileManager/7zG helpers may run without package
-// identity even though the application itself was installed from MSIX.
-// Keep the same package-family fallback used by the existing history files.
-static const wchar_t * const kNanaZipPackageFamilyName =
-  L"SSS.NanaZip.RemotePassword_t9byekn60qs4j";
+// Unpackaged (exe/green) processes have no package identity: keep
+// config/history in an independent dir %LOCALAPPDATA%\NanaZip\ instead
+// of the MSIX package data dir (removed together with the package).
+static const wchar_t * const kUnpackagedDataDirName = L"NanaZip";
 
 static const wchar_t * const kApiKeys[8] =
 {
@@ -108,41 +108,38 @@ FString SssGetLocalStateDir()
   UString base = localAppData;
   CoTaskMemFree(localAppData);
 
+  // 打包进程（MSIX 安装）：用当前包身份的 LocalState，与其他包数据隔离
   const UINT32 filter = PACKAGE_FILTER_HEAD | PACKAGE_FILTER_DIRECT;
   UINT32 bufferLength = 0;
   UINT32 count = 0;
   // 第一次调用：buffer=NULL 查询所需大小，返回 ERROR_INSUFFICIENT_BUFFER(0x7A) 是正常行为
-  LONG rc = GetCurrentPackageInfo(filter, &bufferLength, NULL, &count);
-  if (rc != ERROR_INSUFFICIENT_BUFFER || bufferLength == 0)
+  if (GetCurrentPackageInfo(filter, &bufferLength, NULL, &count) == ERROR_INSUFFICIENT_BUFFER &&
+      bufferLength != 0)
   {
-    UString full = base;
-    full += L"\\Packages\\";
-    full += kNanaZipPackageFamilyName;
-    full += L"\\LocalState";
-    return us2fs(full);
+    CByteBuffer buf;
+    buf.Alloc(bufferLength);
+    if (GetCurrentPackageInfo(filter, &bufferLength, buf, &count) == ERROR_SUCCESS)
+    {
+      const PACKAGE_INFO *info = (const PACKAGE_INFO *)(const void *)buf;
+      const wchar_t *packageFamilyName =
+        (info->packageFamilyName && info->packageFamilyName[0])
+          ? (const wchar_t *)info->packageFamilyName
+          : NULL;
+      if (packageFamilyName)
+      {
+        UString full = base;
+        full += L"\\Packages\\";
+        full += packageFamilyName;
+        full += L"\\LocalState";
+        return us2fs(full);
+      }
+    }
   }
 
-  CByteBuffer buf;
-  buf.Alloc(bufferLength);
-  if (GetCurrentPackageInfo(filter, &bufferLength, buf, &count) != ERROR_SUCCESS)
-  {
-    UString full = base;
-    full += L"\\Packages\\";
-    full += kNanaZipPackageFamilyName;
-    full += L"\\LocalState";
-    return us2fs(full);
-  }
-
-  const PACKAGE_INFO *info = (const PACKAGE_INFO *)(const void *)buf;
-  const wchar_t *packageFamilyName =
-    (info->packageFamilyName && info->packageFamilyName[0])
-      ? (const wchar_t *)info->packageFamilyName
-      : kNanaZipPackageFamilyName;
-
+  // Unpackaged (exe/green): independent data dir, created on first write
   UString full = base;
-  full += L"\\Packages\\";
-  full += packageFamilyName;
-  full += L"\\LocalState";
+  full += L"\\";
+  full += kUnpackagedDataDirName;
   return us2fs(full);
 }
 
@@ -191,6 +188,10 @@ static bool SssWriteWholeFileUtf8(const FString &path, const UString &text)
 {
   if (path.IsEmpty())
     return false;
+  // Ensure the parent directory exists (first write in exe builds)
+  const int sep = path.ReverseFind(FCHAR_PATH_SEPARATOR);
+  if (sep >= 0)
+    NWindows::NFile::NDir::CreateComplexDir(path.Left((unsigned)sep));
   NIO::COutFile file;
   // createAlways=true → CREATE_ALWAYS（覆盖已有文件）；密码本/配置会多次全量重写
   if (!file.Create(path, true))

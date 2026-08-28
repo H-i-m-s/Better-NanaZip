@@ -1736,11 +1736,12 @@ static void SssWriteReleaseBeforeDeleteMarker(bool permanently)
 // **************** SSS Modification End ****************
 
 // **************** NanaZip Modification Start ****************
-// Extract history is stored in a plain file under the packaged app's
-// LocalState directory (next to the user's passwords.txt) instead of the
-// registry: the packaged (MSIX) environment isolates registry writes made
-// by the helper extraction process, so registry-based history never
-// survives. A file read/written with ordinary file APIs works everywhere.
+// Extract history is stored in a plain file under the local data directory
+// (%LOCALAPPDATA%\NanaZip\ for unpackaged/exe builds, the packaged app's
+// LocalState when running with package identity) instead of the registry:
+// the packaged (MSIX) environment isolates registry writes made by the
+// helper extraction process, so registry-based history never survives.
+// A file read/written with ordinary file APIs works everywhere.
 static FString GetExtractHistoryFilePath()
 {
   FString result;
@@ -1750,8 +1751,7 @@ static FString GetExtractHistoryFilePath()
   if (len == 0 || len >= MAX_PATH)
     return result;
   result = envBuf;
-  result += L"\\Packages\\SSS.NanaZip.RemotePassword_t9byekn60qs4j"
-      L"\\LocalState\\ExtractHistory.txt";
+  result += L"\\NanaZip\\ExtractHistory.txt";
   return result;
 }
 
@@ -1760,6 +1760,10 @@ static void SaveExtractHistoryFile(const UStringVector &paths)
   FString path = GetExtractHistoryFilePath();
   if (path.IsEmpty())
     return;
+  // Ensure the parent directory exists (first write in exe builds)
+  const int sep = path.ReverseFind(FCHAR_PATH_SEPARATOR);
+  if (sep >= 0)
+    NWindows::NFile::NDir::CreateComplexDir(path.Left((unsigned)sep));
   // One path per line, CRLF, native UTF-16 (wchar_t) bytes.
   size_t total = 1;
   FOR_VECTOR (i, paths)
