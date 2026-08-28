@@ -22,6 +22,7 @@
 
 #include <K7User.h>
 #include <shlobj.h>
+#include <appmodel.h>
 
 #include "../../../Windows/FileDir.h"
 #include "../../../Windows/FileIO.h"
@@ -818,11 +819,11 @@ static UINT32 ReadFontSizeDialog()
   return pt;
 }
 
-// Archive-path history is stored in a plain file under the local data directory
-// (%LOCALAPPDATA%\NanaZip\ for unpackaged/exe builds, packaged LocalState
-// when running with package identity) instead of the registry: the packaged
-// (MSIX) environment isolates registry writes made by the helper process, so
-// registry-based history never survives. This mirrors the extract dialog.
+// Archive-path history is stored in a plain file instead of the registry:
+// the packaged (MSIX) environment isolates registry writes made by the
+// helper process, so registry-based history never survives. Packaged
+// processes keep the file in the package's LocalState; unpackaged
+// (exe/green) processes use %LOCALAPPDATA%\NanaZip\ instead.
 static FString GetCompressHistoryFilePath()
 {
   FString result;
@@ -831,6 +832,30 @@ static FString GetCompressHistoryFilePath()
       L"LOCALAPPDATA", envBuf, MAX_PATH);
   if (len == 0 || len >= MAX_PATH)
     return result;
+
+  const UINT32 filter = PACKAGE_FILTER_HEAD | PACKAGE_FILTER_DIRECT;
+  UINT32 bufferLength = 0;
+  UINT32 count = 0;
+  if (::GetCurrentPackageInfo(filter, &bufferLength, NULL, &count) ==
+          ERROR_INSUFFICIENT_BUFFER &&
+      bufferLength != 0)
+  {
+    std::vector<BYTE> buf(bufferLength);
+    if (::GetCurrentPackageInfo(filter, &bufferLength, buf.data(), &count) ==
+            ERROR_SUCCESS)
+    {
+      const PACKAGE_INFO *info = (const PACKAGE_INFO *)(const void *)buf.data();
+      if (info->packageFamilyName && info->packageFamilyName[0])
+      {
+        result = envBuf;
+        result += L"\\Packages\\";
+        result += info->packageFamilyName;
+        result += L"\\LocalState\\CompressHistory.txt";
+        return result;
+      }
+    }
+  }
+
   result = envBuf;
   result += L"\\NanaZip\\CompressHistory.txt";
   return result;
@@ -919,6 +944,30 @@ static FString GetCompressDialogRectFilePath()
       L"LOCALAPPDATA", envBuf, MAX_PATH);
   if (len == 0 || len >= MAX_PATH)
     return result;
+
+  const UINT32 filter = PACKAGE_FILTER_HEAD | PACKAGE_FILTER_DIRECT;
+  UINT32 bufferLength = 0;
+  UINT32 count = 0;
+  if (::GetCurrentPackageInfo(filter, &bufferLength, NULL, &count) ==
+          ERROR_INSUFFICIENT_BUFFER &&
+      bufferLength != 0)
+  {
+    std::vector<BYTE> buf(bufferLength);
+    if (::GetCurrentPackageInfo(filter, &bufferLength, buf.data(), &count) ==
+            ERROR_SUCCESS)
+    {
+      const PACKAGE_INFO *info = (const PACKAGE_INFO *)(const void *)buf.data();
+      if (info->packageFamilyName && info->packageFamilyName[0])
+      {
+        result = envBuf;
+        result += L"\\Packages\\";
+        result += info->packageFamilyName;
+        result += L"\\LocalState\\CompressDialogRect.bin";
+        return result;
+      }
+    }
+  }
+
   result = envBuf;
   result += L"\\NanaZip\\CompressDialogRect.bin";
   return result;

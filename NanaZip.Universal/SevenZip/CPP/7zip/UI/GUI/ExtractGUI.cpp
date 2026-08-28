@@ -11,6 +11,7 @@
 #include <map>
 #include <set>
 #include <chrono>
+#include <appmodel.h>
 
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -1736,12 +1737,11 @@ static void SssWriteReleaseBeforeDeleteMarker(bool permanently)
 // **************** SSS Modification End ****************
 
 // **************** NanaZip Modification Start ****************
-// Extract history is stored in a plain file under the local data directory
-// (%LOCALAPPDATA%\NanaZip\ for unpackaged/exe builds, the packaged app's
-// LocalState when running with package identity) instead of the registry:
+// Extract history is stored in a plain file instead of the registry:
 // the packaged (MSIX) environment isolates registry writes made by the
 // helper extraction process, so registry-based history never survives.
-// A file read/written with ordinary file APIs works everywhere.
+// Packaged processes keep the file in the package's LocalState;
+// unpackaged (exe/green) processes use %LOCALAPPDATA%\NanaZip\ instead.
 static FString GetExtractHistoryFilePath()
 {
   FString result;
@@ -1750,6 +1750,32 @@ static FString GetExtractHistoryFilePath()
       L"LOCALAPPDATA", envBuf, MAX_PATH);
   if (len == 0 || len >= MAX_PATH)
     return result;
+
+  // Packaged process (MSIX): keep history in the package's LocalState.
+  const UINT32 filter = PACKAGE_FILTER_HEAD | PACKAGE_FILTER_DIRECT;
+  UINT32 bufferLength = 0;
+  UINT32 count = 0;
+  if (::GetCurrentPackageInfo(filter, &bufferLength, NULL, &count) ==
+          ERROR_INSUFFICIENT_BUFFER &&
+      bufferLength != 0)
+  {
+    std::vector<BYTE> buf(bufferLength);
+    if (::GetCurrentPackageInfo(filter, &bufferLength, buf.data(), &count) ==
+            ERROR_SUCCESS)
+    {
+      const PACKAGE_INFO *info = (const PACKAGE_INFO *)(const void *)buf.data();
+      if (info->packageFamilyName && info->packageFamilyName[0])
+      {
+        result = envBuf;
+        result += L"\\Packages\\";
+        result += info->packageFamilyName;
+        result += L"\\LocalState\\ExtractHistory.txt";
+        return result;
+      }
+    }
+  }
+
+  // Unpackaged (exe/green): independent data dir.
   result = envBuf;
   result += L"\\NanaZip\\ExtractHistory.txt";
   return result;
