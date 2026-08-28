@@ -3,15 +3,23 @@
 # 位置：仓库 build\ 目录（随仓库走，可上 GitHub；克隆后直接可用）
 # 用途：日常验证"最新功能"时，不想等全量构建（BuildAllTargets 清空 Output ~21min）
 #       用它：增量编译（只编改动的）→ wapproj 打包（跳过未变项目，~4min）→ 签名
+#
+# 版本号：
+#   Windows 不允许同版本不同内容覆盖安装（0x80073CFB），所以每次装包前必须升版本。
+#   运行脚本时用 -Version 传入新版本号，脚本自动改写 Package.appxmanifest，无需手动改文件：
+#     & 'E:\NanaZip\build\打包x64.ps1' -Version 6.5.1826.0
+#   不传 -Version 则沿用 manifest 现有版本号。
+#
 # 产物：<仓库根>\Output\Binaries\AppPackages\NanaZipPackage_<ver>_Test\*.msixbundle
 # 说明：产出 x64 单成员 bundle（而非单 msix）。实测单 msix 无法覆盖安装已装的
 #       bundle 形态包（0x80073CFB 同版本内容不同禁止重装；跨形态覆盖也会被拒）。
-#       版本递增：Windows 不允许同版本不同内容覆盖安装，每次安装前必须把
-#       NanaZipPackage\Package.appxmanifest 的 Version 手动 +1。
 # 安装：build\SSSDevSigning\Install-SSSNanaZipPackage.ps1 -PackagePath <bundle> -ForceUpdate
 # 依赖：开发证书（store-only，Cert:\CurrentUser\My，CN=SSS NanaZip Development），
 #       以及 build\SSSDevSigning\Sign-SSSNanaZipPackage.ps1 同目录存在。
 # ============================================================
+param(
+    [string]$Version = ''   # 新版本号，如 -Version 6.5.1826.0；留空则沿用 manifest 现有值
+)
 $ErrorActionPreference = 'Stop'
 
 $root      = Split-Path -Parent $PSScriptRoot   # build 的父目录 = 仓库根
@@ -19,6 +27,21 @@ $vcvars64  = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxilia
 $fmProj    = 'NanaZip.UI.Modern\NanaZip.Modern.FileManager.vcxproj'
 $wapproj   = 'NanaZipPackage\NanaZipPackage.wapproj'
 $signScript = Join-Path $PSScriptRoot 'SSSDevSigning\Sign-SSSNanaZipPackage.ps1'
+$manifest  = Join-Path $root 'NanaZipPackage\Package.appxmanifest'
+
+# ---------- 0. 版本号处理（自动改写 manifest，无需手动改文件）----------
+$manifestText = Get-Content -LiteralPath $manifest -Raw
+if ($Version -ne '') {
+    if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "版本号格式错误: '$Version'（应为 4 段数字，如 6.5.1826.0）" }
+    $newText = [regex]::Replace($manifestText, 'Version="\d+\.\d+\.\d+\.\d+"', "Version=`"$Version`"")
+    if ($newText -eq $manifestText) { throw "manifest 中未找到 Version 属性: $manifest" }
+    Set-Content -LiteralPath $manifest -Value $newText -NoNewline -Encoding UTF8
+    "已设置版本号: $Version（$manifest）"
+} else {
+    $cur = [regex]::Match($manifestText, 'Version="(\d+\.\d+\.\d+\.\d+)"').Groups[1].Value
+    if (-not $cur) { throw "manifest 中未找到 Version 属性: $manifest" }
+    "使用 manifest 现有版本号: $cur（如需升版请加 -Version 参数）"
+}
 
 # ---------- 1. 停掉残留进程（解锁 DLL / 保证包内文件不被占用）----------
 $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^NanaZip' }
