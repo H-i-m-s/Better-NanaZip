@@ -340,7 +340,7 @@ namespace
     Result.Margin = (std::max)(12, Result.FontHeight);
     Result.Gap = (std::max)(8, Result.FontHeight / 2);
     Result.ButtonGap = (std::max)(10, Result.FontHeight / 2);
-    Result.ButtonHeight = (std::max)(30, Result.FontHeight + 14);
+    Result.ButtonHeight = (std::max)(42, Result.FontHeight + 26);
     Result.InfoGap = (std::max)(2, Result.FontHeight / 8);
     Result.IconColumn = (std::max)(28, Result.FontHeight);
     return Result;
@@ -632,6 +632,7 @@ namespace
   {
     COLORREF ButtonFace;
     COLORREF ButtonBorder;
+    COLORREF ButtonBottomBorder; // Fluent elevation edge (raised-button cue)
     COLORREF ButtonText;
     COLORREF ButtonFaceHover;
     COLORREF ButtonFacePressed;
@@ -644,7 +645,8 @@ namespace
     static const SssFluentPalette dark =
     {
       RGB(0x2D, 0x2D, 0x2D), // rest face (XAML ControlFillColorSecondary equivalent)
-      RGB(0x3D, 0x3D, 0x3D), // rest border
+      RGB(0x3D, 0x3D, 0x3D), // side border
+      RGB(0x4C, 0x4C, 0x4C), // bottom elevation edge (lighter in dark mode)
       RGB(0xFF, 0xFF, 0xFF), // text
       RGB(0x38, 0x38, 0x38), // hover face
       RGB(0x29, 0x29, 0x29), // pressed face
@@ -653,8 +655,9 @@ namespace
     };
     static const SssFluentPalette light =
     {
-      RGB(0xFD, 0xFD, 0xFD),
-      RGB(0xDD, 0xDD, 0xDD),
+      RGB(0xFC, 0xFC, 0xFC),
+      RGB(0xE0, 0xE0, 0xE0), // side border (XAML ~12% black stroke)
+      RGB(0xD0, 0xD0, 0xD0), // bottom elevation edge (darker in light mode)
       RGB(0x1A, 0x1A, 0x1A),
       RGB(0xF6, 0xF6, 0xF6),
       RGB(0xF0, 0xF0, 0xF0),
@@ -791,11 +794,26 @@ namespace
 
   struct SssFluentButtonState
   {
-    bool Hover = false;
+    bool MouseTracked = false;
     bool Pressed = false;
     bool KeyboardFocus = false;
     bool Accent = false;
+    // XAML-style hover fade: progress eases toward target in timer steps.
+    int HoverProgress = 0; // 0..100
+    int HoverTarget = 0;   // 0 or 100
   };
+
+  static COLORREF SssLerpColor(COLORREF a, COLORREF b, double t)
+  {
+    auto mix = [t](int ca, int cb)
+    {
+      return static_cast<int>(ca + (cb - ca) * t + 0.5);
+    };
+    return RGB(
+        mix(GetRValue(a), GetRValue(b)),
+        mix(GetGValue(a), GetGValue(b)),
+        mix(GetBValue(a), GetBValue(b)));
+  }
 
   static void SssInitGdiPlusOnce()
   {
@@ -843,11 +861,10 @@ namespace
         reinterpret_cast<const SssFluentButtonState *>(
             ::GetPropW(button, L"SSS_FluentButton"));
     const bool accent = state && state->Accent;
-    const bool hot = state && state->Hover;
     const bool pressed = state && state->Pressed;
     const bool focused = state && state->KeyboardFocus;
     const bool enabled = (button == nullptr) ||
-        (::GetWindowLongPtrW(button, GWL_STYLE) & WS_DISABLED) == 0;
+        ((::GetWindowLongPtrW(button, GWL_STYLE) & WS_DISABLED) == 0);
 
     COLORREF face = accent ? SssGetAccentColor() : palette.ButtonFace;
     COLORREF border = accent
@@ -856,6 +873,12 @@ namespace
     COLORREF text = accent
         ? (SssIsColorLight(face) ? RGB(0, 0, 0) : RGB(0xFF, 0xFF, 0xFF))
         : palette.ButtonText;
+    if (state && !accent)
+    {
+      // XAML-style hover fade: the resting face eases toward the hover face.
+      const double t = static_cast<double>(state->HoverProgress) / 100.0;
+      face = SssLerpColor(face, palette.ButtonFaceHover, t);
+    }
     if (!enabled)
     {
       face = darkMode ? RGB(0x1F, 0x1F, 0x1F) : RGB(0xF3, 0xF3, 0xF3);
@@ -868,11 +891,6 @@ namespace
                     : palette.ButtonFacePressed;
       text = accent ? text : palette.ButtonTextPressed;
     }
-    else if (hot)
-    {
-      face = accent ? SssAdjustColorBrightness(face, 16)
-                    : palette.ButtonFaceHover;
-    }
 
     const UINT dpi = ::GetDeviceCaps(dc, LOGPIXELSY);
     // 8px radius for a rounder, Win11 2H24-style look.
@@ -884,9 +902,57 @@ namespace
     Gdiplus::Graphics graphics(dc);
     graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
 
+    // Focus ring underlay FIRST (below the face): a solid rounded outer
+    // fill followed by a background-colored inner fill leaves only the
+    // ring visible; the face is then drawn inside it. The ring corners
+    // share the face corner center: outer radius = face radius + face
+    // inset, so both outlines are concentric.
+    if (focused && enabled)
+    {
+      const COLORREF backgroundColor =
+          SssIsDarkMode() ? RGB(0, 0, 0) : RGB(255, 255, 255);
+      const float faceInset = 6.0f;
+      const float ringThickness = 3.0f;
+      const float ringOuterRadius = radius + faceInset;
+      const float ringInnerRadius = radius + faceInset - ringThickness;
+      const float ringOuterDia = ringOuterRadius * 2.0f;
+      const float ringInnerDia = ringInnerRadius * 2.0f;
+
+      Gdiplus::GraphicsPath outerPath;
+      outerPath.AddArc(0.0f, 0.0f, ringOuterDia, ringOuterDia, 180, 90);
+      outerPath.AddArc(width - ringOuterDia, 0.0f,
+          ringOuterDia, ringOuterDia, 270, 90);
+      outerPath.AddArc(width - ringOuterDia, height - ringOuterDia,
+          ringOuterDia, ringOuterDia, 0, 90);
+      outerPath.AddArc(0.0f, height - ringOuterDia,
+          ringOuterDia, ringOuterDia, 90, 90);
+      outerPath.CloseFigure();
+      Gdiplus::SolidBrush ringBrush(Gdiplus::Color(
+          255, GetRValue(palette.FocusRing), GetGValue(palette.FocusRing),
+          GetBValue(palette.FocusRing)));
+      graphics.FillPath(&ringBrush, &outerPath);
+
+      const float innerOffset = ringThickness; // 3px
+      Gdiplus::GraphicsPath innerPath;
+      innerPath.AddArc(innerOffset, innerOffset,
+          ringInnerDia, ringInnerDia, 180, 90);
+      innerPath.AddArc(width - innerOffset - ringInnerDia, innerOffset,
+          ringInnerDia, ringInnerDia, 270, 90);
+      innerPath.AddArc(width - innerOffset - ringInnerDia,
+          height - innerOffset - ringInnerDia,
+          ringInnerDia, ringInnerDia, 0, 90);
+      innerPath.AddArc(innerOffset, height - innerOffset - ringInnerDia,
+          ringInnerDia, ringInnerDia, 90, 90);
+      innerPath.CloseFigure();
+      Gdiplus::SolidBrush backgroundBrush(Gdiplus::Color(
+          255, GetRValue(backgroundColor), GetGValue(backgroundColor),
+          GetBValue(backgroundColor)));
+      graphics.FillPath(&backgroundBrush, &innerPath);
+    }
+
     const Gdiplus::RectF bounds(
-        3.0f, 3.0f, (std::max)(0.0f, width - 6.0f),
-        (std::max)(0.0f, height - 6.0f));
+        6.0f, 6.0f, (std::max)(0.0f, width - 12.0f),
+        (std::max)(0.0f, height - 12.0f));
     Gdiplus::GraphicsPath path;
     path.AddArc(bounds.X, bounds.Y, radius * 2, radius * 2, 180, 90);
     path.AddArc(bounds.X + bounds.Width - radius * 2, bounds.Y,
@@ -904,6 +970,22 @@ namespace
     Gdiplus::Pen borderPen(Gdiplus::Color(
         255, GetRValue(border), GetGValue(border), GetBValue(border)), 1.0f);
     graphics.DrawPath(&borderPen, &path);
+
+    // Fluent elevation cue: a distinct bottom edge clipped to the rounded
+    // outline, darker in light mode / lighter in dark mode. This is what
+    // makes the button read as slightly raised instead of a flat outline.
+    {
+      const COLORREF bottomBorder = enabled && !pressed
+          ? palette.ButtonBottomBorder
+          : border;
+      graphics.SetClip(&path);
+      Gdiplus::SolidBrush bottomBrush(Gdiplus::Color(
+          255, GetRValue(bottomBorder), GetGValue(bottomBorder),
+          GetBValue(bottomBorder)));
+      graphics.FillRectangle(&bottomBrush,
+          bounds.X, bounds.Y + bounds.Height - 1.0f, bounds.Width, 1.0f);
+      graphics.ResetClip();
+    }
 
     // GDI text for ClearType quality on top of the GDI+ background.
     HDC textDc = graphics.GetHDC();
@@ -924,28 +1006,6 @@ namespace
     if (oldFont)
       ::SelectObject(textDc, oldFont);
     graphics.ReleaseHDC(textDc);
-
-    if (focused && enabled)
-    {
-      // Focus ring hugs the outside of the button face, wrapping its
-      // contour so the selected button reads as slightly larger.
-      const Gdiplus::RectF inner(
-          0.9f, 0.9f, (std::max)(0.0f, width - 1.8f),
-          (std::max)(0.0f, height - 1.8f));
-      Gdiplus::GraphicsPath focusPath;
-      focusPath.AddArc(inner.X, inner.Y, radius * 2, radius * 2, 180, 90);
-      focusPath.AddArc(inner.X + inner.Width - radius * 2, inner.Y,
-          radius * 2, radius * 2, 270, 90);
-      focusPath.AddArc(inner.X + inner.Width - radius * 2,
-          inner.Y + inner.Height - radius * 2, radius * 2, radius * 2, 0, 90);
-      focusPath.AddArc(inner.X, inner.Y + inner.Height - radius * 2,
-          radius * 2, radius * 2, 90, 90);
-      focusPath.CloseFigure();
-      Gdiplus::Pen focusPen(Gdiplus::Color(
-          255, GetRValue(palette.FocusRing), GetGValue(palette.FocusRing),
-          GetBValue(palette.FocusRing)), 2.2f);
-      graphics.DrawPath(&focusPen, &focusPath);
-    }
   }
 
   static LRESULT CALLBACK SssFluentButtonProc(
@@ -985,21 +1045,43 @@ namespace
       }
       case WM_MOUSEMOVE:
       {
-        if (state && !state->Hover)
+        if (state && !state->MouseTracked)
         {
           TRACKMOUSEEVENT track = { sizeof(track), TME_LEAVE, button, 0 };
           ::TrackMouseEvent(&track);
-          state->Hover = true;
-          ::InvalidateRect(button, nullptr, FALSE);
+          state->MouseTracked = true;
+          state->HoverTarget = 100;
+          ::SetTimer(button, 1, 10, nullptr);
         }
         break;
       }
       case WM_MOUSELEAVE:
       {
-        if (state && state->Hover)
+        if (state && state->MouseTracked)
         {
-          state->Hover = false;
-          ::InvalidateRect(button, nullptr, FALSE);
+          state->MouseTracked = false;
+          state->HoverTarget = 0;
+          ::SetTimer(button, 1, 10, nullptr);
+        }
+        break;
+      }
+      case WM_TIMER:
+      {
+        if (state && wParam == 1)
+        {
+          if (state->HoverProgress != state->HoverTarget)
+          {
+            const int step = 10; // ~100ms full fade at 10ms ticks
+            if (state->HoverTarget > state->HoverProgress)
+              state->HoverProgress = (std::min)(
+                  state->HoverTarget, state->HoverProgress + step);
+            else
+              state->HoverProgress = (std::max)(
+                  state->HoverTarget, state->HoverProgress - step);
+            ::InvalidateRect(button, nullptr, FALSE);
+          }
+          else
+            ::KillTimer(button, 1);
         }
         break;
       }
@@ -1095,14 +1177,17 @@ namespace
           SIZE *size = reinterpret_cast<SIZE *>(lParam);
           const int padH = ::MulDiv(14, static_cast<int>(dpi), 96);
           const int padV = ::MulDiv(8, static_cast<int>(dpi), 96);
-          size->cx = (measure.right - measure.left) + padH * 2;
-          size->cy = (measure.bottom - measure.top) + padV * 2;
+          // +12 per axis reserves a 6px band on every side for the outer
+          // system-style focus ring drawn around the (unshrunk) face.
+          size->cx = (measure.right - measure.left) + padH * 2 + 12;
+          size->cy = (measure.bottom - measure.top) + padV * 2 + 12;
           return TRUE;
         }
         break;
       }
       case WM_DESTROY:
       {
+        ::KillTimer(button, 1);
         if (state)
         {
           delete state;
@@ -1440,6 +1525,29 @@ bool COverwriteDialog::OnDestroy()
   SetItemIcon(IDI_OVERWRITE_NEW_FILE, NULL);
   SetItemIcon(IDI_OVERWRITE_NEW_FILE_2, NULL);
   return false; // we return (false) to perform default dialog operation
+}
+
+// SSS: keep the fluent palette in sync when the system theme flips while
+// the dialog is open (the palette itself is queried per paint; this just
+// triggers a repaint).
+bool COverwriteDialog::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
+{
+  if (message == WM_SETTINGCHANGE || message == WM_THEMECHANGED)
+  {
+    const unsigned buttonIds[] =
+    {
+      IDYES, IDNO, IDCANCEL,
+      IDB_YES_TO_ALL, IDB_NO_TO_ALL, IDB_AUTO_RENAME
+    };
+    for (unsigned id : buttonIds)
+    {
+      const HWND button = ::GetDlgItem(*this, static_cast<int>(id));
+      if (button)
+        ::InvalidateRect(button, nullptr, TRUE);
+    }
+    ::InvalidateRect(*this, nullptr, TRUE);
+  }
+  return CModalDialog::OnMessage(message, wParam, lParam);
 }
 
 bool COverwriteDialog::OnButtonClicked(unsigned buttonID, HWND buttonHWND)
