@@ -21,7 +21,7 @@
   <Identity
     Name="SSS.NanaZip.RemotePassword"
     Publisher="CN=SSS NanaZip Development"
-    Version="6.5.1828.0" />
+    Version="6.5.1829.0" />
 
   <Properties>
     <DisplayName>NanaZip</DisplayName>
@@ -42,7 +42,7 @@
   </Properties>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="6.5.1828.0" MaxVersionTested="10.0.26200.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="6.5.1829.0" MaxVersionTested="10.0.26200.0" />
   </Dependencies>
 
   <Resources>
