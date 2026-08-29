@@ -24,8 +24,8 @@ $manifest = Join-Path $root 'NanaZipPackage\Package.appxmanifest'
 $manifestText = Get-Content -LiteralPath $manifest -Raw
 if ($Version -ne '') {
     if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "版本号格式错误: '$Version'" }
+    if ($manifestText -notmatch 'Version="\d+\.\d+\.\d+\.\d+"') { throw "manifest 中未找到 Version 属性" }
     $newText = [regex]::Replace($manifestText, 'Version="\d+\.\d+\.\d+\.\d+"', "Version=`"$Version`"")
-    if ($newText -eq $manifestText) { throw "manifest 中未找到 Version 属性" }
     Set-Content -LiteralPath $manifest -Value $newText -NoNewline -Encoding UTF8
     "已设置版本号: $Version"
 } else {

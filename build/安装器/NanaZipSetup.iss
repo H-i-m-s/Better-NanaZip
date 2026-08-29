@@ -14,7 +14,7 @@
 #define MyAppVersion "6.5.1825.0"
 #endif
 #define MyAppPublisher "SSS NanaZip Development"
-#define MyAppExeName "NanaZip.Universal.Windows.exe"
+#define MyAppExeName "NanaZip.Modern.FileManager.exe"
 ; iss 位于 <仓库根>\build\安装器\，源文件集在 <仓库根>\Output\Binaries\AppPackages\NanaZip绿色版_<ver>_x64\
 
 [Setup]
