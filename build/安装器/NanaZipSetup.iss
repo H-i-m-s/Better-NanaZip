@@ -45,6 +45,8 @@ Name: "assoc"; Description: "关联 .7z / .zip / .rar 文件到 NanaZip"; GroupD
 
 [Files]
 Source: "{#SourcePath}..\..\Output\Binaries\AppPackages\NanaZip绿色版_{#MyAppVersion}_x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+; 文件类型图标（与 MSIX 版 fileTypeAssociations 的 ArchiveFile 图标一致，多尺寸 ico）
+Source: "{#SourcePath}NanaZipArchiveFile.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\NanaZip"; Filename: "{app}\NanaZip.Modern.FileManager.exe"
@@ -66,11 +68,11 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\NanaZipOpenDir\command"; V
 Root: HKCU; Subkey: "Software\Classes\.7z";  ValueType: string; ValueName: ""; ValueData: "NanaZip.7z";  Flags: uninsdeletevalue; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.zip"; ValueType: string; ValueName: ""; ValueData: "NanaZip.zip"; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.rar"; ValueType: string; ValueName: ""; ValueData: "NanaZip.rar"; Flags: uninsdeletevalue; Tasks: assoc
-Root: HKCU; Subkey: "Software\Classes\NanaZip.7z\DefaultIcon";  ValueType: string; ValueName: ""; ValueData: "{app}\NanaZip.Modern.FileManager.exe,0"; Flags: uninsdeletekey; Tasks: assoc
+Root: HKCU; Subkey: "Software\Classes\NanaZip.7z\DefaultIcon";  ValueType: string; ValueName: ""; ValueData: "{app}\NanaZipArchiveFile.ico"; Flags: uninsdeletekey; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\NanaZip.7z\shell\open\command";  ValueType: string; ValueName: ""; ValueData: """{app}\NanaZip.Modern.FileManager.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: assoc
-Root: HKCU; Subkey: "Software\Classes\NanaZip.zip\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\NanaZip.Modern.FileManager.exe,0"; Flags: uninsdeletekey; Tasks: assoc
+Root: HKCU; Subkey: "Software\Classes\NanaZip.zip\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\NanaZipArchiveFile.ico"; Flags: uninsdeletekey; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\NanaZip.zip\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\NanaZip.Modern.FileManager.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: assoc
-Root: HKCU; Subkey: "Software\Classes\NanaZip.rar\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\NanaZip.Modern.FileManager.exe,0"; Flags: uninsdeletekey; Tasks: assoc
+Root: HKCU; Subkey: "Software\Classes\NanaZip.rar\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\NanaZipArchiveFile.ico"; Flags: uninsdeletekey; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\NanaZip.rar\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\NanaZip.Modern.FileManager.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: assoc
 
 [Run]
