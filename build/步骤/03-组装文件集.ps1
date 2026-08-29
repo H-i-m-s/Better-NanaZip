@@ -79,8 +79,17 @@ if (-not (Test-Path $shellMsix)) { throw '壳包打包失败' }
 & $signtool.FullName sign /fd SHA256 /sha1 0E7475D74EFAEDDB26D4BDA02FBC6551DC8D72A5 $shellMsix 2>&1 | Out-Null
 "壳包: NanaZipShellExt.x64.msix ($([Math]::Round((Get-Item $shellMsix).Length/1KB))KB, 已签名)"
 
-# ---------- 4. 注册脚本 ----------
+# ---------- 4. 注册脚本与绿色版右键菜单 ----------
 Copy-Item "$shellSrc\RegisterShellExt.cmd" $green
 Copy-Item "$shellSrc\UnregisterShellExt.cmd" $green
+# 绿色版一键右键菜单（含自提权装证书；exe 安装器文件集同源递归，会一并带入 {app} 备用）
+Copy-Item "$shellSrc\绿色版右键菜单\安装右键菜单.cmd" $green
+Copy-Item "$shellSrc\绿色版右键菜单\移除右键菜单.cmd" $green
+$cer = "$root\.local\SSSDevSigning\SSS-NanaZip-Development.cer"
+if (Test-Path -LiteralPath $cer) {
+    Copy-Item -LiteralPath $cer $green
+} else {
+    Write-Warning '未找到开发证书 cer，绿色版右键菜单首次安装将缺证书文件'
+}
 
 Write-Output "GREEN=$green"
