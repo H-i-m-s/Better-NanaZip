@@ -88,6 +88,9 @@ begin
   if CurStep = ssPostInstall then
   begin
     Exec(ExpandConstant('{app}\RegisterShellExt.cmd'), '', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // 勾选 assoc 任务时：注册 Capabilities 并用官方 API 写 UserChoice（.zip/.7z/.rar 双击立即生效）
+    if WizardIsTaskSelected('assoc') then
+      Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}') + '\SetFileAssoc.ps1"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
@@ -98,5 +101,8 @@ begin
   if CurStep = usUninstall then
   begin
     Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -Command "Get-AppxPackage -Name ''SSS.NanaZip.ShellExtension'' -ErrorAction SilentlyContinue | Remove-AppxPackage"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // 清 UserChoice（悬空指向已卸载的 ProgID 会弹“打开方式”）+ Capabilities 注册
+    Exec('powershell.exe', '-NoProfile -Command "''.zip'',''.7z'',''.rar'' | ForEach-Object { Remove-Item -LiteralPath (''HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\'' + $_ + ''\\UserChoice'') -Recurse -Force -ErrorAction SilentlyContinue }"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('powershell.exe', '-NoProfile -Command "Remove-Item -LiteralPath ''HKCU:\\Software\\SSS NanaZip Development'' -Recurse -Force -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
