@@ -2,6 +2,12 @@
 
 #include "StdAfx.h"
 
+#include <gdiplus.h>
+#include <commctrl.h>
+
+#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "comctl32.lib")
+
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
 
@@ -10,6 +16,10 @@
 #include "../../../Windows/ResourceString.h"
 
 #include "../../../Windows/Control/Static.h"
+
+// **************** SSS Fluent Overwrite Dialog Start ****************
+#include <K7User.h>
+// **************** SSS Fluent Overwrite Dialog End ****************
 
 #include "FormatUtils.h"
 #include "LangUtils.h"
@@ -609,6 +619,564 @@ namespace
 
     ::InvalidateRect(dialog, nullptr, TRUE);
   }
+
+  // **************** SSS Fluent Overwrite Dialog Start ****************
+  // Visual refresh for the Win32 overwrite dialog: Segoe UI Variable fonts,
+  // owner-drawn Fluent-style buttons (anti-aliased 4px corners, hover/pressed
+  // layers, accent default button) aligned with the XAML dark palette.
+  // The shared K7User dark-mode pipe is left untouched; everything here is
+  // local to this dialog and falls back to the stock look when the font is
+  // missing or the system runs in light mode.
+
+  struct SssFluentPalette
+  {
+    COLORREF ButtonFace;
+    COLORREF ButtonBorder;
+    COLORREF ButtonText;
+    COLORREF ButtonFaceHover;
+    COLORREF ButtonFacePressed;
+    COLORREF ButtonTextPressed;
+    COLORREF FocusRing;
+  };
+
+  static const SssFluentPalette &SssGetPalette(bool darkMode)
+  {
+    static const SssFluentPalette dark =
+    {
+      RGB(0x2D, 0x2D, 0x2D), // rest face (XAML ControlFillColorSecondary equivalent)
+      RGB(0x3D, 0x3D, 0x3D), // rest border
+      RGB(0xFF, 0xFF, 0xFF), // text
+      RGB(0x38, 0x38, 0x38), // hover face
+      RGB(0x29, 0x29, 0x29), // pressed face
+      RGB(0x9B, 0x9B, 0x9B), // pressed text (XAML secondary text level)
+      RGB(0xFF, 0xFF, 0xFF), // focus ring
+    };
+    static const SssFluentPalette light =
+    {
+      RGB(0xFD, 0xFD, 0xFD),
+      RGB(0xDD, 0xDD, 0xDD),
+      RGB(0x1A, 0x1A, 0x1A),
+      RGB(0xF6, 0xF6, 0xF6),
+      RGB(0xF0, 0xF0, 0xF0),
+      RGB(0x60, 0x60, 0x60),
+      RGB(0x00, 0x00, 0x00),
+    };
+    return darkMode ? dark : light;
+  }
+
+  static bool SssIsDarkMode()
+  {
+    // K7User exposes the exact state its dark-mode pipe uses.
+    return ::K7UserShouldAppsUseDarkMode() != FALSE;
+  }
+
+  static COLORREF SssGetAccentColor()
+  {
+    // AccentColorMenu already stores the value in COLORREF byte layout
+    // (0xAABBGGRR): the low three bytes are BB GG RR. Use it as-is.
+    DWORD value = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent",
+        0, KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(value);
+      ::RegQueryValueExW(key, L"AccentColorMenu", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&value), &size);
+      ::RegCloseKey(key);
+    }
+    const COLORREF accent = value & 0x00FFFFFF;
+    if (accent != 0)
+      return accent;
+    return RGB(0x00, 0x78, 0xD4); // Windows default blue accent fallback
+  }
+
+  static COLORREF SssAdjustColorBrightness(COLORREF color, int delta)
+  {
+    auto clamp = [](int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); };
+    return RGB(
+        clamp(GetRValue(color) + delta),
+        clamp(GetGValue(color) + delta),
+        clamp(GetBValue(color) + delta));
+  }
+
+  static bool SssIsColorLight(COLORREF color)
+  {
+    const int r = GetRValue(color);
+    const int g = GetGValue(color);
+    const int b = GetBValue(color);
+    return (r * 299 + g * 587 + b * 114) > 127 * 1000;
+  }
+
+  struct SssFontEnumContext
+  {
+    const wchar_t *Name;
+    bool Found;
+  };
+
+  static int CALLBACK SssFontEnumProc(
+      const LOGFONTW *logFont, const TEXTMETRICW *, DWORD, LPARAM lParam)
+  {
+    SssFontEnumContext *context =
+        reinterpret_cast<SssFontEnumContext *>(lParam);
+    if (::lstrcmpiW(logFont->lfFaceName, context->Name) == 0)
+    {
+      context->Found = true;
+      return 0; // stop enumeration
+    }
+    return 1;
+  }
+
+  static bool SssFontFamilyExists(const wchar_t *familyName)
+  {
+    SssFontEnumContext context = { familyName, false };
+    HDC dc = ::GetDC(nullptr);
+    if (!dc)
+      return false;
+    LOGFONTW lf = {};
+    lf.lfCharSet = DEFAULT_CHARSET;
+    ::EnumFontFamiliesExW(dc, &lf, SssFontEnumProc,
+        reinterpret_cast<LPARAM>(&context), 0);
+    ::ReleaseDC(nullptr, dc);
+    return context.Found;
+  }
+
+  // Cached for the process lifetime: the dialog is short-lived and 7zG exits
+  // right after the archive operation.
+  static unsigned SssGetDialogFontSize()
+  {
+    // Same source as the shared dialog pipe (Font Size dialog setting).
+    DWORD pt = 0;
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\Options", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(pt);
+      ::RegQueryValueExW(key, L"FontSizeDialog", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&pt), &size);
+      ::RegCloseKey(key);
+    }
+    return pt ? static_cast<unsigned>(pt) : 9u;
+  }
+
+  static HFONT SssGetBodyFont(unsigned pointSize, bool displayVariant)
+  {
+    static HFONT cachedText = nullptr;
+    static HFONT cachedDisplay = nullptr;
+    HFONT &cached = displayVariant ? cachedDisplay : cachedText;
+    if (cached)
+      return cached;
+
+    const wchar_t *family = displayVariant ? L"Segoe UI Variable Display"
+                                           : L"Segoe UI Variable Text";
+    if (!SssFontFamilyExists(family))
+      return nullptr; // keep the stock dialog font
+
+    HDC dc = ::GetDC(nullptr);
+    const UINT dpi = dc ? static_cast<UINT>(::GetDeviceCaps(dc, LOGPIXELSY))
+                        : 96;
+    if (dc)
+      ::ReleaseDC(nullptr, dc);
+
+    LOGFONTW lf = {};
+    lf.lfHeight = -::MulDiv(static_cast<int>(pointSize),
+        static_cast<int>(dpi), 72);
+    lf.lfWeight = displayVariant ? FW_SEMIBOLD : FW_NORMAL;
+    lf.lfCharSet = DEFAULT_CHARSET;
+    lf.lfQuality = CLEARTYPE_QUALITY;
+    ::lstrcpynW(lf.lfFaceName, family, LF_FACESIZE);
+    cached = ::CreateFontIndirectW(&lf);
+    return cached;
+  }
+
+  struct SssFluentButtonState
+  {
+    bool Hover = false;
+    bool Pressed = false;
+    bool KeyboardFocus = false;
+    bool Accent = false;
+  };
+
+  static void SssInitGdiPlusOnce()
+  {
+    static bool initialized = false;
+    if (initialized)
+      return;
+    Gdiplus::GdiplusStartupInput input;
+    ULONG_PTR token = 0;
+    if (Gdiplus::GdiplusStartup(&token, &input, nullptr) == Gdiplus::Ok)
+      initialized = true;
+  }
+
+  static void SssDrawFluentButton(HDC dc, HWND button)
+  {
+    SssInitGdiPlusOnce();
+
+    RECT rect = {};
+    ::GetClientRect(button, &rect);
+
+    // Clear the whole client area first: the band between the face and the
+    // control edge (focus-ring zone) must be repainted with the dialog
+    // background on every pass, otherwise a stale ring survives focus moves.
+    {
+      HBRUSH background = reinterpret_cast<HBRUSH>(::SendMessageW(
+          ::GetParent(button), WM_CTLCOLORBTN,
+          reinterpret_cast<WPARAM>(dc),
+          reinterpret_cast<LPARAM>(button)));
+      HBRUSH localBackground = nullptr;
+      if (!background)
+      {
+        // Fallback matching the K7User dialog background.
+        localBackground = ::CreateSolidBrush(
+            SssIsDarkMode() ? RGB(0, 0, 0) : RGB(255, 255, 255));
+        background = localBackground;
+      }
+      if (background)
+        ::FillRect(dc, &rect, background);
+      if (localBackground)
+        ::DeleteObject(localBackground);
+    }
+
+    const bool darkMode = SssIsDarkMode();
+    const SssFluentPalette &palette = SssGetPalette(darkMode);
+    const SssFluentButtonState *state =
+        reinterpret_cast<const SssFluentButtonState *>(
+            ::GetPropW(button, L"SSS_FluentButton"));
+    const bool accent = state && state->Accent;
+    const bool hot = state && state->Hover;
+    const bool pressed = state && state->Pressed;
+    const bool focused = state && state->KeyboardFocus;
+    const bool enabled = (button == nullptr) ||
+        (::GetWindowLongPtrW(button, GWL_STYLE) & WS_DISABLED) == 0;
+
+    COLORREF face = accent ? SssGetAccentColor() : palette.ButtonFace;
+    COLORREF border = accent
+        ? SssAdjustColorBrightness(SssGetAccentColor(), -24)
+        : palette.ButtonBorder;
+    COLORREF text = accent
+        ? (SssIsColorLight(face) ? RGB(0, 0, 0) : RGB(0xFF, 0xFF, 0xFF))
+        : palette.ButtonText;
+    if (!enabled)
+    {
+      face = darkMode ? RGB(0x1F, 0x1F, 0x1F) : RGB(0xF3, 0xF3, 0xF3);
+      border = darkMode ? RGB(0x33, 0x33, 0x33) : RGB(0xE0, 0xE0, 0xE0);
+      text = darkMode ? RGB(0x5C, 0x5C, 0x5C) : RGB(0x9D, 0x9D, 0x9D);
+    }
+    else if (pressed)
+    {
+      face = accent ? SssAdjustColorBrightness(face, -32)
+                    : palette.ButtonFacePressed;
+      text = accent ? text : palette.ButtonTextPressed;
+    }
+    else if (hot)
+    {
+      face = accent ? SssAdjustColorBrightness(face, 16)
+                    : palette.ButtonFaceHover;
+    }
+
+    const UINT dpi = ::GetDeviceCaps(dc, LOGPIXELSY);
+    // 8px radius for a rounder, Win11 2H24-style look.
+    const float radius = static_cast<float>(
+        ::MulDiv(8, static_cast<int>(dpi), 96));
+    const float width = static_cast<float>(rect.right - rect.left);
+    const float height = static_cast<float>(rect.bottom - rect.top);
+
+    Gdiplus::Graphics graphics(dc);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+
+    const Gdiplus::RectF bounds(
+        3.0f, 3.0f, (std::max)(0.0f, width - 6.0f),
+        (std::max)(0.0f, height - 6.0f));
+    Gdiplus::GraphicsPath path;
+    path.AddArc(bounds.X, bounds.Y, radius * 2, radius * 2, 180, 90);
+    path.AddArc(bounds.X + bounds.Width - radius * 2, bounds.Y,
+        radius * 2, radius * 2, 270, 90);
+    path.AddArc(bounds.X + bounds.Width - radius * 2,
+        bounds.Y + bounds.Height - radius * 2, radius * 2, radius * 2, 0, 90);
+    path.AddArc(bounds.X, bounds.Y + bounds.Height - radius * 2,
+        radius * 2, radius * 2, 90, 90);
+    path.CloseFigure();
+
+    Gdiplus::SolidBrush faceBrush(Gdiplus::Color(
+        255, GetRValue(face), GetGValue(face), GetBValue(face)));
+    graphics.FillPath(&faceBrush, &path);
+
+    Gdiplus::Pen borderPen(Gdiplus::Color(
+        255, GetRValue(border), GetGValue(border), GetBValue(border)), 1.0f);
+    graphics.DrawPath(&borderPen, &path);
+
+    // GDI text for ClearType quality on top of the GDI+ background.
+    HDC textDc = graphics.GetHDC();
+    ::SetBkMode(textDc, TRANSPARENT);
+    ::SetTextColor(textDc, text);
+    HFONT font = reinterpret_cast<HFONT>(
+        ::SendMessageW(button, WM_GETFONT, 0, 0));
+    HFONT oldFont = font
+        ? reinterpret_cast<HFONT>(::SelectObject(textDc, font)) : nullptr;
+
+    wchar_t caption[128] = {};
+    ::GetWindowTextW(button, caption, 128);
+    // No DT_NOPREFIX: GDI renders the '&' mnemonic the standard way
+    // (e.g. "是(&Y)" shows as 是(Y) with an underlined Y).
+    ::DrawTextW(textDc, caption, -1, &rect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    if (oldFont)
+      ::SelectObject(textDc, oldFont);
+    graphics.ReleaseHDC(textDc);
+
+    if (focused && enabled)
+    {
+      // Focus ring hugs the outside of the button face, wrapping its
+      // contour so the selected button reads as slightly larger.
+      const Gdiplus::RectF inner(
+          0.9f, 0.9f, (std::max)(0.0f, width - 1.8f),
+          (std::max)(0.0f, height - 1.8f));
+      Gdiplus::GraphicsPath focusPath;
+      focusPath.AddArc(inner.X, inner.Y, radius * 2, radius * 2, 180, 90);
+      focusPath.AddArc(inner.X + inner.Width - radius * 2, inner.Y,
+          radius * 2, radius * 2, 270, 90);
+      focusPath.AddArc(inner.X + inner.Width - radius * 2,
+          inner.Y + inner.Height - radius * 2, radius * 2, radius * 2, 0, 90);
+      focusPath.AddArc(inner.X, inner.Y + inner.Height - radius * 2,
+          radius * 2, radius * 2, 90, 90);
+      focusPath.CloseFigure();
+      Gdiplus::Pen focusPen(Gdiplus::Color(
+          255, GetRValue(palette.FocusRing), GetGValue(palette.FocusRing),
+          GetBValue(palette.FocusRing)), 2.2f);
+      graphics.DrawPath(&focusPen, &focusPath);
+    }
+  }
+
+  static LRESULT CALLBACK SssFluentButtonProc(
+      HWND button,
+      UINT message,
+      WPARAM wParam,
+      LPARAM lParam,
+      UINT_PTR subclassId,
+      DWORD_PTR /* refData */)
+  {
+    SssFluentButtonState *state =
+        reinterpret_cast<SssFluentButtonState *>(
+            ::GetPropW(button, L"SSS_FluentButton"));
+
+    switch (message)
+    {
+      case WM_PAINT:
+      case WM_PRINTCLIENT:
+      {
+        if (state)
+        {
+          if (message == WM_PAINT)
+          {
+            PAINTSTRUCT paint = {};
+            HDC dc = ::BeginPaint(button, &paint);
+            if (dc)
+              SssDrawFluentButton(dc, button);
+            ::EndPaint(button, &paint);
+          }
+          else
+          {
+            SssDrawFluentButton(reinterpret_cast<HDC>(wParam), button);
+          }
+          return 0;
+        }
+        break;
+      }
+      case WM_MOUSEMOVE:
+      {
+        if (state && !state->Hover)
+        {
+          TRACKMOUSEEVENT track = { sizeof(track), TME_LEAVE, button, 0 };
+          ::TrackMouseEvent(&track);
+          state->Hover = true;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_MOUSELEAVE:
+      {
+        if (state && state->Hover)
+        {
+          state->Hover = false;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_LBUTTONDOWN:
+      case WM_LBUTTONDBLCLK:
+      {
+        if (state && !state->Pressed)
+        {
+          state->Pressed = true;
+          ::SetCapture(button);
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_LBUTTONUP:
+      {
+        if (state && state->Pressed)
+        {
+          state->Pressed = false;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_CAPTURECHANGED:
+      {
+        if (state && state->Pressed)
+        {
+          state->Pressed = false;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_KEYDOWN:
+      {
+        if (state && wParam == VK_SPACE && !state->Pressed)
+        {
+          state->Pressed = true;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_KEYUP:
+      {
+        if (state && wParam == VK_SPACE && state->Pressed)
+        {
+          state->Pressed = false;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_SETFOCUS:
+      case WM_KILLFOCUS:
+      {
+        if (state)
+        {
+          state->KeyboardFocus = message == WM_SETFOCUS;
+          ::InvalidateRect(button, nullptr, FALSE);
+        }
+        break;
+      }
+      case WM_ENABLE:
+      {
+        ::InvalidateRect(button, nullptr, FALSE);
+        break;
+      }
+      case 0x1601: // BCM_GETIDEALSIZE: feed the layout system our metrics
+      {
+        if (state && lParam)
+        {
+          HDC dc = ::GetDC(button);
+          HFONT font = reinterpret_cast<HFONT>(
+              ::SendMessageW(button, WM_GETFONT, 0, 0));
+          HFONT oldFont = font
+              ? reinterpret_cast<HFONT>(::SelectObject(dc, font)) : nullptr;
+          wchar_t caption[128] = {};
+          ::GetWindowTextW(button, caption, 128);
+          // Strip '&' mnemonic markers for measurement.
+          std::wstring text;
+          for (const wchar_t *p = caption; *p; ++p)
+          {
+            if (*p == L'&' && p[1] == L'&') { text += L'&'; ++p; continue; }
+            if (*p == L'&') continue;
+            text += *p;
+          }
+          RECT measure = { 0, 0, 0, 0 };
+          ::DrawTextW(dc, text.c_str(), static_cast<int>(text.size()),
+              &measure, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
+          const UINT dpi = ::GetDeviceCaps(dc, LOGPIXELSY);
+          if (oldFont)
+            ::SelectObject(dc, oldFont);
+          ::ReleaseDC(button, dc);
+
+          SIZE *size = reinterpret_cast<SIZE *>(lParam);
+          const int padH = ::MulDiv(14, static_cast<int>(dpi), 96);
+          const int padV = ::MulDiv(8, static_cast<int>(dpi), 96);
+          size->cx = (measure.right - measure.left) + padH * 2;
+          size->cy = (measure.bottom - measure.top) + padV * 2;
+          return TRUE;
+        }
+        break;
+      }
+      case WM_DESTROY:
+      {
+        if (state)
+        {
+          delete state;
+          ::RemovePropW(button, L"SSS_FluentButton");
+        }
+        ::RemoveWindowSubclass(button, SssFluentButtonProc, subclassId);
+        break;
+      }
+      default:
+        break;
+    }
+
+    return ::DefSubclassProc(button, message, wParam, lParam);
+  }
+
+  static BOOL CALLBACK SssSetFontProc(HWND control, LPARAM lParam)
+  {
+    wchar_t className[32] = {};
+    ::GetClassNameW(control, className, 32);
+    // Leave buttons alone: they get the font in the dedicated pass below.
+    if (::lstrcmpiW(className, L"Button") == 0)
+      return TRUE;
+    ::SendMessageW(control, WM_SETFONT, lParam, TRUE);
+    return TRUE;
+  }
+
+  static void SssApplyFluentLook(HWND dialog)
+  {
+    const unsigned buttonIds[] =
+    {
+      IDYES, IDNO, IDCANCEL,
+      IDB_YES_TO_ALL, IDB_NO_TO_ALL, IDB_AUTO_RENAME
+    };
+
+    // Body font for every control, display font for the header. When the
+    // Variable font family is missing, both stay null and nothing changes.
+    // The size follows the user's Font Size setting (default 9pt).
+    const unsigned basePt = SssGetDialogFontSize();
+    HFONT bodyFont = SssGetBodyFont(basePt, false);
+    HFONT headerFont = SssGetBodyFont(
+        static_cast<unsigned>(::MulDiv(static_cast<int>(basePt), 4, 3)),
+        true);
+    if (bodyFont)
+    {
+      ::SendMessageW(dialog, WM_SETFONT,
+          reinterpret_cast<WPARAM>(bodyFont), TRUE);
+      ::EnumChildWindows(dialog, SssSetFontProc,
+          reinterpret_cast<LPARAM>(bodyFont));
+    }
+    if (headerFont)
+      ::SendMessageW(::GetDlgItem(dialog, IDT_OVERWRITE_HEADER),
+          WM_SETFONT, reinterpret_cast<WPARAM>(headerFont), TRUE);
+
+    for (unsigned id : buttonIds)
+    {
+      HWND button = ::GetDlgItem(dialog, static_cast<int>(id));
+      if (!button)
+        continue;
+      if (!::GetPropW(button, L"SSS_FluentButton"))
+      {
+        SssFluentButtonState *state = new SssFluentButtonState();
+        // Uniform styling: all buttons share the standard Fluent look,
+        // matching the XAML ContentDialog (no accent default button).
+        state->Accent = false;
+        ::SetPropW(button, L"SSS_FluentButton", state);
+        ::SetWindowSubclass(button, SssFluentButtonProc, 1, 0);
+        // Body font for the button text.
+        if (bodyFont)
+          ::SendMessageW(button, WM_SETFONT,
+              reinterpret_cast<WPARAM>(bodyFont), TRUE);
+      }
+    }
+  }
+  // **************** SSS Fluent Overwrite Dialog End ****************
 }
 
 using namespace NWindows;
@@ -845,6 +1413,11 @@ bool COverwriteDialog::OnInit()
     HideItem(IDB_NO_TO_ALL);
     HideItem(IDB_AUTO_RENAME);
   }
+
+  // SSS: Fluent look (fonts + owner-drawn buttons) must be applied before
+  // the layout pass, which reads BCM_GETIDEALSIZE intercepted by the
+  // button subclass.
+  SssApplyFluentLook(*this);
 
   LayoutOverwriteDialog(*this, ShowExtraButtons);
   PositionOverwriteDialog(*this);
