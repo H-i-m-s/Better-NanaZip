@@ -832,6 +832,22 @@ namespace
 
     RECT rect = {};
     ::GetClientRect(button, &rect);
+    const int widthPx = rect.right - rect.left;
+    const int heightPx = rect.bottom - rect.top;
+    if (!dc || widthPx <= 0 || heightPx <= 0)
+      return;
+
+    // Double buffering: render every layer into a memory bitmap and blit
+    // once. Drawing layered fills straight onto the screen DC exposes the
+    // intermediate states between them, which reads as flicker during the
+    // hover fade.
+    HDC memoryDc = ::CreateCompatibleDC(dc);
+    HBITMAP memoryBitmap = ::CreateCompatibleBitmap(dc, widthPx, heightPx);
+    HBITMAP oldBitmap = memoryBitmap
+        ? reinterpret_cast<HBITMAP>(::SelectObject(memoryDc, memoryBitmap))
+        : nullptr;
+    const bool buffered = memoryDc && memoryBitmap && oldBitmap;
+    HDC target = buffered ? memoryDc : dc;
 
     // Clear the whole client area first: the band between the face and the
     // control edge (focus-ring zone) must be repainted with the dialog
@@ -839,7 +855,7 @@ namespace
     {
       HBRUSH background = reinterpret_cast<HBRUSH>(::SendMessageW(
           ::GetParent(button), WM_CTLCOLORBTN,
-          reinterpret_cast<WPARAM>(dc),
+          reinterpret_cast<WPARAM>(target),
           reinterpret_cast<LPARAM>(button)));
       HBRUSH localBackground = nullptr;
       if (!background)
@@ -850,7 +866,7 @@ namespace
         background = localBackground;
       }
       if (background)
-        ::FillRect(dc, &rect, background);
+        ::FillRect(target, &rect, background);
       if (localBackground)
         ::DeleteObject(localBackground);
     }
@@ -892,14 +908,14 @@ namespace
       text = accent ? text : palette.ButtonTextPressed;
     }
 
-    const UINT dpi = ::GetDeviceCaps(dc, LOGPIXELSY);
+    const UINT dpi = ::GetDeviceCaps(target, LOGPIXELSY);
     // 8px radius for a rounder, Win11 2H24-style look.
     const float radius = static_cast<float>(
         ::MulDiv(8, static_cast<int>(dpi), 96));
     const float width = static_cast<float>(rect.right - rect.left);
     const float height = static_cast<float>(rect.bottom - rect.top);
 
-    Gdiplus::Graphics graphics(dc);
+    Gdiplus::Graphics graphics(target);
     graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
 
     // Focus ring underlay FIRST (below the face): a solid rounded outer
@@ -1006,6 +1022,17 @@ namespace
     if (oldFont)
       ::SelectObject(textDc, oldFont);
     graphics.ReleaseHDC(textDc);
+
+    // Present the finished frame in one shot.
+    if (buffered)
+      ::BitBlt(dc, 0, 0, widthPx, heightPx, memoryDc, 0, 0, SRCCOPY);
+
+    if (oldBitmap)
+      ::SelectObject(memoryDc, oldBitmap);
+    if (memoryBitmap)
+      ::DeleteObject(memoryBitmap);
+    if (memoryDc)
+      ::DeleteDC(memoryDc);
   }
 
   static LRESULT CALLBACK SssFluentButtonProc(
@@ -1022,6 +1049,14 @@ namespace
 
     switch (message)
     {
+      case WM_ERASEBKGND:
+      {
+        // The full frame is painted in WM_PAINT (double-buffered); letting
+        // the system erase here only adds a one-frame flash.
+        if (state)
+          return 1;
+        break;
+      }
       case WM_PAINT:
       case WM_PRINTCLIENT:
       {
