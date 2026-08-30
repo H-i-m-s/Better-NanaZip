@@ -81,6 +81,7 @@ if (-not (Test-Path $shellMsix)) { throw '壳包打包失败' }
 
 # ---------- 4. 注册脚本与绿色版右键菜单 ----------
 Copy-Item "$shellSrc\RegisterShellExt.cmd" $green
+Copy-Item "$shellSrc\RegisterShellExt.ps1" $green
 Copy-Item "$shellSrc\UnregisterShellExt.cmd" $green
 Copy-Item "$shellSrc\绿色版右键菜单\SetFileAssoc.ps1" $green
 # 绿色版一键右键菜单（含自提权装证书；exe 安装器文件集同源递归，会一并带入 {app} 备用）
