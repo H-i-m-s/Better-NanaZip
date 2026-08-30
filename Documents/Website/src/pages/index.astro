@@ -1,7 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PageSection from "../components/PageSection/PageSection.astro";
-import InfoBar from "../components/InfoBar/InfoBar.astro";
 import ThemedLocalPicture from "../components/ThemedLocalPicture/ThemedLocalPicture.astro";
 import Tree from "../components/Tree/Tree.astro";
 
@@ -63,7 +62,7 @@ import CheckmarkIcon from '@fluentui/svg-icons/icons/checkmark_20_regular.svg';
 				</div>
 				<div class="card" role="listitem">
 					<BoxIcon width="20" height="20" fill="currentColor" />
-					混合匹配模式（本地 + 云端）
+					可扩展的远程密码源
 				</div>
 				<div class="card" role="listitem">
 					<CheckmarkIcon width="20" height="20" fill="currentColor" />
@@ -74,12 +73,6 @@ import CheckmarkIcon from '@fluentui/svg-icons/icons/checkmark_20_regular.svg';
 					密码分享
 				</div>
 			</div>
-
-			<InfoBar title="侵权风险提示" severity="caution" wrap={true}>
-				云端密码查询功能基于对第三方解压软件通信协议的研究，存在侵权风险。
-				如何获取云端 API 由用户自行研究，本项目不提供任何指导，也不对使用
-				该功能产生的法律后果负责。建议仅用于合法用途。
-			</InfoBar>
 		</PageSection>
 
 		<PageSection header="现代化界面">

@@ -17,7 +17,7 @@ import InfoBar from "../components/InfoBar/InfoBar.astro";
             <!-- GitHub Releases -->
             <h2>GitHub Releases</h2>
 
-            <p>下载最新稳定版安装包（MSIX，已用开发证书签名）：</p>
+            <p>下载最新稳定版安装包（MSIX）：</p>
             <a class="btn btn-accent" href="https://github.com/H-i-m-s/Better-NanaZip/releases/latest">
                 最新稳定版
             </a>
@@ -26,15 +26,9 @@ import InfoBar from "../components/InfoBar/InfoBar.astro";
 
             <h2>安装说明</h2>
 
-            <p>安装包使用自签名证书（<code>CN=SSS NanaZip Development</code>）签名。
-            直接安装：</p>
+            <p>直接安装：</p>
 
             <pre><code>Add-AppxPackage -Path "NanaZipPackage_x.x.x.x_x64_arm64.msixbundle"</code></pre>
-
-            <p>如提示证书不受信任，先导入公钥再安装：</p>
-
-            <pre><code>.\build\SSSDevSigning\Install-SSSDevCertificate.ps1
-.\build\SSSDevSigning\Install-SSSNanaZipPackage.ps1 -PackagePath "NanaZipPackage_x.x.x.x_x64_arm64.msixbundle"</code></pre>
 
             <InfoBar title="提示" severity="information" wrap={true}>
                 安装后如右键菜单未出现，请在任务管理器中重启资源管理器
