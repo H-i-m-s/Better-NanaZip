@@ -65,6 +65,7 @@ class COverwriteDialog: public NWindows::NControl::CModalDialog
   void SetFileInfoControl(const NOverwriteDialog::CFileInfo &fileInfo, unsigned textID, unsigned iconID, unsigned iconID_2);
   virtual bool OnInit() Z7_override;
   virtual bool OnDestroy() Z7_override;
+  virtual bool OnMessage(UINT message, WPARAM wParam, LPARAM lParam) Z7_override;
   virtual bool OnButtonClicked(unsigned buttonID, HWND buttonHWND) Z7_override;
   void ReduceString(UString &s);
 
