@@ -1319,7 +1319,13 @@ INT_PTR CProgressDialog::Create(const UString &title, NWindows::CThread &thread,
     BIG_DIALOG_SIZE(360, 192);
     res = CModalDialog::Create(SIZED_DIALOG(IDD_PROGRESS), wndParent);
 #endif // ******** Annotated 7-Zip Mainline Source Code snippet End ********
-    if (::K7ModernAvailable())
+    // SSS: NANAZIP_NO_XAML=1 forces the Win32 progress dialog; used to
+    // bisect the intermittent heap corruption on the silent extract path.
+    wchar_t noXaml[4] = {};
+    const bool noXamlEnv =
+        ::GetEnvironmentVariableW(L"NANAZIP_NO_XAML", noXaml, 4) > 0
+        && noXaml[0] == L'1';
+    if (!noXamlEnv && ::K7ModernAvailable())
     {
         res = ::K7ModernShowProgressWindow(
             wndParent,

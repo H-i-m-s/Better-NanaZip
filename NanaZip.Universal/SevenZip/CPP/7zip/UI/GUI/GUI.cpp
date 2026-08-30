@@ -532,7 +532,15 @@ void NanaZipInitialize()
         ::ExitProcess(1);
     }
 
-    if (MO_RESULT_SUCCESS_OK != ::K7UserInitializeDarkModeSupport())
+    // SSS: temporary diagnostic switch for the intermittent heap corruption
+    // (0xC0000374) on the silent extract path: NANAZIP_NO_DARKMODE=1 skips
+    // the K7User dark-mode detours entirely (GUI only).
+    wchar_t noDarkMode[4] = {};
+    const bool skipDarkMode =
+        ::GetEnvironmentVariableW(L"NANAZIP_NO_DARKMODE", noDarkMode, 4) > 0
+        && noDarkMode[0] == L'1';
+    if (!skipDarkMode &&
+        MO_RESULT_SUCCESS_OK != ::K7UserInitializeDarkModeSupport())
     {
         ::ErrorMessage(L"K7UserInitializeDarkModeSupport Failed");
     }

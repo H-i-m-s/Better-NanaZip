@@ -1232,12 +1232,16 @@ static bool TryAutomaticPasswordCandidates(
     UStringVector testPaths = archivePaths;
     UStringVector testPathsFull = archivePathsFull;
     CProgressDialog progress;
-    CExtractCallbackImp testCallback;
-    testCallback.ProgressDialog = &progress;
-    testCallback.PasswordIsDefined = true;
-    testCallback.Password = candidates[i].Value.c_str();
-    testCallback.TestMode = true;
-    testCallback.Init();
+    // 7-Zip COM 约定：传给引擎的回调必须是堆对象。
+    // CMyUnknownImp 初始引用计数为 0，引擎在 Extract 返回前 AddRef/Release
+    // 归零后执行 delete this；栈对象会被 delete 栈内存 -> 堆损坏 0xc0000374。
+    // 所以此处的候选测试回调也必须 new 在堆上（与正式提取路径一致）。
+    CExtractCallbackImp *testCallback = new CExtractCallbackImp;
+    testCallback->ProgressDialog = &progress;
+    testCallback->PasswordIsDefined = true;
+    testCallback->Password = candidates[i].Value.c_str();
+    testCallback->TestMode = true;
+    testCallback->Init();
     UString errorMessage;
     CDecompressStat stat;
     const HRESULT result = Extract(
@@ -1248,19 +1252,19 @@ static bool TryAutomaticPasswordCandidates(
         testPathsFull,
         wildcardCensor,
         testOptions,
-        &testCallback,
-        &testCallback,
-        &testCallback,
+        testCallback,
+        testCallback,
+        testCallback,
         #ifndef Z7_SFX
         NULL,
         #endif
         errorMessage,
         stat);
     ExtractFlowDiagLogResult(L"[F2] candidate extract returned", result);
-    if (result == S_OK && testCallback.IsOK())
+    if (result == S_OK && testCallback->IsOK())
     {
-      if (!testCallback.PasswordWasAsked ||
-          !testCallback.EncryptedFileWasVerified)
+      if (!testCallback->PasswordWasAsked ||
+          !testCallback->EncryptedFileWasVerified)
       {
         ExtractFlowDiagLog(L"[F2] candidate rejected no verified content");
         return false; // no password-protected archive content was verified

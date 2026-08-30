@@ -661,12 +661,22 @@ HRESULT Extract(
     // password callback (code 1) and are not overwritten; everything else
     // is success (0) or a real failure (2).
 #ifdef Z7_LANG
+    extern void ExtractFlowDiagLog(const wchar_t *message);
+    ExtractFlowDiagLog(L"[Q4-X] before SssRecordBatchArchiveResult");
     SssRecordBatchArchiveResult(arcPath, errorMessage.IsEmpty());
+    ExtractFlowDiagLog(L"[Q4-X] after SssRecordBatchArchiveResult");
 #endif
     // **************** NanaZip Modification End ****************
     if (!errorMessage.IsEmpty())
       return E_FAIL;
   }
+
+#ifdef Z7_LANG
+  {
+    extern void ExtractFlowDiagLog(const wchar_t *message);
+    ExtractFlowDiagLog(L"[Q4-X] loop done, before st copy");
+  }
+#endif
 
   if (multi || thereAreNotOpenArcs)
   {
@@ -686,6 +696,12 @@ HRESULT Extract(
   // **************** 7-Zip ZS Modification End ****************
   // **************** NanaZip Modification Start ****************
   st.OutDir = ecs->OutDir;
+#ifdef Z7_LANG
+  {
+    extern void ExtractFlowDiagLog(const wchar_t *message);
+    ExtractFlowDiagLog(L"[Q4-X] st copied, before return S_OK");
+  }
+#endif
   // **************** NanaZip Modification End ****************
   return S_OK;
 }
