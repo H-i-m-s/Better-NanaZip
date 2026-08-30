@@ -25,7 +25,15 @@ $manifestText = Get-Content -LiteralPath $manifest -Raw
 if ($Version -ne '') {
     if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "版本号格式错误: '$Version'" }
     if ($manifestText -notmatch 'Version="\d+\.\d+\.\d+\.\d+"') { throw "manifest 中未找到 Version 属性" }
-    $newText = [regex]::Replace($manifestText, 'Version="\d+\.\d+\.\d+\.\d+"', "Version=`"$Version`"")
+    # 只替换 Identity 的 Version 属性：TargetDeviceFamily 的 MinVersion/MaxVersionTested
+    # 同样是四段式 Version 属性，宽松正则会把它们一起改坏（曾把 MinVersion 改成 6.5.x）
+    # 替换串用 ${1}/${2} 语法避免 PowerShell 把 $1 当变量展开
+    $newText = [regex]::Replace($manifestText,
+        '(<Identity[^>]*?Version=")\d+\.\d+\.\d+\.\d+("[^>]*?/?>)',
+        ('${1}' + $Version + '${2}'),
+        [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if ($newText -eq $manifestText) { throw "Identity Version 未被替换，正则需检查" }
+    if ($newText -match [regex]::Escape('$' + $Version)) { throw "替换串语法错误：版本号前出现美元符" }
     Set-Content -LiteralPath $manifest -Value $newText -NoNewline -Encoding UTF8
     "已设置版本号: $Version"
 } else {
