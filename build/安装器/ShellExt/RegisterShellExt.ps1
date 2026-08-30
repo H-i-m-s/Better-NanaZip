@@ -3,7 +3,7 @@
 # 职责：把 NanaZipShellExt.x64.msix 注册为 sparse package（Win11 右键一级菜单）
 # 幂等：已注册则先移除再注册（支持升级/目录移动后重装）
 # 日志：同目录 ShellExt注册日志.txt（排查"别人机器没有右键菜单"的关键证据）
-# 前提：签名证书必须在 LocalMachine\TrustedPeople（exe 安装器会在本步之前提权导入）
+# 信任模型：真实证书签名时任何机器零配置；自签名过渡期则要求目标机已装证书
 # ============================================================
 $ErrorActionPreference = 'Stop'
 $dir = $PSScriptRoot
@@ -35,7 +35,7 @@ try {
     $certOk = Test-Path "Cert:\LocalMachine\TrustedPeople\$hash"
     Log ('签名证书 TrustedPeople: ' + $(if ($certOk) { '已安装' } else { '未安装' }))
     if (-not $certOk) {
-        throw ('签名证书未安装。请在管理员 PowerShell 运行: Import-Certificate -FilePath "{0}" -CertStoreLocation Cert:\LocalMachine\TrustedPeople' -f (Join-Path $dir 'SSS-NanaZip-Development.cer'))
+        throw '壳包签名证书未被目标机器信任（自签名过渡期正常现象），注册中止；换合法代码签名证书重签后无需任何配置'
     }
 
     # 幂等注册：先移除旧注册（升级/重装/目录移动场景），再注册

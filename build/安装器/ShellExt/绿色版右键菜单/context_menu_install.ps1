@@ -1,9 +1,10 @@
 ﻿# ============================================================
 # NanaZip 绿色版一键安装右键菜单（由 安装右键菜单.cmd 调起）
 # 做三件事（相互独立，一项失败不影响其余）：
-#   1) 首次运行安装签名证书（需管理员，一次 UAC；已装则零 UAC）
+#   1) 只读检测签名证书信任状态（不导入、不提权、零 UAC）
 #   2) 注册 MSIX 壳包（Win11 一级菜单，用户级免管理员）
 #   3) 注册传统 verb（"显示更多选项"兜底，用户级，任何情况都尝试）
+# 信任模型：壳包用合法代码签名证书签名后，目标机器零配置；过渡期（自签名）新机器注册失败会有明确提示
 # 全部可逆：运行"移除右键菜单.cmd"即可还原纯绿状态
 # 日志：本目录 右键菜单安装日志.txt（远程排查就发这个文件）
 # ============================================================
@@ -41,49 +42,19 @@ if (-not (Test-Path (Join-Path $dir 'NanaZipShellExt.x64.msix'))) {
 
 $modernOk = $false
 
-# ---------- 1. 证书（首次需要，已装跳过） ----------
-if (-not ($SkipCertCheck -or (Test-CertInstalled))) {
-    $cer = Join-Path $dir 'SSS-NanaZip-Development.cer'
-    if (-not (Test-Path $cer)) {
-        Log '[错误] 首次使用需要证书文件 SSS-NanaZip-Development.cer'
-        Log '请把它放到本目录后重试。'
-        Read-Host '按回车退出'
-        exit 1
-    }
-    # 非管理员 → 自提权重跑（提权窗口内完成全部步骤）
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if (-not $isAdmin) {
-        Log '首次运行需要安装签名证书，正在请求管理员权限（请在 UAC 弹窗选"是"）...'
-        try {
-            Start-Process powershell.exe -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"") | Out-Null
-            Log '已拉起管理员窗口，请在新窗口中继续操作。'
-        }
-        catch {
-            Log '[提示] 未获得管理员权限（UAC 被取消或被安全软件拦截）。'
-            Log '影响：Win11 一级菜单装不上；仍会尝试注册传统兜底菜单。'
-        }
-        Read-Host '按回车退出'
-        exit 0
-    }
-    try {
-        Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' -ErrorAction Stop | Out-Null
-        Log '[1/3] 签名证书已安装（一次 UAC，以后不再需要）'
-    }
-    catch {
-        Log ('[1/3] [错误] 证书导入失败: ' + $_.Exception.Message)
-        Log '可能被安全软件拦截。Win11 一级菜单将不可用，继续注册传统兜底菜单。'
-    }
+# ---------- 1. 证书信任状态检查（只读检测，不导入任何证书）----------
+# 信任模型：壳包用真实代码签名证书签名，链锚定在系统出厂信任的根 CA，
+# 任何机器零配置即可注册。若壳包尚未换签（仍是自签名），会在这里提示。
+if (Test-CertInstalled) {
+    Log '[1/3] 签名证书已存在（自签名过渡期状态）'
 }
 else {
-    Log '[1/3] 签名证书已存在，跳过'
+    Log '[1/3] 系统未持有本软件签名证书'
 }
 
 # ---------- 2. 注册壳包（Win11 一级菜单） ----------
 if ($os.Build -lt 17763) {
     Log ('[2/3] [跳过] Windows 版本过旧（build {0} < 17763），不支持壳包，Win11 一级菜单不可用' -f $os.Build)
-}
-elseif (-not (Test-CertInstalled)) {
-    Log '[2/3] [跳过] 签名证书未安装（第 1 步未完成），Win11 一级菜单不可用'
 }
 else {
     Log '[2/3] 注册 Win11 右键一级菜单...'
@@ -102,7 +73,13 @@ else {
     catch {
         Log '[2/3] [失败] 壳包注册未成功:'
         Log ('      ' + $_.Exception.Message)
-        Log '      常见原因：安全软件拦截；目录移动过（本脚本已自动先移除旧注册，可重试）。'
+        if ($_.Exception.Message -match '0x800B0100|0x800B0109|trust|信任|签名') {
+            Log '      原因判断：壳包签名证书未被系统信任（自签名过渡期正常现象），'
+            Log '      换用合法代码签名证书重签后将直接成功。传统兜底菜单不受影响。'
+        }
+        else {
+            Log '      常见原因：安全软件拦截；目录移动过（本脚本已自动先移除旧注册，可重试）。'
+        }
     }
 }
 

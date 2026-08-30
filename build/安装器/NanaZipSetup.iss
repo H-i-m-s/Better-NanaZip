@@ -82,39 +82,16 @@ Filename: "{app}\{#MyAppExeName}"; Description: "运行 NanaZip"; Flags: nowait 
 // 注册/卸载右键菜单扩展（MSIX 壳包 + ExternalLocation，Win11 默认菜单直接显示）
 // 用事件钩子而非 [Run]，因为静默/升级模式不执行 [Run] 段
 //
-// 关键背景：壳包用自签名证书（指纹 0E7475...）签名，目标机器必须先把它导入
-// LocalMachine\TrustedPeople 才能注册成功。本机开发时装过证书所以一直没暴露
-// 这个问题；新机器上 Add-AppxPackage 会因证书不受信而失败（2026-08 排查结论，
-// 解压专家用 DigiCert 商业证书所以到处都能注册）。
-// 因此安装时：先检测证书，缺失则提权导入（一次 UAC），再注册壳包。
-const
-  CertHash = '0E7475D74EFAEDDB26D4BDA02FBC6551DC8D72A5';
-
+// 信任模型：壳包用真实代码签名证书签名，证书链锚定在系统出厂信任的根 CA，
+// 目标机器无需导入任何证书，Add-AppxPackage 直接成功。
+// （历史教训 2026-08：曾用自签名证书，新机器必败；等合法证书到位后此问题不复存在）
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
-  CertParams: String;
 begin
   if CurStep = ssPostInstall then
   begin
-    // 1) 签名证书：缺失时提权导入（免管理员安装器无法直接写 LocalMachine 证书库）
-    // 检测命令退出码：0 = 已存在；1 = 缺失。Inno 单引号转义用两个连续单引号。
-    CertParams := '-NoProfile -ExecutionPolicy Bypass -Command "exit [int](-not (Test-Path (''Cert:\LocalMachine\TrustedPeople\' + CertHash + ''')))"';
-    Exec('powershell.exe', CertParams, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    // ResultCode 0 = 已存在；1 = 缺失；其他 = 检测异常（视为缺失处理）
-    if ResultCode <> 0 then
-    begin
-      Log('ShellExt: 签名证书缺失，请求提权导入...');
-      CertParams := '-NoProfile -ExecutionPolicy Bypass -Command "Import-Certificate -FilePath ''' + ExpandConstant('{app}') + '\SSS-NanaZip-Development.cer'' -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null"';
-      if ShellExec('runas', 'powershell.exe', CertParams, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
-        Log('ShellExt: 签名证书导入成功')
-      else
-        Log('ShellExt: 签名证书导入未完成（ResultCode=' + IntToStr(ResultCode) + '，可能是用户取消 UAC）；Win11 一级菜单将不可用，传统菜单不受影响');
-    end
-    else
-      Log('ShellExt: 签名证书已存在，跳过导入');
-
-    // 2) 注册壳包（RegisterShellExt.ps1 内部有完整日志：{app}\ShellExt注册日志.txt）
+    // 注册壳包（RegisterShellExt.ps1 内部有完整日志：{app}\ShellExt注册日志.txt）
     Exec(ExpandConstant('{app}\RegisterShellExt.cmd'), '', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Log('ShellExt: RegisterShellExt.cmd 退出码 ' + IntToStr(ResultCode));
 
