@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>HeapDump</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <BaseOutputPath>E:\NanaZip\Output\Binaries\Tools\HeapDump\</BaseOutputPath>
+  </PropertyGroup>
+</Project>
