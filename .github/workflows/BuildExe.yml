@@ -1,0 +1,152 @@
+# Build EXE (x64) —— 只出 Inno 安装器，不发布 msix / 绿色版
+#
+# 为什么这样配：
+# - 构建链直接复用 build\构建发布.ps1 -Mode 构建 -Format exe。exe 组装依赖
+#   msixbundle（03-组装文件集 从 bundle 解包出文件集），所以 msix 打包仍会
+#   跑一遍；这是仓库既有流程，不另起一套。
+# - 增量：按 build\构建流程与注意事项.md 的实测，FM 单入口编译约 48s，真正
+#   耗时在环境准备（checkout / NuGet restore / SDK 预装 / wapproj 打包 / ISCC）。
+#   因此缓存 NuGet 包与 Mile SDK 缓存目录（体积小、命中率高），不缓存
+#   Output\Objects（6 GB，压缩后仍 2~3 GB，下载比重新编译更慢）。
+# - 签名：复用同一条开发证书链。导入 SSS_NANAZIP_PFX_BASE64 后：
+#     · msixbundle 由 Sign-SSSNanaZipPackage.ps1 按 Subject 查找证书
+#     · 壳包由 03-组装文件集.ps1 按 NANAZIP_SIGN_THUMBPRINT 指定的 thumbprint 签
+#   安装器里的壳包必须能通过用户机器上已信任的开发证书校验，所以不能用临时
+#   自签证书替代，缺 secret 直接失败。
+#
+# 需要的 secrets：
+#   SSS_NANAZIP_PFX_BASE64  开发证书 .pfx 的 base64
+#   SSS_NANAZIP_PFX_PASSWORD .pfx 密码
+#
+# 产物：NanaZipSetup_<版本>_x64.exe（Output\发布\<版本>\ 整个目录）
+
+name: Build EXE (x64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '包版本（留空则用 6.5.<run_number>.0）'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-exe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      POWERSHELL_TELEMETRY_OPTOUT: 1
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      PFX_BASE64: ${{ secrets.SSS_NANAZIP_PFX_BASE64 }}
+      PFX_PASSWORD: ${{ secrets.SSS_NANAZIP_PFX_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      # NuGet 包目录：restore 的输入，几万个小文件，命中后省掉每次下载。
+      # key 用工程文件 hash，改动工程时重建；restore-keys 保证日常改源码仍能命中。
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-win-${{ hashFiles('global.json', '**/*.vcxproj', '**/*.props', '**/Directory.Build.props') }}
+          restore-keys: |
+            nuget-win-
+
+      # Mile.Project.Configurations 是 NuGet 投递的 MSBuild SDK。缓存未命中时
+      # 手动展开到全局包目录，避免 SDK 解析阶段走网络。
+      - name: Ensure Mile.Project.Configurations SDK
+        shell: pwsh
+        run: |
+          $globalJson = Get-Content global.json -Raw | ConvertFrom-Json
+          $pkgId = 'mile.project.configurations'
+          $version = $globalJson.'msbuild-sdks'.'Mile.Project.Configurations'
+          if (-not $version) { throw 'global.json 里没有 Mile.Project.Configurations 版本' }
+          $dest = Join-Path $env:USERPROFILE ".nuget\packages\$pkgId\$version"
+          if (Test-Path (Join-Path $dest "$pkgId.nuspec")) {
+            Write-Host "SDK 已在缓存中: $dest"
+            exit 0
+          }
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $tmp = Join-Path $env:RUNNER_TEMP 'mile-sdk.nupkg'
+          $url = "https://api.nuget.org/v3-flatcontainer/$pkgId/$version/$pkgId.$version.nupkg"
+          Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+          Expand-Archive -Path $tmp -DestinationPath $dest -Force
+          Remove-Item $tmp -Force
+          Write-Host "SDK 已预装: $dest"
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          MSBuild build\BuildAllTargets.proj -t:Restore -v:minimal -nologo
+          if ($LASTEXITCODE -ne 0) { throw "NuGet restore 失败 (退出码 $LASTEXITCODE)" }
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 安装失败 (退出码 $LASTEXITCODE)" }
+
+      # 导入开发证书：bundle 签名按 Subject 查找，壳包签名用导出的 thumbprint。
+      # 同时把 .cer 放到 .local\SSSDevSigning\，05-汇总发布 会把它一起发出去。
+      - name: Import signing certificate
+        shell: pwsh
+        run: |
+          if (-not $env:PFX_BASE64) { throw '缺少 secret: SSS_NANAZIP_PFX_BASE64' }
+          if (-not $env:PFX_PASSWORD) { throw '缺少 secret: SSS_NANAZIP_PFX_PASSWORD' }
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'SSS-NanaZip-Development.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_BASE64))
+          $secure = ConvertTo-SecureString $env:PFX_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          Remove-Item $pfxPath -Force
+          New-Item -ItemType Directory -Force -Path '.local\SSSDevSigning' | Out-Null
+          Export-Certificate -Cert $cert -FilePath '.local\SSSDevSigning\SSS-NanaZip-Development.cer' | Out-Null
+          "NANAZIP_SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "证书已导入: $($cert.Subject) [$($cert.Thumbprint)]"
+
+      # -Mode 构建：增量编译 → wapproj 打包 → 03 组装 → ISCC 编译 exe → 05 汇总。
+      # CI 每个 runner 都是干净的，首次必然全量；后续靠上面的缓存省环境准备时间。
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = '${{ inputs.version }}'
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = "6.5.${{ github.run_number }}.0"
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "版本号格式错误: $version" }
+          Write-Host "构建版本: $version"
+          & .\build\构建发布.ps1 -Mode 构建 -Format exe -Arch x64 -Version $version
+          if ($LASTEXITCODE -ne 0) { throw "构建失败 (退出码 $LASTEXITCODE)" }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: NanaZipSetup-${{ github.run_number }}
+          path: Output/发布/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: |
+            Output/**/*.log
+            Output/**/*.binlog
+            Output/**/*.txt
+          if-no-files-found: ignore
+          retention-days: 7

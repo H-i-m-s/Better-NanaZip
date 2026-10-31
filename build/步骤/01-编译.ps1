@@ -19,7 +19,27 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root     = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)  # 步骤\ → build → 仓库根
-$vcvars64 = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat'
+# vcvars64.bat 探测：vswhere 优先（GitHub Actions 的 windows-2022 是 Enterprise，
+# 没有 Community 目录），回退到常见安装路径。
+function Resolve-VcVars64 {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+        if ($vsPath) {
+            $candidate = Join-Path ($vsPath | Select-Object -First 1) 'VC\Auxiliary\Build\vcvars64.bat'
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+    foreach ($candidate in @(
+        'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat',
+        'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat',
+        'C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat',
+        'C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat')) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    throw '未找到 vcvars64.bat（需要 VS2022 的 C++ 桌面工作负载）'
+}
+$vcvars64 = Resolve-VcVars64
 $fmProj   = 'NanaZip.UI.Modern\NanaZip.Modern.FileManager.vcxproj'
 $wapproj  = 'NanaZipPackage\NanaZipPackage.wapproj'
 

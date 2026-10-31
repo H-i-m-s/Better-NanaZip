@@ -8,7 +8,8 @@
 # ============================================================
 param(
     [string]$BundlePath = '',
-    [string]$Version = ''
+    [string]$Version = '',
+    [string]$Thumbprint = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -76,7 +77,12 @@ $shellMsix = "$green\NanaZipShellExt.x64.msix"
 if (Test-Path $shellMsix) { Remove-Item $shellMsix -Force }
 & $makeappx.FullName pack /d $shellWork /p $shellMsix /o /nv 2>&1 | Out-Null
 if (-not (Test-Path $shellMsix)) { throw '壳包打包失败' }
-& $signtool.FullName sign /fd SHA256 /sha1 0E7475D74EFAEDDB26D4BDA02FBC6551DC8D72A5 $shellMsix 2>&1 | Out-Null
+# 壳包签名证书：CI 里用 workflow 导入的同一张开发证书（thumbprint 相同），
+# 也可用 -Thumbprint 或环境变量 NANAZIP_SIGN_THUMBPRINT 覆盖。
+if (-not $Thumbprint) { $Thumbprint = $env:NANAZIP_SIGN_THUMBPRINT }
+if (-not $Thumbprint) { $Thumbprint = '0E7475D74EFAEDDB26D4BDA02FBC6551DC8D72A5' }
+& $signtool.FullName sign /fd SHA256 /sha1 $Thumbprint $shellMsix 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "壳包签名失败（证书 thumbprint $Thumbprint 不在证书库）" }
 "壳包: NanaZipShellExt.x64.msix ($([Math]::Round((Get-Item $shellMsix).Length/1KB))KB, 已签名)"
 
 # ---------- 4. 注册脚本与绿色版右键菜单 ----------
