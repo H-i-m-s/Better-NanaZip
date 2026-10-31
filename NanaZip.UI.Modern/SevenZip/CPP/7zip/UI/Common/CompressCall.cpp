@@ -262,10 +262,21 @@ static void SssWaitWithMessagePump(HANDLE handle)
   }
 }
 
+// SSS Modification: waitProcessAfterEvent / shellHostMode.
+// shellHostMode is true when the caller is an in-process shell extension:
+// IExplorerCommand::Invoke runs on the explorer.exe UI thread, so nothing
+// here may block that thread and -sspid must not be injected (the current
+// pid would be explorer.exe). waitProcessAfterEvent is the matching wait
+// policy for the "waitFinish == false && event != NULL" branch: false
+// restores the original 7-Zip behaviour (wait for the map event only),
+// true keeps the SSS behaviour needed by the File Manager batch session
+// (wait for 7zG to really exit, pumping messages).
 static HRESULT Call7zGui(const UString &params,
     // LPCWSTR curDir,
     bool waitFinish,
-    NSynchronization::CBaseEvent *event)
+    NSynchronization::CBaseEvent *event,
+    bool waitProcessAfterEvent = true,
+    bool shellHostMode = false)
 {
   UString imageName = fs2us(NWindows::NDLL::GetModuleDirPrefix());
   imageName += k7zGui;
@@ -280,14 +291,21 @@ static HRESULT Call7zGui(const UString &params,
   // "cannot find the file" message) and left g_SssParentPid at 0,
   // silently disabling the parent watch on the compress path. Paths
   // without "--" (extract, hash, benchmark) keep the plain append.
+  //
+  // Shell extension calls skip this: their host is explorer.exe, so the
+  // switch would make 7zG watch the whole shell instead of the File
+  // Manager, and the extract would be tied to explorer's lifetime.
   UString fullParams = params;
-  UString sspid = L" -sspid";
-  sspid.Add_UInt32(::GetCurrentProcessId());
-  const int stopSwitchPos = fullParams.Find(L" --");
-  if (stopSwitchPos >= 0)
-    fullParams.Insert((unsigned)stopSwitchPos, sspid);
-  else
-    fullParams += sspid;
+  if (!shellHostMode)
+  {
+    UString sspid = L" -sspid";
+    sspid.Add_UInt32(::GetCurrentProcessId());
+    const int stopSwitchPos = fullParams.Find(L" --");
+    if (stopSwitchPos >= 0)
+      fullParams.Insert((unsigned)stopSwitchPos, sspid);
+    else
+      fullParams += sspid;
+  }
 
   CProcess process;
   const WRes wres = process.Create(imageName, fullParams, NULL); // curDir);
@@ -312,6 +330,20 @@ static HRESULT Call7zGui(const UString &params,
   {
     HANDLE handles[] = { processHandle, *event };
     ::WaitForMultipleObjects(ARRAY_SIZE(handles), handles, FALSE, INFINITE);
+    // SSS: shell extension host - the event only signals that 7zG parsed
+    // the archive map. Waiting for the process to exit here would block
+    // the explorer.exe UI thread for the whole extraction, so return as
+    // the original 7-Zip does. 7zG keeps running on its own and manages
+    // its dialogs (progress, password page) by itself.
+    if (!waitProcessAfterEvent)
+    {
+      // No File Manager shutdown path exists in this host to reclaim the
+      // handle later, so drop it now. Closing the handle does not stop
+      // 7zG.
+      if (SssUnregisterChildProcess(processHandle))
+        ::CloseHandle(processHandle);
+      return S_OK;
+    }
     // The event only signals that 7zG parsed the archive map; it may
     // still be extracting every archive (or showing its dialog). Wait for
     // the process to really exit so the batch password session stays
@@ -453,7 +485,8 @@ HRESULT CompressFiles(
     const UString &arcType,
     bool addExtension,
     const UStringVector &names,
-    bool email, bool showDialog, bool waitFinish)
+    bool email, bool showDialog, bool waitFinish,
+    bool shellHostMode)
 {
   MY_TRY_BEGIN
   UString params ('a');
@@ -553,13 +586,16 @@ HRESULT CompressFiles(
     arcName);
   }
 
+  // SSS: shellHostMode keyed wait policy - a shell extension call only
+  // waits for the archive map event and drops the child handle (see
+  // Call7zGui); the File Manager keeps waiting for 7zG.
   return Call7zGui(params,
       // (arcPathPrefix.IsEmpty()? 0: (LPCWSTR)arcPathPrefix),
-      waitFinish, &event);
+      waitFinish, &event, !shellHostMode, shellHostMode);
   MY_TRY_FINISH
 }
 
-static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, bool isHash, bool waitFinish)
+static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, bool isHash, bool waitFinish, bool waitProcessAfterEvent = true, bool shellHostMode = false)
 {
   AddLagePagesSwitch(params);
   params += (isHash ? kHashIncludeSwitches : kArcIncludeSwitches);
@@ -567,7 +603,7 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
   NSynchronization::CManualResetEvent event;
   HRESULT result = CreateMap(arcPaths, fileMapping, event, params);
   if (result == S_OK)
-    result = Call7zGui(params, waitFinish, &event);
+    result = Call7zGui(params, waitFinish, &event, waitProcessAfterEvent, shellHostMode);
   if (result != S_OK)
     ErrorMessageHRESULT(result);
 }
@@ -681,7 +717,7 @@ static void SssShowBatchResultSummary(const UString &sessionId,
 }
 
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker, const UString &passwordSessionId, bool forceDeleteAfter)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, UInt32 overwriteMode, bool waitFinish, bool suppressDelete, bool useDlgState, const UString &releaseBeforeDeleteMarker, const UString &passwordSessionId, bool forceDeleteAfter, bool shellHostMode)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
@@ -696,7 +732,15 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   // run silently: they get a batch password session when automatic lookup
   // is enabled. A single-archive call that shows the extract dialog keeps
   // the interactive path (dialog + password box) unchanged.
-  if (effectiveSessionId.IsEmpty() &&
+  // SSS: a shell extension call never starts a session. The session
+  // object (prefetch + pipe threads) would be owned by explorer.exe and
+  // the whole thing exists only to serve the 7zG process this call waits
+  // for; the shell host does not wait. Without a session id 7zG does its
+  // own automatic password lookup from the registry settings and falls
+  // back to the password page when nothing matches (see also the
+  // -sssid / -sspid handling below).
+  if (!shellHostMode &&
+      effectiveSessionId.IsEmpty() &&
       (arcPaths.Size() > 1 || !showDialog))
   {
     bool autoQueryCloud = false;
@@ -784,7 +828,12 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   if (showDialog)
     params += kShowDialogSwitch;
   SssFmDiagLog(L"[Q4-FM] ExtractGroupCommand begin");
-  ExtractGroupCommand(arcPaths, params, false, waitFinish);
+  // SSS: only the File Manager host waits for 7zG to exit (batch session
+  // lifetime). A shell extension call returns as soon as 7zG parsed the
+  // archive map, so explorer.exe stays responsive.
+  ExtractGroupCommand(arcPaths, params, false, waitFinish,
+      !shellHostMode, // waitProcessAfterEvent
+      shellHostMode);
   SssFmDiagLog(L"[Q4-FM] 7zG finished");
   // batchScope (if any) is destroyed here: the scope destructor stops the
   // session and joins the prefetch/pipe threads. The trace marks each
@@ -817,7 +866,7 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
 }
 
 
-void TestArchives(const UStringVector &arcPaths, bool hashMode)
+void TestArchives(const UStringVector &arcPaths, bool hashMode, bool shellHostMode)
 {
   MY_TRY_BEGIN
   UString params ('t');
@@ -826,7 +875,7 @@ void TestArchives(const UStringVector &arcPaths, bool hashMode)
     params += kArchiveTypeSwitch;
     params += "hash";
   }
-  ExtractGroupCommand(arcPaths, params, false, false);
+  ExtractGroupCommand(arcPaths, params, false, false, !shellHostMode, shellHostMode);
   MY_TRY_FINISH_VOID
 }
 
@@ -834,7 +883,8 @@ void TestArchives(const UStringVector &arcPaths, bool hashMode)
 void CalcChecksum(const UStringVector &paths,
     const UString &methodName,
     const UString &arcPathPrefix,
-    const UString &arcFileName)
+    const UString &arcFileName,
+    bool shellHostMode)
 {
   MY_TRY_BEGIN
 
@@ -848,7 +898,8 @@ void CalcChecksum(const UStringVector &paths,
       paths,
       false, // email,
       false, // showDialog,
-      false  // waitFinish
+      false,  // waitFinish
+      shellHostMode // shellHostMode: true = shell host, never wait for 7zG
       );
     return;
   }
@@ -867,7 +918,7 @@ void CalcChecksum(const UStringVector &paths,
     }
     */
   }
-  ExtractGroupCommand(paths, params, true, false);
+  ExtractGroupCommand(paths, params, true, false, !shellHostMode, shellHostMode);
   MY_TRY_FINISH_VOID
 }
 

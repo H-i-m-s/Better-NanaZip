@@ -1240,13 +1240,14 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
             false, // useDlgState
             UString(), // releaseBeforeDeleteMarker
             UString(), // passwordSessionId
-            (cmdID == kExtractHereSmartDelete)); // forceDeleteAfter
+            (cmdID == kExtractHereSmartDelete), // forceDeleteAfter
+            true); // shellHostMode: runs on the explorer.exe UI thread
         break;
       }
       // **************** NanaZip Modification End ****************
       case kTest:
       {
-        TestArchives(_fileNames);
+        TestArchives(_fileNames, false, true); // shellHostMode
         break;
       }
       case kCompress:
@@ -1268,7 +1269,8 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
             cmi.ArcName, cmi.ArcType,
             addExtension,
             _fileNames, email, showDialog,
-            false // waitFinish
+            false, // waitFinish
+            true // shellHostMode: runs on the explorer.exe UI thread
             );
         break;
       }
@@ -1297,14 +1299,14 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
           {
             if (cmdID == kHash_TestArc)
             {
-              TestArchives(_fileNames, true); // hashMode
+              TestArchives(_fileNames, true, true); // hashMode, shellHostMode
               break;
             }
             UString generateName;
             if (cmdID == kHash_Generate_SHA256)
               generateName = cmi.ArcName;
             CalcChecksum(_fileNames, (UString)hc.MethodName,
-                cmi.Folder, generateName);
+                cmi.Folder, generateName, true); // shellHostMode
             break;
           }
         }

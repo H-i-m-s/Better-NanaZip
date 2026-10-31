@@ -454,7 +454,7 @@ namespace NanaZip::ShellExtension
                     break;
                 }
 
-                TestArchives(FileNames);
+                TestArchives(FileNames, false, true); // shellHostMode
                 break;
             }
             case CommandID::Extract:
@@ -492,7 +492,8 @@ namespace NanaZip::ShellExtension
                     false, // useDlgState
                     UString(), // releaseBeforeDeleteMarker
                     UString(), // passwordSessionId
-                    (this->m_CommandID == CommandID::ExtractHereSmartDelete));
+                    (this->m_CommandID == CommandID::ExtractHereSmartDelete), // forceDeleteAfter
+                    true); // shellHostMode: runs on the explorer.exe UI thread
 
                 break;
             }
@@ -530,7 +531,8 @@ namespace NanaZip::ShellExtension
                     FileNames,
                     Email,
                     ShowDialog,
-                    false);
+                    false, // waitFinish
+                    true); // shellHostMode: runs on the explorer.exe UI thread
 
                 break;
             }
@@ -562,7 +564,7 @@ namespace NanaZip::ShellExtension
                     break;
                 }
 
-                CalcChecksum(FileNames, MethodName.c_str(), L"", L"");
+                CalcChecksum(FileNames, MethodName.c_str(), L"", L"", true); // shellHostMode
                 break;
             }
             default:
