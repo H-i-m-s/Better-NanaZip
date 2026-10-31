@@ -21,7 +21,7 @@
     <StackPanel
       x:Name="TabBar"
       Grid.Row="0"
-      Padding="12,8,12,0"
+      Padding="12,8,12,10"
       Orientation="Horizontal">
       <ToggleButton
         x:Name="TabMenuButton"
@@ -91,19 +91,30 @@
               VerticalAlignment="Center"
               SelectionChanged="MenuZoneComboChanged" />
           </Grid>
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="MenuContextItemsLabel"
-            Margin="0,16,0,6"
+            Margin="0,0,0,6"
             FontWeight="SemiBold" />
           <StackPanel x:Name="MenuContextListPanel" />
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="MenuFileContextItemsLabel"
-            Margin="0,16,0,6"
+            Margin="0,0,0,6"
             FontWeight="SemiBold" />
           <StackPanel x:Name="MenuFileContextListPanel" />
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <CheckBox
             x:Name="MenuExtractOnOpenCheck"
-            Margin="0,10,0,0"
             Click="MenuCheckBoxClick" />
         </StackPanel>
       </ScrollViewer>
@@ -147,9 +158,12 @@
               Click="WorkPathBrowseButtonClick"
               Content="..." />
           </Grid>
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <CheckBox
             x:Name="ForRemovableOnlyCheck"
-            Margin="0,12,0,0"
             Click="FoldersCheckBoxClick" />
         </StackPanel>
       </ScrollViewer>
@@ -180,9 +194,12 @@
               Click="EditorBrowseButtonClick"
               Content="..." />
           </Grid>
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="EditorEditorLabel"
-            Margin="0,14,0,0"
             FontWeight="SemiBold" />
           <Grid Margin="0,6,0,0">
             <Grid.ColumnDefinitions>
@@ -201,9 +218,12 @@
               Click="EditorBrowseButtonClick"
               Content="..." />
           </Grid>
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="EditorDiffLabel"
-            Margin="0,14,0,0"
             FontWeight="SemiBold" />
           <Grid Margin="0,6,0,0">
             <Grid.ColumnDefinitions>
@@ -249,16 +269,22 @@
           <CheckBox
             x:Name="SettingsAlternativeSelectionCheck"
             Click="SettingsCheckBoxClick" />
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <CheckBox
             x:Name="SettingsShowSystemMenuCheck"
-            Margin="0,14,0,0"
             Click="SettingsCheckBoxClick" />
           <CheckBox
             x:Name="SettingsLargePagesCheck"
             Click="SettingsCheckBoxClick" />
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <CheckBox
             x:Name="SettingsArcHistoryCheck"
-            Margin="0,14,0,0"
             Click="SettingsCheckBoxClick" />
           <CheckBox
             x:Name="SettingsPathHistoryCheck"
@@ -272,14 +298,21 @@
           <CheckBox
             x:Name="SettingsLowercaseHashesCheck"
             Click="SettingsCheckBoxClick" />
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <CheckBox
             x:Name="SettingsSizeFormatCheck"
-            Margin="0,14,0,0"
             Click="SettingsCheckBoxClick" />
 
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="SettingsFontGroupLabel"
-            Margin="0,16,0,6"
+            Margin="0,0,0,6"
             FontWeight="SemiBold" />
           <Grid>
             <Grid.ColumnDefinitions>
@@ -377,9 +410,13 @@
             x:Name="ExtractDeletePermanentlyCheck"
             Click="ExtractCheckBoxClick" />
 
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="ExtractAutoMatchGroupLabel"
-            Margin="0,16,0,6"
+            Margin="0,0,0,6"
             FontWeight="SemiBold" />
           <CheckBox
             x:Name="ExtractAutoQueryCloudCheck"
@@ -449,9 +486,13 @@
             Margin="0,10,0,0"
             Click="ExtractCheckBoxClick" />
 
+          <Border
+            Height="1"
+            Margin="0,14,0,10"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock
             x:Name="ExtractBookGroupLabel"
-            Margin="0,16,0,6"
+            Margin="0,0,0,6"
             FontWeight="SemiBold" />
           <TextBox
             x:Name="ExtractPasswordBookBox"
