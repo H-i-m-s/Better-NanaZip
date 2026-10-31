@@ -1,26 +1,22 @@
-# Build EXE (x64) —— 只出 Inno 安装器，不发布 msix / 绿色版
+# Build MSIX (x64) —— 只出 msixbundle（含开发证书），不组装 exe / 绿色版
 #
 # 为什么这样配：
-# - 构建链直接复用 build\构建发布.ps1 -Mode 构建 -Format exe。exe 组装依赖
-#   msixbundle（03-组装文件集 从 bundle 解包出文件集），所以 msix 打包仍会
-#   跑一遍；这是仓库既有流程，不另起一套。
+# - 直接复用 build\构建发布.ps1 -Mode 构建 -Format msix。编译、wapproj 打包、
+#   签名、汇总都在脚本里，CI 只负责环境和缓存。
 # - 增量：按 build\构建流程与注意事项.md 的实测，FM 单入口编译约 48s，真正
-#   耗时在环境准备（checkout / NuGet restore / SDK 预装 / wapproj 打包 / ISCC）。
+#   耗时在环境准备（checkout / NuGet restore / SDK 预装 / wapproj 打包）。
 #   因此缓存 NuGet 包与 Mile SDK 缓存目录（体积小、命中率高），不缓存
 #   Output\Objects（6 GB，压缩后仍 2~3 GB，下载比重新编译更慢）。
-# - 签名：复用同一条开发证书链。导入 SSS_NANAZIP_PFX_BASE64 后：
-#     · msixbundle 由 Sign-SSSNanaZipPackage.ps1 按 Subject 查找证书
-#     · 壳包由 03-组装文件集.ps1 按 NANAZIP_SIGN_THUMBPRINT 指定的 thumbprint 签
-#   安装器里的壳包必须能通过用户机器上已信任的开发证书校验，所以不能用临时
-#   自签证书替代，缺 secret 直接失败。
+# - 签名：复用同一条开发证书链。导入 SSS_NANAZIP_PFX_BASE64 后，bundle 由
+#   Sign-SSSNanaZipPackage.ps1 按 Subject 查找证书签名。缺 secret 直接失败。
 #
 # 需要的 secrets：
 #   SSS_NANAZIP_PFX_BASE64  开发证书 .pfx 的 base64
 #   SSS_NANAZIP_PFX_PASSWORD .pfx 密码
 #
-# 产物：NanaZipSetup_<版本>_x64.exe（Output\发布\<版本>\ 整个目录）
+# 产物：NanaZipPackage_<版本>_x64_Test.msixbundle + 同目录的开发证书 .cer
 
-name: Build EXE (x64)
+name: Build MSIX (x64)
 
 on:
   workflow_dispatch:
@@ -34,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-exe-${{ github.ref }}
+  group: build-msix-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -94,14 +90,8 @@ jobs:
           MSBuild build\BuildAllTargets.proj -t:Restore -v:minimal -nologo
           if ($LASTEXITCODE -ne 0) { throw "NuGet restore 失败 (退出码 $LASTEXITCODE)" }
 
-      - name: Install Inno Setup 6
-        shell: pwsh
-        run: |
-          choco install innosetup --no-progress -y
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 安装失败 (退出码 $LASTEXITCODE)" }
-
-      # 导入开发证书：bundle 签名按 Subject 查找，壳包签名用导出的 thumbprint。
-      # 同时把 .cer 放到 .local\SSSDevSigning\，05-汇总发布 会把它一起发出去。
+      # 导入开发证书：bundle 签名按 Subject 查找；同时把 .cer 放到
+      # .local\SSSDevSigning\，05-汇总发布 会把它一起发出去。
       - name: Import signing certificate
         shell: pwsh
         run: |
@@ -117,9 +107,9 @@ jobs:
           "NANAZIP_SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "证书已导入: $($cert.Subject) [$($cert.Thumbprint)]"
 
-      # -Mode 构建：增量编译 → wapproj 打包 → 03 组装 → ISCC 编译 exe → 05 汇总。
+      # -Mode 构建 -Format msix：增量编译 → wapproj 打包 → bundle 签名 → 汇总。
       # CI 每个 runner 都是干净的，首次必然全量；后续靠上面的缓存省环境准备时间。
-      - name: Build installer
+      - name: Build msix bundle
         shell: pwsh
         run: |
           $version = '${{ inputs.version }}'
@@ -128,13 +118,13 @@ jobs:
           }
           if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "版本号格式错误: $version" }
           Write-Host "构建版本: $version"
-          & .\build\构建发布.ps1 -Mode 构建 -Format exe -Arch x64 -Version $version
+          & .\build\构建发布.ps1 -Mode 构建 -Format msix -Arch x64 -Version $version
           if ($LASTEXITCODE -ne 0) { throw "构建失败 (退出码 $LASTEXITCODE)" }
 
-      - name: Upload installer
+      - name: Upload msix bundle
         uses: actions/upload-artifact@v7
         with:
-          name: NanaZipSetup-${{ github.run_number }}
+          name: NanaZip-MSIX-${{ github.run_number }}
           path: Output/发布/**
           if-no-files-found: error
           retention-days: 30
