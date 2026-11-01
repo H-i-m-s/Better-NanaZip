@@ -216,8 +216,18 @@ Z7_COM7F_IMF(CTestExtractCallback::PrepareOperation(
 Z7_COM7F_IMF(CTestExtractCallback::SetOperationResult(Int32 opRes))
 {
   ExtractFlowDiagLogResult(L"[C] SetOperationResult", opRes);
+  // **************** SSS Modification Start ****************
+  // 密码候选验证：第一个失败条目就返回 E_ABORT，让引擎立刻停下，
+  // 不再把整个包遍历一遍（错的密码没必要把每个文件都撞一次）。
+  // 批量预取（SssPrefetchOne）和主界面的本地匹配
+  // （LocalPasswordMatchWorker）都经过 TestArchivePassword，因此两条
+  // 后台路径同时生效。正式提取用的是 CExtractCallbackImp，不走这里。
   if (opRes != NArchive::NExtract::NOperationResult::kOK)
+  {
     HadError = true;
+    return E_ABORT;
+  }
+  // **************** SSS Modification End ****************
   return S_OK;
 }
 
@@ -231,9 +241,15 @@ Z7_COM7F_IMF(CTestExtractCallback::CryptoGetTextPassword(BSTR *password))
   return (*password ? S_OK : E_OUTOFMEMORY);
 }
 
+// archiveInspected（可选输出）：true 表示归档已经正常打开并完成条目扫描，
+// 这时 false 返回值可以确定地读作“不含加密条目”。归档打不开、或者打开后
+// 无法枚举条目时它保持 false，调用方据此区分“确定未加密”和“判断不了”。
 static bool ArchiveHasEncryptedItems(
-    const SssPasswordQueryContext &context)
+    const SssPasswordQueryContext &context,
+    bool *archiveInspected = nullptr)
 {
+  if (archiveInspected)
+    *archiveInspected = false;
   if (!context.ArchivePathsFull || context.ArchivePathsFull->IsEmpty())
     return false;
 
@@ -277,6 +293,9 @@ static bool ArchiveHasEncryptedItems(
   UInt32 numItems = 0;
   if (!archive || archive->GetNumberOfItems(&numItems) != S_OK)
     return false;
+  // 打开成功且条目枚举成功：下面的扫描结果可以当作确定结论。
+  if (archiveInspected)
+    *archiveInspected = true;
   for (UInt32 i = 0; i < numItems; i++)
   {
     bool encrypted = false;
@@ -385,18 +404,32 @@ static bool TestArchivePassword(
   if (archive->GetNumberOfItems(&numItems) != S_OK)
     return false;
   CRecordVector<UInt32> indices;
+  // **************** SSS Modification Start ****************
+  // 只验证第一个非目录的加密条目：密码正确时不必把整包解完。
+  // 代价是 ZIP 里每个文件密码不同的包会被误判为“这条候选正确”，
+  // 那种包极少见，正式提取时会以 CRC 错误暴露出来，不会静默解出坏文件。
+  // 目录条目不解码数据，给不出结论，所以优先跳过；全是目录时退回第一条。
+  UInt32 firstEncryptedEntry = (UInt32)(Int32)-1;
   for (UInt32 i = 0; i < numItems; i++)
   {
     bool isEncrypted = false;
     if (Archive_GetItemBoolProp(archive, i, kpidEncrypted, isEncrypted) == S_OK &&
         isEncrypted)
     {
-      indices.Add(i);
-      // Every encrypted item must decode cleanly: an archive may mix
-      // per-file passwords (ZIP), so verifying only the first item could
-      // accept a password that leaves the other files broken.
+      bool isDir = false;
+      Archive_GetItemBoolProp(archive, i, kpidIsDir, isDir);
+      if (!isDir)
+      {
+        indices.Add(i);
+        break;
+      }
+      if (firstEncryptedEntry == (UInt32)(Int32)-1)
+        firstEncryptedEntry = i;
     }
   }
+  if (indices.IsEmpty() && firstEncryptedEntry != (UInt32)(Int32)-1)
+    indices.Add(firstEncryptedEntry);
+  // **************** SSS Modification End ****************
   if (indices.IsEmpty())
   {
     // No encrypted content at all: local password matching is meaningless.
@@ -418,7 +451,7 @@ static bool TestArchivePassword(
          // discarding stream, so nothing touches disk
       testCallback);
   ExtractFlowDiagLogResult(L"[T] Extract returned", extractRes);
-  // The password is correct when every encrypted item decoded cleanly.
+  // The password is correct when the first encrypted item decoded cleanly.
   // A wrong password fails CRC/data validation and sets HadError.
   const bool ok = extractRes == S_OK && !testCallbackSpec->HadError;
   ExtractFlowDiagLog(ok ? L"[T] accepted" : L"[T] rejected");
@@ -1219,13 +1252,47 @@ static bool TryAutomaticPasswordCandidates(
     return false;
   }
 
-  std::vector<NanaZipPassword::Candidate> candidates;
-  NanaZipPassword::BuildAutomaticCandidates(
-      std::wstring(archivePathsFull[0].Ptr()), candidates);
-  ExtractFlowDiagLogIndex(L"[F2] candidates built count", candidates.size());
-  for (size_t i = 0; i < candidates.size(); ++i)
+  // **************** SSS Modification Start ****************
+  // 未加密的包直接跳过整个候选阶段：壳扩展的“提取到当前位置（智能）”
+  // 会让每个包都走到这里，而未加密的包原本也要白跑一遍候选构建与验证。
   {
-    ExtractFlowDiagLogIndex(L"[F2] candidate begin", i);
+    SssPasswordQueryContext encryptionContext = {};
+    encryptionContext.ArchivePath = std::wstring(archivePathsFull[0].Ptr());
+    encryptionContext.Codecs = codecs;
+    encryptionContext.FormatIndices = &formatIndices;
+    encryptionContext.ExcludedFormatIndices = &excludedFormatIndices;
+    encryptionContext.ArchivePathsFull = &archivePathsFull;
+    bool archiveInspected = false;
+    const bool hasEncrypted = ArchiveHasEncryptedItems(
+        encryptionContext, &archiveInspected);
+    if (!hasEncrypted && archiveInspected)
+    {
+      ExtractFlowDiagLog(L"[F2] automatic candidate phase skipped unencrypted");
+      return false;
+    }
+    // hasEncrypted == true：头部加密的包打不开，但 Open 过程会记录
+    // PasswordWasAsked，ArchiveHasEncryptedItems 已把它当作加密，保持候选流程。
+    // archiveInspected == false：归档打不开又没有要求密码（例如文件损坏），
+    // 这是异常情况，不能当成“未加密”跳过，继续走原来的候选流程。
+  }
+  // **************** SSS Modification End ****************
+
+  // **************** SSS Modification Start ****************
+  // 按优先级自己组织候选：本地优先时本地命中就不再发云端请求。
+  // 原先调用 BuildAutomaticCandidates，它无条件先查云端再排序，云端那
+  // 400ms 在“本地优先”下白等。
+  const SssAutomaticPasswordPolicy automaticPolicy =
+      SssReadAutomaticPasswordPolicy(); // 内部读的是 ReadAutomaticPasswordSettings
+  const std::wstring automaticArchivePath(archivePathsFull[0].Ptr());
+
+  // 候选阶段整体作废（归档里没有可验证的加密条目）时置 true。
+  bool abortCandidatePhase = false;
+
+  // 用单条候选密码做一次 test mode 提取验证。返回 true 表示该密码能解开
+  // 归档，并且确实验证过加密内容。
+  auto verifyCandidate = [&](const std::wstring &value,
+      NanaZipPassword::PasswordSource source) -> bool
+  {
     CExtractOptions testOptions = options;
     testOptions.TestMode = true;
     testOptions.OpenFolder.Val = false;
@@ -1239,8 +1306,11 @@ static bool TryAutomaticPasswordCandidates(
     CExtractCallbackImp *testCallback = new CExtractCallbackImp;
     testCallback->ProgressDialog = &progress;
     testCallback->PasswordIsDefined = true;
-    testCallback->Password = candidates[i].Value.c_str();
+    testCallback->Password = value.c_str();
     testCallback->TestMode = true;
+    // 错的候选在第一个文件失败时就让引擎停下，不再遍历整个包。
+    // 正式提取路径保持 false，行为不变。
+    testCallback->SssAbortOnFirstError = true;
     testCallback->Init();
     UString errorMessage;
     CDecompressStat stat;
@@ -1261,23 +1331,85 @@ static bool TryAutomaticPasswordCandidates(
         errorMessage,
         stat);
     ExtractFlowDiagLogResult(L"[F2] candidate extract returned", result);
+    // 中止后 Extract 的返回值不是 S_OK，天然落到“候选失败”分支；
+    // 密码正确时不会出现 opRes 错误，不会被误判。
     if (result == S_OK && testCallback->IsOK())
     {
       if (!testCallback->PasswordWasAsked ||
           !testCallback->EncryptedFileWasVerified)
       {
         ExtractFlowDiagLog(L"[F2] candidate rejected no verified content");
+        abortCandidatePhase = true;
         return false; // no password-protected archive content was verified
       }
-      extractCallback->Password = candidates[i].Value.c_str();
+      extractCallback->Password = value.c_str();
       extractCallback->PasswordIsDefined = true;
-      extractCallback->PasswordSource = candidates[i].Source;
+      extractCallback->PasswordSource = source;
       extractCallback->PasswordArchivePath = archivePathsFull[0];
       ExtractFlowDiagLog(L"[F2] candidate accepted");
       return true;
     }
     ExtractFlowDiagLog(L"[F2] candidate rejected");
+    return false;
+  };
+
+  // 本地密码书候选，逐条验证。
+  auto verifyLocalCandidates = [&]() -> bool
+  {
+    if (!automaticPolicy.UseLocal)
+      return false;
+    std::vector<NanaZipPassword::Candidate> candidates;
+    if (!NanaZipPassword::LoadLocalCandidates(candidates))
+      return false;
+    ExtractFlowDiagLogIndex(L"[F2] candidates built count", candidates.size());
+    for (size_t i = 0; i < candidates.size(); ++i)
+    {
+      ExtractFlowDiagLogIndex(L"[F2] candidate begin", i);
+      if (verifyCandidate(candidates[i].Value, candidates[i].Source))
+        return true;
+      if (abortCandidatePhase)
+        return false;
+    }
+    return false;
+  };
+
+  // 云端候选：只有确实需要时才发请求。
+  auto verifyCloudCandidate = [&]() -> bool
+  {
+    if (!automaticPolicy.UseCloud)
+      return false;
+    std::wstring cloudPassword;
+    if (!NanaZipPassword::QueryCloudPassword(
+        automaticArchivePath, cloudPassword))
+      return false;
+    if (cloudPassword.empty())
+      return false;
+    ExtractFlowDiagLog(L"[F2] cloud candidate begin");
+    return verifyCandidate(
+        cloudPassword, NanaZipPassword::PasswordSource::Cloud);
+  };
+
+  if (automaticPolicy.Priority == 0)
+  {
+    // 本地优先：本地候选全部失败后，若开启了云端查询才查一次。
+    if (verifyLocalCandidates())
+      return true;
+    if (abortCandidatePhase)
+      return false;
+    if (verifyCloudCandidate())
+      return true;
   }
+  else
+  {
+    // 云端优先：云端不成立再走本地候选。
+    if (verifyCloudCandidate())
+      return true;
+    if (abortCandidatePhase)
+      return false;
+    if (verifyLocalCandidates())
+      return true;
+  }
+  // **************** SSS Modification End ****************
   ExtractFlowDiagLog(L"[F2] automatic candidate phase exhausted");
   return false;
 }

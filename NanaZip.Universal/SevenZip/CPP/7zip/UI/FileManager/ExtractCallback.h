@@ -290,6 +290,12 @@ private:
 public:
   bool YesToAll;
   bool TestMode;
+  // **************** SSS Modification Start ****************
+  // 密码候选验证专用：为 true 时，第一个失败条目就让引擎停下（
+  // SetOperationResult 返回 E_ABORT），不再遍历整个归档。
+  // 正式提取路径保持 false，行为不变。
+  bool SssAbortOnFirstError = false;
+  // **************** SSS Modification End ****************
 
   UInt32 NumArchiveErrors;
   NExtract::NOverwriteMode::EEnum OverwriteMode;

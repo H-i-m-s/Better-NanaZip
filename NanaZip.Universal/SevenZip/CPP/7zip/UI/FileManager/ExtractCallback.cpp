@@ -494,6 +494,17 @@ Z7_COM7F_IMF(CExtractCallbackImp::SetOperationResult(Int32 opRes, Int32 encrypte
         (int)opRes, (int)encrypted, name);
     ExtractFlowDiagLog(diag);
   }
+  // **************** SSS Modification Start ****************
+  // 密码候选验证：第一个失败条目就返回 E_ABORT，让引擎立刻停下，
+  // 不再处理后续文件（错的密码不必遍历全包）。此时 Extract 的返回值
+  // 不是 S_OK，调用方会按“候选失败”处理，正是预期结果。
+  // 正式提取路径的 SssAbortOnFirstError 恒为 false，行为不变。
+  if (SssAbortOnFirstError &&
+      opRes != NArchive::NExtract::NOperationResult::kOK)
+  {
+    return E_ABORT;
+  }
+  // **************** SSS Modification End ****************
   switch (opRes)
   {
     case NArchive::NExtract::NOperationResult::kOK:
