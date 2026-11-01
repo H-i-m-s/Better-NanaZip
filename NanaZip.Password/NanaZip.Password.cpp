@@ -1,4 +1,4 @@
-#include "NanaZip.Password.h"
+﻿#include "NanaZip.Password.h"
 
 #include <appmodel.h>
 #include <bcrypt.h>

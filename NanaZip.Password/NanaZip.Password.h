@@ -1,4 +1,4 @@
-#ifndef NANAZIP_PASSWORD_CLIENT_H
+﻿#ifndef NANAZIP_PASSWORD_CLIENT_H
 #define NANAZIP_PASSWORD_CLIENT_H
 
 #include <Windows.h>
