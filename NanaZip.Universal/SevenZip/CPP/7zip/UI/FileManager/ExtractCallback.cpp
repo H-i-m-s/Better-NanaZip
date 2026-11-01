@@ -29,6 +29,7 @@
 #include <NanaZip.Password.h>
 
 #include <mutex>
+#include <condition_variable>
 
 namespace
 {
@@ -95,19 +96,35 @@ using namespace NFile;
 using namespace NFind;
 
 // **************** SSS Modification Start ****************
+// 前向声明放在文件顶部，避免在各处 if 块里就地 extern。
+// Diagnostic trace shared with ExtractGUI.cpp (k7extract_flow_diag.log).
+extern void ExtractFlowDiagLog(const wchar_t *message);
+// 批量结果文件里的“跳过”记录（定义在 ExtractGUI.cpp）。
+extern void SssRecordBatchSkip(const UString &archivePath);
+// **************** SSS Modification End ****************
+
+// **************** SSS Modification Start ****************
 // When the user picks a "to all" answer in the overwrite dialog, write it to
 // a temp file so the file manager can apply the same choice to the remaining
 // archives of the batch (each archive runs in its own 7zG process). The file
 // manager deletes the file before each archive and after the batch, so the
 // choice never leaks into the next batch.
-static void SssSaveOverwriteModeToTemp(const wchar_t *mode)
+// 文件名带会话 id（与 File Manager 侧共用 NanaZipPassword::BatchTempMarkerPath
+// 的命名规则），两个窗口同时批量时不再互相覆盖。
+static void SssSaveOverwriteModeToTemp(const wchar_t *mode,
+    const UString &sessionId)
 {
-  wchar_t temp[MAX_PATH];
-  if (::GetTempPathW(MAX_PATH, temp) == 0)
+  const std::wstring full = NanaZipPassword::BatchTempMarkerPath(
+      L"sss_batch_ow", std::wstring(sessionId.Ptr()));
+  if (full.empty())
     return;
-  UString full(temp);
-  full += L"sss_batch_ow.txt";
-  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+  {
+    // 实际写到的完整路径：用来验证按会话命名确实生效。
+    std::wstring message = L"[Q5] ow marker write ";
+    message += full;
+    ExtractFlowDiagLog(message.c_str());
+  }
+  HANDLE h = ::CreateFileW(full.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL,
       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE)
     return;
@@ -119,9 +136,6 @@ static void SssSaveOverwriteModeToTemp(const wchar_t *mode)
 
 extern bool g_DisableUserQuestions;
 
-// Diagnostic trace shared with ExtractGUI.cpp (k7extract_flow_diag.log).
-extern void ExtractFlowDiagLog(const wchar_t *message);
-
 // Serializes the whole batch password match (including the archive
 // verification inside the batch callback): multi-threaded extraction can
 // ask for the password from several files at once, and the 7-Zip engine
@@ -132,6 +146,30 @@ std::mutex &SssBatchMatchMutex()
   static std::mutex mutex;
   return mutex;
 }
+
+// **************** SSS Modification Start ****************
+// 与 SssBatchMatchMutex 同作用域的唯一性要求：那锁是进程级的，所以“已有
+// 线程在跑匹配”的标志、唤醒等待者的条件变量、以及“本归档没有可用密码”
+// 的备忘，也必须是进程级唯一的一份。
+static std::condition_variable &SssPasswordMatchCv()
+{
+  static std::condition_variable cv;
+  return cv;
+}
+// 一次匹配正在进行中（后来者等结论，不重跑）。
+static bool g_SssPasswordMatchInFlight = false;
+// 本归档已经被判定“无匹配”：后来者直接走失败分支。
+// 按归档路径记住，因此下一个归档自然作废。
+static bool g_SssPasswordMatchFailed = false;
+static std::wstring g_SssPasswordMatchFailedPath;
+
+// 调用方必须持有 SssBatchMatchMutex。
+static bool SssPasswordMatchFailedFor(const std::wstring &archivePath)
+{
+  return g_SssPasswordMatchFailed &&
+      g_SssPasswordMatchFailedPath == archivePath;
+}
+// **************** SSS Modification End ****************
 
 CExtractCallbackImp::~CExtractCallbackImp() {}
 
@@ -321,19 +359,19 @@ Z7_COM7F_IMF(CExtractCallbackImp::AskOverwrite(
     case IDB_YES_TO_ALL:
       *answer = NOverwriteAnswer::kYesToAll;
       // **************** SSS Modification Start ****************
-      SssSaveOverwriteModeToTemp(L"a"); // share "Yes to All" across batch archives
+      SssSaveOverwriteModeToTemp(L"a", PasswordSessionId); // share "Yes to All" across batch archives
       // **************** SSS Modification End ****************
       break;
     case IDB_NO_TO_ALL:
       *answer = NOverwriteAnswer::kNoToAll;
       // **************** SSS Modification Start ****************
-      SssSaveOverwriteModeToTemp(L"s"); // share "No to All" across batch archives
+      SssSaveOverwriteModeToTemp(L"s", PasswordSessionId); // share "No to All" across batch archives
       // **************** SSS Modification End ****************
       break;
     case IDB_AUTO_RENAME:
       *answer = NOverwriteAnswer::kAutoRename;
       // **************** SSS Modification Start ****************
-      SssSaveOverwriteModeToTemp(L"u"); // share "Auto rename" across batch archives
+      SssSaveOverwriteModeToTemp(L"u", PasswordSessionId); // share "Auto rename" across batch archives
       // **************** SSS Modification End ****************
       break;
     default: return E_FAIL;
@@ -570,6 +608,9 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
     PasswordIsDefined = false;
     Password.Empty();
     PasswordWasAsked = false;
+    // 来源标注也要清：否则第 N 个包会沿用第 N-1 个包的来源（云端 / 本地 /
+    // 命令行），影响“是否共享密码”的判断。
+    PasswordSource = NanaZipPassword::PasswordSource::None;
     ExtractFlowDiagLog(L"[Q4] beforeopen reset");
   }
   // **************** SSS Modification End ****************
@@ -831,19 +872,27 @@ HRESULT CExtractCallbackImp::ExtractResult(HRESULT result)
 
 #ifndef Z7_NO_CRYPTO
 
-// %TEMP%\sss_batch_skip.txt - the archive's path when the batch password
-// session had no verifying candidate (silent skip). The File Manager
-// deletes the marker before each archive, starts 7zG with -sssid, and
-// after 7zG exits reads it to count "skipped" archives separately from
-// real extraction errors.
-static void SssWriteBatchSkip(const UString &archivePath)
+// %TEMP%\sss_batch_skip_<sessionid>.txt - the archive's path when the batch
+// password session had no verifying candidate (silent skip). The name carries
+// the session id (shared rule: NanaZipPassword::BatchTempMarkerPath), so two
+// windows running a batch at the same time never overwrite each other. The
+// File Manager deletes the marker before each archive, starts 7zG with
+// -sssid, and after 7zG exits reads it to count "skipped" archives
+// separately from real extraction errors.
+static void SssWriteBatchSkip(const UString &archivePath,
+    const UString &sessionId)
 {
-  wchar_t temp[MAX_PATH];
-  if (::GetTempPathW(MAX_PATH, temp) == 0)
+  const std::wstring full = NanaZipPassword::BatchTempMarkerPath(
+      L"sss_batch_skip", std::wstring(sessionId.Ptr()));
+  if (full.empty())
     return;
-  UString full(temp);
-  full += L"sss_batch_skip.txt";
-  HANDLE h = ::CreateFileW(full, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+  {
+    // 实际写到的完整路径：用来验证按会话命名确实生效。
+    std::wstring message = L"[Q5] skip marker write ";
+    message += full;
+    ExtractFlowDiagLog(message.c_str());
+  }
+  HANDLE h = ::CreateFileW(full.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL,
       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE)
     return;
@@ -867,21 +916,68 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
   {
 #ifdef NANAZIP_MODERN
     // **************** SSS Modification Start ****************
+    // 并发门闸：同一次提取会被多个解码线程同时问密码。只让一个线程真正
+    // 跑匹配，其余线程在这里等结论，不重复跑整套匹配。
+    //   - 已有密码：直接返回缓存值；
+    //   - 本归档已被判定“无匹配”：不重跑，直接走原有后续逻辑；
+    //   - 正在匹配：等 in-flight 清零后重新判断；
+    //   - 否则：本线程接管这一轮匹配。
+    bool alreadyFailed = false;
+    {
+      std::unique_lock<std::mutex> lock(SssBatchMatchMutex());
+      const std::wstring gateArchivePath(PasswordArchivePath.Ptr());
+      for (;;)
+      {
+        if (PasswordIsDefined)
+        {
+          ExtractFlowDiagLog(L"[Q5] wait hit cached");
+          *password = ::SysAllocString(Password.Ptr());
+          return *password ? S_OK : E_OUTOFMEMORY;
+        }
+        if (SssPasswordMatchFailedFor(gateArchivePath))
+        {
+          alreadyFailed = true;
+          break;
+        }
+        if (!g_SssPasswordMatchInFlight)
+        {
+          g_SssPasswordMatchInFlight = true;
+          break;
+        }
+        {
+          std::wstring message = L"[Q5] wait begin ";
+          message += gateArchivePath;
+          ExtractFlowDiagLog(message.c_str());
+        }
+        SssPasswordMatchCv().wait(lock);
+        ExtractFlowDiagLog(L"[Q5] wait end");
+      }
+    }
+    // 接管了这一轮匹配：无论从哪个路径返回，离开作用域时都要清 in-flight
+    // 并唤醒等待者（析构晚于下面的回填，所以等待者看到的一定是结论）。
+    struct SssMatchOwnerGuard
+    {
+      bool Owned;
+      explicit SssMatchOwnerGuard(bool owned) : Owned(owned) {}
+      ~SssMatchOwnerGuard()
+      {
+        if (!Owned)
+          return;
+        {
+          std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+          g_SssPasswordMatchInFlight = false;
+        }
+        SssPasswordMatchCv().notify_all();
+      }
+    } matchGuard(!alreadyFailed);
+
     // 自动匹配已开启时先静默试一次；成功就直接用，不弹框。
     // 未开启或没匹配到，继续原有逻辑（批量会话 / 密码框）。
     // 批量会话（-sssid）有自己的预取管道与跳过语义，不能被这里的
     // 同步匹配抢在前面，所以只在无会话时走静默匹配。
-    if (SssSilentPasswordMatchCallback && PasswordSessionId.IsEmpty())
+    if (SssSilentPasswordMatchCallback && PasswordSessionId.IsEmpty() &&
+        !alreadyFailed)
     {
-      // 先看别的线程是否已经填好密码
-      {
-        std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
-        if (PasswordIsDefined)
-        {
-          *password = ::SysAllocString(Password.Ptr());
-          return *password ? S_OK : E_OUTOFMEMORY;
-        }
-      }
       UString matched;
       UINT32 matchedSource = 0;
       // 注意：调用期间不要持有 SssBatchMatchMutex，回调内部会用
@@ -898,9 +994,28 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
             PasswordSource = (NanaZipPassword::PasswordSource)matchedSource;
           }
           matched = Password;
+          // 已有结论，失败备忘作废。
+          g_SssPasswordMatchFailed = false;
+        }
+        {
+          std::wstring message = L"[Q5] match hit silent ";
+          message += std::wstring(PasswordArchivePath.Ptr());
+          ExtractFlowDiagLog(message.c_str());
         }
         *password = ::SysAllocString(matched.Ptr());
         return *password ? S_OK : E_OUTOFMEMORY;
+      }
+      // 没匹配到：记备忘，让同一归档的后来者直接走弹框，不重跑一遍。
+      {
+        std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+        g_SssPasswordMatchFailed = true;
+        g_SssPasswordMatchFailedPath =
+            std::wstring(PasswordArchivePath.Ptr());
+      }
+      {
+        std::wstring message = L"[Q5] match no hit ";
+        message += std::wstring(PasswordArchivePath.Ptr());
+        ExtractFlowDiagLog(message.c_str());
       }
     }
     // **************** SSS Modification End ****************
@@ -913,24 +1028,22 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
     // concurrent Open/Extract on the same archive from the same process.
     if (!PasswordSessionId.IsEmpty() && BatchPasswordMatchCallback)
     {
-      ExtractFlowDiagLog(L"[Q4] crypto batch branch");
-      // Do not hold the engine-serialization mutex while waiting for the
-      // prefetch result. The prefetch worker needs that mutex to run
-      // TestArchivePassword; holding it here would make both sides wait.
+      // 同一归档已被别的线程判定无匹配：跳过标记已由那个线程写过，这里
+      // 只需要保持一致的失败返回，批量模式不会弹密码框。
+      if (alreadyFailed)
       {
-        std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
-        if (PasswordIsDefined)
-        {
-          ExtractFlowDiagLog(L"[Q4] crypto reuse cached");
-          *password = ::SysAllocString(Password.Ptr());
-          return *password ? S_OK : E_OUTOFMEMORY;
-        }
+        ExtractFlowDiagLog(L"[Q5] batch wait no match");
+        return E_FAIL;
       }
+      ExtractFlowDiagLog(L"[Q4] crypto batch branch");
       UString matched;
       UINT32 matchedSource = 0;
       if (BatchPasswordMatchCallback(
           PasswordArchivePath, PasswordQueryContext, matched, matchedSource))
       {
+        // 批量分支不写失败备忘（那会让同一个归档的后续请求拿不到会话
+        // 侧的跳过语义），只靠跳过标记与结果文件表达结果。
+        ExtractFlowDiagLog(L"[Q5] match hit batch");
         ExtractFlowDiagLog(L"[Q4] crypto matched");
         {
           std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
@@ -950,11 +1063,10 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
         return *password ? S_OK : E_OUTOFMEMORY;
       }
       ExtractFlowDiagLog(L"[Q4] crypto no match");
-      SssWriteBatchSkip(PasswordArchivePath);
+      SssWriteBatchSkip(PasswordArchivePath, PasswordSessionId);
       // Record into the per-batch result file too (multi-archive dialog
       // path reads it for the summary; the marker above serves the
       // one-by-one loop).
-      extern void SssRecordBatchSkip(const UString &archivePath);
       SssRecordBatchSkip(PasswordArchivePath);
       // Not E_ABORT: that would cancel the whole batch. A plain failure
       // makes only this archive fail and the loop continues.

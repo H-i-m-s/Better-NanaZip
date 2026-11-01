@@ -629,16 +629,12 @@ void CPanel::ChangeComment()
 // Temp file shared between the file manager and 7zG to forward a
 // "Yes to All / No to All / Auto rename" overwrite answer to the next
 // archive of the same batch. See SssExtractAll below.
-static UString SssOwTempFilePath()
+// 文件名规则与 7zG 写入端一致（NanaZipPassword::BatchTempMarkerPath）：
+// 有会话 id 时带后缀，没有时退回固定名。
+static UString SssOwTempFilePath(const UString &sessionId)
 {
-  wchar_t temp[MAX_PATH];
-  UString p;
-  if (::GetTempPathW(MAX_PATH, temp) != 0)
-  {
-    p = temp;
-    p += L"sss_batch_ow.txt";
-  }
-  return p;
+  return UString(NanaZipPassword::BatchTempMarkerPath(
+      L"sss_batch_ow", std::wstring(sessionId.Ptr())).c_str());
 }
 
 static UInt32 SssReadOwTempFile(const UString &path)
@@ -700,21 +696,16 @@ static void SssBatchFlowDiagLog(const wchar_t *event)
   ::CloseHandle(h);
 }
 
-// 7zG writes %TEMP%\sss_batch_skip.txt (the archive's path) when the batch
-// password session had no verifying candidate (see SssWriteBatchSkip in
-// NanaZip.Universal ExtractCallback.cpp). The file manager deletes the
+// 7zG writes %TEMP%\sss_batch_skip_<sessionid>.txt (the archive's path) when
+// the batch password session had no verifying candidate (see SssWriteBatchSkip
+// in NanaZip.Universal ExtractCallback.cpp). The name carries the session id,
+// produced by the same helper on both sides. The file manager deletes the
 // marker before each archive and counts the archive as "skipped" when it
 // appears, separately from real extraction errors.
-static UString SssSkipFilePath()
+static UString SssSkipFilePath(const UString &sessionId)
 {
-  wchar_t temp[MAX_PATH];
-  UString p;
-  if (::GetTempPathW(MAX_PATH, temp) != 0)
-  {
-    p = temp;
-    p += L"sss_batch_skip.txt";
-  }
-  return p;
+  return UString(NanaZipPassword::BatchTempMarkerPath(
+      L"sss_batch_skip", std::wstring(sessionId.Ptr())).c_str());
 }
 
 // Consumes the silent-skip marker: returns true when the archive was
@@ -1168,15 +1159,13 @@ void CPanel::SssExtractAll(bool showDialog)
   args->IsBatch = true;
   args->ShowDialog = showDialog;
   args->OneByOne = false;
-  args->OwTempFile = SssOwTempFilePath();
-  args->OkFile = SssBatchOkFilePath();
-  args->SkipFile = SssSkipFilePath();
   args->CancelFile = SssCancelFilePath();
-  // Batch password session: only when automatic lookup is enabled. 7zG
-  // gets -sssid and verifies prefetched candidates itself; without the
-  // session it falls back to the password dialog.
+  // 会话 id 先算出来：标记文件名要带它（与 7zG 写入端的规则一致）。
   args->PasswordSessionId = (WantAutoQueryCloud() || WantAutoMatchLocal())
       ? UString(NanaZipPassword::GeneratePasswordSessionId().c_str()) : UString();
+  args->OwTempFile = SssOwTempFilePath(args->PasswordSessionId);
+  args->OkFile = SssBatchOkFilePath();
+  args->SkipFile = SssSkipFilePath(args->PasswordSessionId);
   args->DeleteAfter = WantDeleteAfterExtract();
   args->DeletePermanently = WantDeletePermanently();
   _sssLoopRunning = true;
@@ -1234,7 +1223,7 @@ void CPanel::SssExtractOneByOne()
   args->IsBatch = IsSssBatchFolder();
   args->ShowDialog = false;
   args->OneByOne = true;
-  args->OwTempFile = SssOwTempFilePath();
+  args->OwTempFile = SssOwTempFilePath(UString()); // 交互模式没有会话
   args->OkFile = SssBatchOkFilePath();
   // One-by-one is interactive: no batch password session, no skip mark.
   args->SkipFile = UString();

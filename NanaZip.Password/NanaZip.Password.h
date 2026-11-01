@@ -94,6 +94,13 @@ namespace NanaZipPassword
     // command line; it contains no password material.
     std::wstring GeneratePasswordSessionId();
 
+    // 批量流程的临时标记文件：%TEMP%\<prefix>_<sessionId>.txt
+    // sessionId 为空时退回 %TEMP%\<prefix>.txt（非会话路径）。
+    // 7zG（写入）与 File Manager（读取）共用这一处命名规则，避免两边
+    // 各拼一份导致读写名字并不对上。
+    std::wstring BatchTempMarkerPath(const wchar_t *prefix,
+        const std::wstring &sessionId);
+
     // The named pipe path for one session.
     std::wstring PasswordSessionPipeName(
         const std::wstring& sessionId);

@@ -1330,6 +1330,43 @@ namespace NanaZipPassword
         return L"\\\\.\\pipe\\NanaZip.Pwd." + sessionId;
     }
 
+    std::wstring BatchTempMarkerPath(const wchar_t *prefix,
+        const std::wstring &sessionId)
+    {
+        if (!prefix || !prefix[0])
+        {
+            return std::wstring();
+        }
+        wchar_t tempPath[MAX_PATH] = {};
+        if (::GetTempPathW(MAX_PATH, tempPath) == 0)
+        {
+            return std::wstring();
+        }
+        std::wstring path = tempPath;
+        path += prefix;
+        if (!sessionId.empty())
+        {
+            path += L'_';
+            // 会话 id 正常只是十六进制串；带路径分隔符或文件名字符的
+            // 值一律换成 '_'，既防拼出子目录，也避开非法文件名。
+            // 长度封顶，避免整个路径超出 MAX_PATH 后被截成另一个名字。
+            const size_t kMaxSessionPart = 64;
+            const size_t count = sessionId.size() < kMaxSessionPart
+                ? sessionId.size() : kMaxSessionPart;
+            for (size_t i = 0; i < count; ++i)
+            {
+                const wchar_t ch = sessionId[i];
+                const bool illegal = ch < 0x20 ||
+                    ch == L'\\' || ch == L'/' || ch == L':' ||
+                    ch == L'*' || ch == L'?' || ch == L'"' ||
+                    ch == L'<' || ch == L'>' || ch == L'|';
+                path += illegal ? L'_' : ch;
+            }
+        }
+        path += L".txt";
+        return path;
+    }
+
     BatchSession::BatchSession(
         const std::wstring& sessionId,
         const std::vector<std::wstring>& archivePaths) :

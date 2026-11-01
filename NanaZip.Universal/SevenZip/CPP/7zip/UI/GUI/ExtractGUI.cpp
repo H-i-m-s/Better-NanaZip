@@ -66,6 +66,22 @@ using namespace NWindows;
 using namespace NFile;
 using namespace NDir;
 
+// **************** SSS Modification Start ****************
+// 批量密码流程里的时间参数，集中在这里定义，避免几处字面量互相推导不出来：
+//   kPrefetchVerdictTimeout   提取线程等一个归档判定结果的总上限，必须大于
+//                             “一次管道请求 + 一次云端 HTTP”，所以取 30s。
+//   kBatchCandidateRequestMs  单次管道请求（向 File Manager 会话要候选）上限。
+//   kPrefetchRetryIntervalMs  预取线程在云端结果未到时的轮询间隔。
+// 云端 HTTP 自身的默认超时（5s）在 NanaZip.Password.cpp 的
+// kDefaultTimeoutSeconds，它是这里的下游。
+// 本地候选并发验证的线程数。与云端批量查询的上限（4）对齐；
+// 密码本条目少于此值时按实际条目数起线程。
+static constexpr size_t kLocalCandidateConcurrency = 4;
+static constexpr std::chrono::milliseconds kPrefetchVerdictTimeout(30000);
+static constexpr DWORD kBatchCandidateRequestMs = 15000;
+static constexpr unsigned kPrefetchRetryIntervalMs = 150;
+// **************** SSS Modification End ****************
+
 static const wchar_t * const kIncorrectOutDir = L"Incorrect output directory path";
 
 // Temporary extraction-flow diagnostics. Only records control-flow markers,
@@ -512,12 +528,6 @@ static std::map<std::wstring, std::shared_ptr<SssPrefetchResult>>
     g_PrefetchResults;
 static std::atomic<bool> g_PrefetchStopped{false};
 
-// Upper bound on how long the extract thread waits for a prefetch
-// verdict. The cloud lookup honors CloudTimeoutSeconds (5s default when
-// unset) and the pipe read is bounded, so a verdict normally arrives in a few
-// seconds; this timeout only guards against a stuck prefetch worker.
-static constexpr std::chrono::milliseconds kPrefetchVerdictTimeout(30000);
-
 // Stops the batch password prefetch and wakes every verdict waiter.
 // Called from the progress dialog cancel paths (and the batch teardown)
 // so a cancel cannot deadlock behind a stuck prefetch worker or pipe.
@@ -608,18 +618,25 @@ void SssRecordBatchArchiveResult(const UString &archivePath, bool ok)
   SssRecordBatchResult(archivePath, ok ? 0 : 2);
 }
 
-// Verifies one candidate against one archive. Runs under the batch match
-// mutex (same as the extraction thread's password callback) so the 7-Zip
-// engine never has two Open/Extract passes on the same process at once.
+// Verifies one candidate against one archive.
+//
+// exclusive = true：拿 SssBatchMatchMutex，与正式提取串行（默认，批量路径、
+//                    预取路径、对话框内的手动匹配都走这个）。
+// exclusive = false：不拿锁，允许多个验证同时进行。只在“引擎正卡在等密码、
+//                    没有任何正式解压在跑”时使用，即静默匹配（包括它的
+//                    并发验证与竞速）。这个前提写在调用方，不要拿到别处复用：
+//                    批量预取时另一个包可能正在正式解压，那里必须保持 true。
 static bool SssVerifyPassword(const std::wstring &candidate,
-    const SssPasswordQueryContext &context)
+    const SssPasswordQueryContext &context, bool exclusive = true)
 {
   if (candidate.empty())
     return false;
   wchar_t message[160] = {};
   swprintf_s(message, L"[Q4] verify candidate units=%zu", candidate.size());
   ExtractFlowDiagLog(message);
-  std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+  std::unique_lock<std::mutex> lock(SssBatchMatchMutex(), std::defer_lock);
+  if (exclusive)
+    lock.lock();
   const bool accepted = TestArchivePassword(candidate, context);
   ExtractFlowDiagLog(accepted
       ? L"[Q4] verify candidate accepted"
@@ -663,6 +680,160 @@ static bool SssTryLocalCandidates(
   return false;
 }
 
+// 多条线同时验证一批本地候选，先验证通过者胜；其余线在每条候选前检查停止
+// 标志。
+//
+// 前提（重要）：内部走 SssVerifyPassword(..., exclusive=false)，即不拿
+// SssBatchMatchMutex。只在“引擎正卡在等密码、没有任何正式解压在跑”时
+// 成立（静默匹配就是这种状态）。批量预取有别的包可能在正式解压，不能
+// 走到这里。
+//
+// 候选按索引轮转分配（不是一次切段），避免某个线程抽到长尾候选而拖慢整批。
+// concurrency 为 1 时退化为串行。
+static bool SssTryLocalCandidatesConcurrent(
+    const std::vector<NanaZipPassword::Candidate> &candidates,
+    const SssPasswordQueryContext &ctx,
+    size_t concurrency,
+    UString &outPassword, UINT32 &outSource,
+    const std::atomic<bool> *externalStop)
+{
+  if (candidates.empty())
+    return false;
+  if (concurrency > candidates.size())
+    concurrency = candidates.size();
+  if (concurrency <= 1)
+    return SssTryLocalCandidates(candidates, ctx, outPassword, outSource);
+
+  const std::chrono::steady_clock::time_point startTime =
+      std::chrono::steady_clock::now();
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool found = false;
+  int doneThreads = 0;
+  std::atomic<bool> stop(false);
+  std::atomic<size_t> nextIndex(0);
+  UString winner;
+  UINT32 winnerSource = 0;
+  size_t winnerIndex = 0;
+
+  // 外部停止（竞速里云端先赢）也要能被这里的线程看见。
+  auto isStopped = [&]() -> bool
+  {
+    return stop.load() || (externalStop && externalStop->load());
+  };
+
+  auto publish = [&](size_t index, const UString &value, UINT32 src)
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!found)
+    {
+      found = true;
+      winner = value;
+      winnerSource = src;
+      winnerIndex = index;
+    }
+    stop = true;
+    cv.notify_all();
+  };
+
+  auto markDone = [&]()
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    ++doneThreads;
+    cv.notify_all();
+  };
+
+  auto worker = [&]()
+  {
+    try
+    {
+      for (;;)
+      {
+        if (isStopped())
+          break;
+        const size_t index = nextIndex.fetch_add(1);
+        if (index >= candidates.size())
+          break;
+        {
+          // 只记索引、来源和长度，不打印密码明文。
+          wchar_t message[200] = {};
+          swprintf_s(message,
+              L"[Q5] local candidate verify index=%zu source=%u units=%zu",
+              index, (unsigned)candidates[index].Source,
+              candidates[index].Value.size());
+          ExtractFlowDiagLog(message);
+        }
+        if (SssVerifyPassword(candidates[index].Value, ctx, false))
+        {
+          const UString value(candidates[index].Value.c_str());
+          const UINT32 src = (UINT32)candidates[index].Source;
+          wchar_t message[160] = {};
+          swprintf_s(message, L"[Q5] local candidate accepted index=%zu", index);
+          ExtractFlowDiagLog(message);
+          publish(index, value, src);
+          break;
+        }
+        wchar_t message[160] = {};
+        swprintf_s(message, L"[Q5] local candidate rejected index=%zu", index);
+        ExtractFlowDiagLog(message);
+      }
+    }
+    catch (...)
+    {
+      // 坏包会让引擎抛异常；吞掉，不让裸 std::thread 直接 terminate。
+      ExtractFlowDiagLog(L"[Q5] local concurrent exception");
+    }
+    markDone();
+  };
+
+  std::vector<std::thread> threads;
+  try
+  {
+    for (size_t i = 1; i < concurrency; ++i)
+      threads.emplace_back(worker);
+  }
+  catch (...)
+  {
+    // 线程起不来：已起的照常跑，剩下的由主线程串行跑完。
+    ExtractFlowDiagLog(L"[Q5] local concurrent spawn failed");
+  }
+
+  const int expectedWorkers = (int)threads.size() + 1;
+  worker(); // 主线程自己也参与，线程创建失败时它会把剩下的候选跑完
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait(lock, [&]() { return found || doneThreads >= expectedWorkers; });
+  }
+  for (size_t i = 0; i < threads.size(); ++i)
+  {
+    if (threads[i].joinable())
+      threads[i].join();
+  }
+
+  bool accepted = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    accepted = found;
+    if (accepted)
+    {
+      outPassword = winner;
+      outSource = winnerSource;
+    }
+  }
+  const long long elapsedMs =
+      (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - startTime).count();
+  {
+    wchar_t message[220] = {};
+    swprintf_s(message,
+        L"[Q5] local concurrent done hit=%d index=%zu threads=%zu ms=%lld",
+        accepted ? 1 : 0, accepted ? winnerIndex : (size_t)0,
+        threads.size() + 1, elapsedMs);
+    ExtractFlowDiagLog(message);
+  }
+  return accepted;
+}
+
 // 查云端并验证；查询失败或验证不通过返回 false。
 static bool SssTryCloudCandidate(const UString &archivePath,
     const SssPasswordQueryContext &ctx,
@@ -679,9 +850,10 @@ static bool SssTryCloudCandidate(const UString &archivePath,
 // 混合模式（Priority == 2）：本地候选与云端查询同时开始，先验证通过的一方
 // 胜出，另一方尽快放弃；两边都失败返回 false。
 //
-// 注意“并行”的实际含义：解密验证本身是串行的（SssVerifyPassword 内部持
-// SssBatchMatchMutex），所以两条线并行带来的收益是“云端 HTTP 飞在路上的
-// 同时本地在验证”，而不是两次验证同时跑。
+// 注意“并行”的实际含义：本地那条线用 exclusive=false 并发验证（多条候选
+// 同时试），云端那条线在 HTTP 在飞；真正被串行化的只剩仍走 exclusive=true
+// 的路径（批量预取）。
+// 并发的前提：此刻引擎正卡在等密码，没有任何正式解压在跑。
 //
 // 云端那条线在等 HTTP 返回时无法中断，最坏要等满一个超时；返回后先看 stop，
 // 本地已经赢了就直接放弃，不再白跑一次验证。这条延迟是已知代价。
@@ -723,23 +895,25 @@ static bool SssRacePassword(const UString &archivePath,
   std::thread cloudThread;
   try
   {
-    // 本地那条线：每条候选验证前检查 stop，已置位就立刻收手。
+    // 本地那条线：多条线程并发验证一批候选（exclusive=false）。它们看的是
+    // 这里共享的 stop，云端先赢时会立刻收手。
     localThread = std::thread([&]()
     {
       try
       {
-        for (size_t i = 0; i < candidates.size(); ++i)
+        ExtractFlowDiagLog(L"[Q5] race local start");
+        UString value;
+        UINT32 src = 0;
+        if (SssTryLocalCandidatesConcurrent(candidates, ctx,
+            kLocalCandidateConcurrency, value, src, &stop))
         {
-          if (stop.load())
-            break;
-          UString value;
-          UINT32 src = 0;
-          if (SssTryCandidate(candidates[i].Value, candidates[i].Source,
-              ctx, value, src))
-          {
-            publish(value, src);
-            break;
-          }
+          publish(value, src);
+        }
+        else
+        {
+          ExtractFlowDiagLog(stop.load()
+              ? L"[Q5] race local abandoned by stop"
+              : L"[Q5] race local no hit");
         }
       }
       catch (...)
@@ -754,16 +928,25 @@ static bool SssRacePassword(const UString &archivePath,
     {
       try
       {
+        ExtractFlowDiagLog(L"[Q5] race cloud start");
         std::wstring cloud;
         if (NanaZipPassword::QueryCloudPassword(
-            std::wstring(archivePath.Ptr()), cloud) &&
-            !cloud.empty() && !stop.load())
+            std::wstring(archivePath.Ptr()), cloud))
         {
-          UString value;
-          UINT32 src = 0;
-          if (SssTryCandidate(cloud, NanaZipPassword::PasswordSource::Cloud,
-              ctx, value, src))
-            publish(value, src);
+          if (stop.load())
+          {
+            ExtractFlowDiagLog(L"[Q5] race cloud abandoned by stop");
+          }
+          else if (!cloud.empty())
+          {
+            UString value;
+            UINT32 src = 0;
+            if (SssTryCandidate(cloud, NanaZipPassword::PasswordSource::Cloud,
+                ctx, value, src))
+              publish(value, src);
+            else
+              ExtractFlowDiagLog(L"[Q5] race cloud rejected");
+          }
         }
       }
       catch (...)
@@ -798,6 +981,12 @@ static bool SssRacePassword(const UString &archivePath,
   stop = true; // 赢家已出或两边都失败：让另一条线从验证/HTTP 里尽快退出
   localThread.join();
   cloudThread.join();
+  {
+    wchar_t message[200] = {};
+    swprintf_s(message, L"[Q5] race result hit=%d source=%u",
+        accepted ? 1 : 0, accepted ? (unsigned)outSource : 0u);
+    ExtractFlowDiagLog(message);
+  }
   ExtractFlowDiagLog(accepted
       ? L"[Q4] race matched"
       : L"[Q4] race no hit");
@@ -813,10 +1002,19 @@ static void SssPrefetchOne(const UString &archivePath,
     const SssAutomaticPasswordPolicy &policy)
 {
   ExtractFlowDiagLog(L"[Q4] prefetch one begin");
-  auto result = std::make_shared<SssPrefetchResult>();
+  std::shared_ptr<SssPrefetchResult> result;
   {
     std::lock_guard<std::mutex> lock(g_PrefetchMutex);
-    g_PrefetchResults[std::wstring(archivePath.Ptr())] = result;
+    // 只在缺失时写入：worker 或另一次同步补偿已经挂上条目时，不覆盖也不
+    // 重复验证，调用方会照常等那份条目的判定。
+    const std::wstring key(archivePath.Ptr());
+    if (g_PrefetchResults.find(key) != g_PrefetchResults.end())
+    {
+      ExtractFlowDiagLog(L"[Q4] prefetch one existing entry");
+      return;
+    }
+    result = std::make_shared<SssPrefetchResult>();
+    g_PrefetchResults[key] = result;
   }
 
   SssPasswordQueryContext ctx = baseContext; // same codecs, different archive
@@ -849,7 +1047,7 @@ static void SssPrefetchOne(const UString &archivePath,
       if (!NanaZipPassword::RequestBatchCandidates(
           std::wstring(g_SssPasswordSessionId.Ptr()),
           std::wstring(archivePath.Ptr()),
-          15000, candidates))
+          kBatchCandidateRequestMs, candidates))
       {
         // Pipe gone (session ended or protocol mismatch): stop quietly,
         // but publish the verdicts first so the extract thread waiting
@@ -959,7 +1157,7 @@ static void SssPrefetchOne(const UString &archivePath,
 
     if (cloudFinished && localReady && result->LocalDone.load())
       break; // cloud and local are both settled
-    ::Sleep(150); // retry until both the book and cloud state are ready
+    ::Sleep(kPrefetchRetryIntervalMs); // retry until both the book and cloud state are ready
   }
   {
     wchar_t message[220] = {};
@@ -974,6 +1172,30 @@ static void SssPrefetchOne(const UString &archivePath,
   ExtractFlowDiagLog(L"[Q4] prefetch one end");
 }
 
+// **************** SSS Modification Start ****************
+// 分卷包只有首卷需要预取：正式提取会跳过后续卷，预取它们只是白查一遍
+// （还会多发一次云端请求）。只认 .NNN 三位数字扩展名且序号 >= 2 的形态；
+// 判不准的一律保留预取，宁多不漏。
+static bool SssIsNonFirstVolume(const UString &path)
+{
+  const int dot = path.ReverseFind_Dot();
+  if (dot < 0)
+    return false;
+  // 只处理 .NNN 三位扩展名；其他命名（.part1.rar、.r00 ...）判不准，保留。
+  if ((unsigned)dot + 4 != path.Len())
+    return false;
+  const wchar_t *ext = path.Ptr((unsigned)dot + 1);
+  unsigned number = 0;
+  for (unsigned i = 0; i < 3; ++i)
+  {
+    if (ext[i] < L'0' || ext[i] > L'9')
+      return false;
+    number = number * 10 + (unsigned)(ext[i] - L'0');
+  }
+  return number >= 2; // .001 是首卷，保留
+}
+// **************** SSS Modification End ****************
+
 static void SssPrefetchWorker(const UStringVector &archivePathsFull,
     const SssPasswordQueryContext &baseContext,
     const SssAutomaticPasswordPolicy &policy)
@@ -983,6 +1205,15 @@ static void SssPrefetchWorker(const UStringVector &archivePathsFull,
   {
     if (g_PrefetchStopped.load())
       break;
+    // **************** SSS Modification Start ****************
+    // 分卷包只有首卷需要预取：正式提取会跳过后续卷，预取它们只是白查一遍
+    // （还会多发一次云端请求）。
+    if (SssIsNonFirstVolume(archivePathsFull[i]))
+    {
+      ExtractFlowDiagLog(L"[Q4] prefetch worker skip volume part");
+      continue;
+    }
+    // **************** SSS Modification End ****************
     ExtractFlowDiagLogIndex(L"[Q4] prefetch worker item", i);
     SssPrefetchOne(archivePathsFull[i], baseContext, policy);
   }
@@ -1041,11 +1272,24 @@ static bool SssBatchPasswordMatch(
   auto waitFor = [&](const std::atomic<bool> &flag) -> bool
   {
     std::unique_lock<std::mutex> lock(g_PrefetchMutex);
-    g_PrefetchCv.wait_for(lock, kPrefetchVerdictTimeout,
+    const bool notified = g_PrefetchCv.wait_for(lock, kPrefetchVerdictTimeout,
         [&]()
     {
       return g_PrefetchStopped.load() || flag.load();
     });
+    if (!notified)
+    {
+      // 超时：停止标志仍是 false，但结论确实没来。不能因为“没被叫停”就
+      // 当成已就绪，那会让调用方去读一份只写了一半的结果。
+      wchar_t message[220] = {};
+      swprintf_s(message,
+          L"[Q4] verdict wait timeout ms=%lld localDone=%d cloudDone=%d",
+          (long long)kPrefetchVerdictTimeout.count(),
+          result->LocalDone.load() ? 1 : 0,
+          result->CloudDone.load() ? 1 : 0);
+      ExtractFlowDiagLog(message);
+      return false;
+    }
     return !g_PrefetchStopped.load();
   };
 
@@ -1079,9 +1323,10 @@ static bool SssBatchPasswordMatch(
     // still in flight.
     for (;;)
     {
+      bool notified = false;
       {
         std::unique_lock<std::mutex> lock(g_PrefetchMutex);
-        g_PrefetchCv.wait_for(lock, kPrefetchVerdictTimeout,
+        notified = g_PrefetchCv.wait_for(lock, kPrefetchVerdictTimeout,
             [&]()
         {
           return g_PrefetchStopped.load() ||
@@ -1090,6 +1335,18 @@ static bool SssBatchPasswordMatch(
       }
       if (g_PrefetchStopped.load())
         return false;
+      if (!notified)
+      {
+        // 超时且两边都没有结论：按“没有可用结论”返回，不读半成品。
+        wchar_t message[220] = {};
+        swprintf_s(message,
+            L"[Q4] mixed verdict timeout ms=%lld localDone=%d cloudDone=%d",
+            (long long)kPrefetchVerdictTimeout.count(),
+            result->LocalDone.load() ? 1 : 0,
+            result->CloudDone.load() ? 1 : 0);
+        ExtractFlowDiagLog(message);
+        return false;
+      }
       if (!result->LocalPassword.empty())
       {
         password = result->LocalPassword.c_str();
@@ -1173,16 +1430,35 @@ static bool SssSilentPasswordMatch(
   std::vector<NanaZipPassword::Candidate> localCandidates;
   if (policy.UseLocal)
     NanaZipPassword::LoadLocalCandidates(localCandidates); // 失败即空表
+  {
+    // 入口：归档名、策略、候选条数、并发度。归档名用拼接而不是 %s，
+    // 避开超长文件名把固定缓冲打满。
+    const wchar_t *slash = wcsrchr(archivePath.Ptr(), L'\\');
+    const wchar_t *name = slash ? slash + 1 : archivePath.Ptr();
+    wchar_t message[200] = {};
+    swprintf_s(message,
+        L"[Q5] silent match enter local=%d cloud=%d priority=%u "
+        L"candidates=%zu concurrency=%zu name=",
+        policy.UseLocal ? 1 : 0, policy.UseCloud ? 1 : 0,
+        (unsigned)policy.Priority, localCandidates.size(),
+        kLocalCandidateConcurrency);
+    std::wstring line(message);
+    line += name;
+    ExtractFlowDiagLog(line.c_str());
+  }
 
   // 三种优先级只在这一处决定：0 本地优先、1 云端优先、2 并行竞速。
-  // 验证与查询全部交给公共函数，不在本函数里再写循环。
+  // 本地候选走并发验证（exclusive=false）：此刻引擎正卡在等密码，
+  // 没有任何正式解压在跑。
   bool matched = false;
   if (policy.Priority == 0)
-    matched = SssTryLocalCandidates(localCandidates, ctx, password, source) ||
+    matched = SssTryLocalCandidatesConcurrent(localCandidates, ctx,
+            kLocalCandidateConcurrency, password, source, nullptr) ||
         SssTryCloudCandidate(archivePath, ctx, password, source);
   else if (policy.Priority == 1)
     matched = SssTryCloudCandidate(archivePath, ctx, password, source) ||
-        SssTryLocalCandidates(localCandidates, ctx, password, source);
+        SssTryLocalCandidatesConcurrent(localCandidates, ctx,
+            kLocalCandidateConcurrency, password, source, nullptr);
   else
     matched = SssRacePassword(archivePath, localCandidates, ctx,
         password, source);
@@ -1264,7 +1540,12 @@ static void LocalPasswordMatchWorker(
         ctx.ArchivePathsFull = &job.ArchivePathsFull;
         ctx.WildcardCensor = &wildcardCensor;
         ctx.Options = &job.Options;
-        if (TestArchivePassword(candidates[i].Value, ctx))
+        // 走公共验证函数：内部经 SssVerifyPassword 拿 SssBatchMatchMutex，
+        // 与提取线程、竞速线程共用同一条引擎串行化约定。
+        UString verified;
+        UINT32 verifiedSource = 0;
+        if (SssTryCandidate(candidates[i].Value, candidates[i].Source, ctx,
+            verified, verifiedSource))
         {
           accepted = true;
           acceptedPassword = candidates[i].Value;
