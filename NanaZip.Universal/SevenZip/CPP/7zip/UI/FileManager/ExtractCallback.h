@@ -295,6 +295,10 @@ public:
   // SetOperationResult 返回 E_ABORT），不再遍历整个归档。
   // 正式提取路径保持 false，行为不变。
   bool SssAbortOnFirstError = false;
+  // 多归档一次提取专用：为 true 时，BeforeOpen 会把密码状态清空，
+  // 让每个归档独立判定密码。否则 7-Zip 默认把上一个归档的密码
+  // 沿用到下一个，密码不同时会直接报错而不弹密码框。
+  bool SssResetPasswordPerArchive = false;
   // **************** SSS Modification End ****************
 
   UInt32 NumArchiveErrors;

@@ -2011,6 +2011,11 @@ HRESULT ExtractGUI(
     HWND hwndParent)
 {
   messageWasDisplayed = false;
+  // **************** SSS Modification Start ****************
+  // 多归档一次提取：让每个归档独立判定密码，不复用上一个归档的密码。
+  // 单归档保持原行为（用户手动输入的密码不会被清掉）。
+  extractCallback->SssResetPasswordPerArchive = (archivePathsFull.Size() > 1);
+  // **************** SSS Modification End ****************
   ExtractFlowDiagLog(L"[F1] ExtractGUI enter");
   ExtractFlowDiagLog(showDialog
       ? L"[F1] showDialog=true"

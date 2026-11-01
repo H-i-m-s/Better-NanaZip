@@ -551,7 +551,14 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
   _needWriteArchivePath = true;
   #ifndef Z7_NO_CRYPTO
   PasswordArchivePath = name;
-  if (!PasswordSessionId.IsEmpty())
+  // **************** SSS Modification Start ****************
+  // 两种情况需要把密码状态清空，让当前归档独立判定密码：
+  // 1. 批量会话（-sssid）：每个归档从会话取自己的密码；
+  // 2. 多归档一次提取（例如资源管理器里选中多个包右键“智能提取”）：
+  //    7-Zip 默认把上一个归档的密码沿用到下一个，密码不同时第二个
+  //    包会直接报错而不弹密码框，这里改成一包一判定。
+  // 单归档提取不受影响（标志为 false），用户手动输入的密码不会被清掉。
+  if (!PasswordSessionId.IsEmpty() || SssResetPasswordPerArchive)
   {
     // Batch silent mode: every archive gets its own password from the
     // session. Never reuse the previous archive's password (7-Zip keeps
@@ -561,6 +568,7 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
     PasswordWasAsked = false;
     ExtractFlowDiagLog(L"[Q4] beforeopen reset");
   }
+  // **************** SSS Modification End ****************
   #endif
   #ifndef Z7_SFX
   RINOK(ProgressDialog->Sync.CheckStop())
