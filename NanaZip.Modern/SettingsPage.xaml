@@ -478,6 +478,10 @@
               SelectionChanged="ExtractMatchPriorityChanged" />
           </Grid>
           <CheckBox
+            x:Name="ExtractAutoAddToBookCheck"
+            Margin="0,10,0,0"
+            Click="ExtractCheckBoxClick" />
+          <CheckBox
             x:Name="ExtractAutoSharePasswordCheck"
             Margin="0,10,0,0"
             Click="ExtractCheckBoxClick" />

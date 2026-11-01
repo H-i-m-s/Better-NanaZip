@@ -54,6 +54,7 @@ static LPCTSTR const kAutoMatchLocal = TEXT("AutoMatchLocal");
 static LPCTSTR const kMatchPriority = TEXT("MatchPriority");
 static LPCTSTR const kAutoShowPassword = TEXT("AutoShowPassword");
 static LPCTSTR const kAutoSharePassword = TEXT("AutoSharePassword");
+static LPCTSTR const kAutoAddToBook = TEXT("AutoAddToBook");
 // **************** SSS Modification End ****************
 
 static LPCTSTR const kFileContextMenuFlags = TEXT("FileContextMenuFlags");
@@ -182,6 +183,7 @@ void CFmSettings::Save() const
   }
   SaveOption(kAutoShowPassword, AutoShowPassword);
   SaveOption(kAutoSharePassword, AutoSharePassword);
+  SaveOption(kAutoAddToBook, AutoAddToBook);
   // **************** SSS Modification End ****************
   // SaveOption(kUnderline, Underline);
 
@@ -212,6 +214,7 @@ void CFmSettings::Load()
   MatchPriority = 0;
   AutoShowPassword = false;
   AutoSharePassword = false;
+  AutoAddToBook = false;
   // **************** SSS Modification End ****************
   // Underline = false;
 
@@ -243,6 +246,7 @@ void CFmSettings::Load()
       MatchPriority = 0;
     ReadOption(key, kAutoShowPassword, AutoShowPassword);
     ReadOption(key, kAutoSharePassword, AutoSharePassword);
+    ReadOption(key, kAutoAddToBook, AutoAddToBook);
     // **************** SSS Modification End ****************
     // ReadOption(key, kUnderline, Underline);
 
@@ -279,6 +283,7 @@ UInt32 ReadMatchPriority()
 }
 bool WantAutoShowPassword() { return ReadFMOption(kAutoShowPassword); }
 bool WantAutoSharePassword() { return ReadFMOption(kAutoSharePassword); }
+bool WantAutoAddToBook() { return ReadFMOption(kAutoAddToBook); }
 // **************** SSS Modification End ****************
 
 UInt32 ReadFileContextMenuFlags()

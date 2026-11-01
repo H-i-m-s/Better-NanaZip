@@ -433,6 +433,8 @@ typedef struct _K7_SETTINGS_DIALOG_CONTEXT
     // Default checked state of "share password" in the extract and password
     // dialogs (the parent of the dialog-level check boxes).
     BOOLEAN AutoSharePassword;
+    // 解压成功后自动把本次用到的密码（手动输入 / 云端）写入本地密码本。
+    BOOLEAN AutoAddToBook;
     UINT32 MatchPriority;
     // True when the user modified any API configuration field; the caller
     // only saves the API config when this is set (lazy creation).

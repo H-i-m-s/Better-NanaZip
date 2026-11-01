@@ -39,6 +39,8 @@ struct CFmSettings
   UInt32 MatchPriority;      // 0 = local first (default), 1 = cloud first
   bool AutoShowPassword;     // default checked state of "show password" in extract dialog
   bool AutoSharePassword;    // default checked state of "share password" in extract/password dialogs
+  // 解压成功后，把本次用到的密码（手动输入 / 云端）自动写入本地密码本。
+  bool AutoAddToBook;
   // **************** SSS Modification End ****************
   // bool Underline;
 
@@ -68,6 +70,7 @@ bool WantAutoMatchLocal();
 UInt32 ReadMatchPriority();
 bool WantAutoShowPassword();
 bool WantAutoSharePassword();
+bool WantAutoAddToBook();
 // **************** SSS Modification End ****************
 
 UInt32 ReadFileContextMenuFlags();

@@ -2361,6 +2361,82 @@ static void LoadExtractHistoryFile(UStringVector &paths)
 }
 // **************** NanaZip Modification End ****************
 
+// **************** SSS Modification Start ****************
+// 解压成功后的“自动添加到密码本”。只在设置勾选时才会读注册表、起线程。
+// 条件：密码来自「用户手动输入」或「云端」（本地密码本命中的本来就在里面，
+// 命令行来源不写）。
+// 写入是同步文件 IO（通常几十毫秒），放到短生命周期线程里做并立即 join：
+// 此时提取已经结束，用户感知不到，又保证进程退出前写入不会被截断。
+// 日志只记来源与长度，不涉及明文。
+static void SssAddSuccessfulPasswordToBook(CExtractCallbackImp *callback)
+{
+  if (!callback)
+    return;
+  DWORD autoAdd = 0;
+  {
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\NanaZip\\FM", 0,
+        KEY_READ, &key) == ERROR_SUCCESS)
+    {
+      DWORD size = sizeof(autoAdd);
+      ::RegQueryValueExW(key, L"AutoAddToBook", nullptr, nullptr,
+          reinterpret_cast<LPBYTE>(&autoAdd), &size);
+      ::RegCloseKey(key);
+    }
+  }
+  if (autoAdd == 0)
+    return; // 未勾选：不读文件、不起线程
+
+  if (!callback->PasswordIsDefined || callback->Password.IsEmpty())
+    return;
+  const wchar_t *sourceName = nullptr;
+  switch (callback->PasswordSource)
+  {
+    case NanaZipPassword::PasswordSource::Manual:
+      sourceName = L"manual";
+      break;
+    case NanaZipPassword::PasswordSource::Cloud:
+      sourceName = L"cloud";
+      break;
+    default:
+      return; // 本地书命中 / 命令行 / 无来源：不写
+  }
+
+  const std::wstring password(callback->Password.Ptr());
+  // 线程创建失败不能让提取流程崩掉：写入是附加动作，失败只记日志。
+  try
+  {
+  std::thread([password, sourceName]()
+  {
+    // 先看一眼书里有没有：AddPasswordToBook 对完全重复的条目也返回成功，
+    // 光靠返回值分不出“新增”和“已存在”，但日志要分开记。
+    bool exists = false;
+    {
+      std::vector<NanaZipPassword::Candidate> candidates;
+      if (NanaZipPassword::LoadLocalCandidates(candidates))
+        for (size_t i = 0; i < candidates.size(); ++i)
+          if (candidates[i].Value == password)
+          {
+            exists = true;
+            break;
+          }
+    }
+    const bool added = exists
+        ? true : NanaZipPassword::AddPasswordToBook(password);
+    wchar_t message[200] = {};
+    swprintf_s(message, L"[Q6] book add source=%s units=%zu result=%s",
+        sourceName, password.size(),
+        exists ? L"exists" : (added ? L"added" : L"failed"));
+    ExtractFlowDiagLog(message);
+  }).join();
+  }
+  catch (...)
+  {
+    ExtractFlowDiagLog(L"[Q6] book add thread failed");
+  }
+}
+// **************** SSS Modification End ****************
+
 HRESULT ExtractGUI(
     // DECL_EXTERNAL_CODECS_LOC_VARS
     CCodecs *codecs,
@@ -2917,6 +2993,8 @@ HRESULT ExtractGUI(
           std::wstring(extractCallback->PasswordArchivePath.Ptr()),
           std::wstring(extractCallback->Password.Ptr()));
     }
+    // 自动添加到密码本（设置开启且密码来源为 manual / cloud 时才动作）。
+    SssAddSuccessfulPasswordToBook(extractCallback);
     SssWriteBatchOk();
     if (!g_SssReleaseBeforeDeleteMarker.IsEmpty() && deleteAfter)
       SssWriteReleaseBeforeDeleteMarker(deletePermanently);

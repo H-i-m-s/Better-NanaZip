@@ -385,6 +385,7 @@ static void FillSettingsDialogContext(
   ctx.AutoMatchLocal = st.AutoMatchLocal;
   ctx.AutoShowPassword = st.AutoShowPassword;
   ctx.AutoSharePassword = st.AutoSharePassword;
+  ctx.AutoAddToBook = st.AutoAddToBook;
   ctx.MatchPriority = st.MatchPriority;
 
   {
@@ -442,6 +443,7 @@ static void SaveSettingsDialogContext(
   st.AutoMatchLocal = ctx.AutoMatchLocal != FALSE;
   st.AutoShowPassword = ctx.AutoShowPassword != FALSE;
   st.AutoSharePassword = ctx.AutoSharePassword != FALSE;
+  st.AutoAddToBook = ctx.AutoAddToBook != FALSE;
   st.MatchPriority = ctx.MatchPriority;
   st.Save();
 
