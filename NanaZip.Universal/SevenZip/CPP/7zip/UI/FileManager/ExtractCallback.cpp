@@ -550,15 +550,19 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
   _currentArchivePath = name;
   _needWriteArchivePath = true;
   #ifndef Z7_NO_CRYPTO
-  PasswordArchivePath = name;
   // **************** SSS Modification Start ****************
-  // 两种情况需要把密码状态清空，让当前归档独立判定密码：
-  // 1. 批量会话（-sssid）：每个归档从会话取自己的密码；
+  // 两种情形需要把密码状态清空，让当前归档独立判定密码：
+  // 1. 批量会话（-sssid）：每个归档从会话取自己的密码，与上一个包无关；
   // 2. 多归档一次提取（例如资源管理器里选中多个包右键“智能提取”）：
-  //    7-Zip 默认把上一个归档的密码沿用到下一个，密码不同时第二个
-  //    包会直接报错而不弹密码框，这里改成一包一判定。
-  // 单归档提取不受影响（标志为 false），用户手动输入的密码不会被清掉。
-  if (!PasswordSessionId.IsEmpty() || SssResetPasswordPerArchive)
+  //    7-Zip 默认把上一个归档的密码沿用到下一个，密码不同时第二个包
+  //    会直接报错而不弹密码框，这里改成切包时重新判定。
+  // 第一个归档永远不清空：用户可能在提取对话框里已经输入了密码，
+  // 清掉会让第一个包重新弹框（会话模式下则直接写跳过标记）。
+  const bool firstArchive = PasswordArchivePath.IsEmpty();
+  const bool archiveChanged = !firstArchive && (PasswordArchivePath != name);
+  PasswordArchivePath = name;
+  if (!PasswordSessionId.IsEmpty() ||
+      (SssResetPasswordPerArchive && archiveChanged))
   {
     // Batch silent mode: every archive gets its own password from the
     // session. Never reuse the previous archive's password (7-Zip keeps
