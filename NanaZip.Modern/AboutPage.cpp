@@ -44,6 +44,13 @@ namespace winrt::NanaZip::Modern::implementation
         Version.append(L" (arm64)");
 #endif
 
+        std::wstring ForkInfo = std::wstring(
+            ::K7ModernGetLegacyStringResource(2569));
+        if (ForkInfo.empty())
+        {
+            ForkInfo = L"SSS modification of NanaZip (Better-NanaZip)";
+        }
+
         std::wstring Content = std::wstring(
             ::K7ModernGetLegacyStringResource(2901));
         if (Content.empty())
@@ -58,6 +65,7 @@ namespace winrt::NanaZip::Modern::implementation
 
         this->GridTitleTextBlock().Text(WindowTitle);
         this->Version().Text(Version);
+        this->ForkInfo().Text(ForkInfo);
         this->Content().Text(Content);
     }
 
@@ -86,7 +94,7 @@ namespace winrt::NanaZip::Modern::implementation
         SHELLEXECUTEINFOW ExecInfo = {};
         ExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
         ExecInfo.lpVerb = L"open";
-        ExecInfo.lpFile = L"https://github.com/M2Team/NanaZip";
+        ExecInfo.lpFile = L"https://github.com/H-i-m-s/Better-NanaZip";
         ExecInfo.nShow = SW_SHOWNORMAL;
         ::ShellExecuteExW(&ExecInfo);
     }

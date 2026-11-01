@@ -26,6 +26,8 @@
         <LineBreak />
         <Run Text="© M2-Team and Contributors. All rights reserved." />
         <LineBreak />
+        <Run x:Name="ForkInfo" />
+        <LineBreak />
         <LineBreak />
         <Run x:Name="Content" />
       </TextBlock>
