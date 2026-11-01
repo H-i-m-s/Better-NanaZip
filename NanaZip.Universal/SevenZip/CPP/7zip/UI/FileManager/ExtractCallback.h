@@ -269,6 +269,14 @@ public:
       LPVOID queryContext,
       UString &password,
       UINT32 &source);
+  // **************** SSS Modification Start ****************
+  // 静默自动匹配：与批量会话无关，无会话路径在弹密码框之前调用。
+  // 返回 true 表示密码已验证可用；false 表示没开自动匹配或没匹配到，
+  // 调用方继续走原来的弹框逻辑。
+  bool (*SssSilentPasswordMatchCallback)(const UString &archivePath,
+      LPVOID context, UString &password, UINT32 &source) = nullptr;
+  LPVOID SssSilentPasswordMatchContext = nullptr;
+  // **************** SSS Modification End ****************
 #endif
 #endif
 

@@ -862,6 +862,44 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
   if (!PasswordIsDefined)
   {
 #ifdef NANAZIP_MODERN
+    // **************** SSS Modification Start ****************
+    // 自动匹配已开启时先静默试一次；成功就直接用，不弹框。
+    // 未开启或没匹配到，继续原有逻辑（批量会话 / 密码框）。
+    // 批量会话（-sssid）有自己的预取管道与跳过语义，不能被这里的
+    // 同步匹配抢在前面，所以只在无会话时走静默匹配。
+    if (SssSilentPasswordMatchCallback && PasswordSessionId.IsEmpty())
+    {
+      // 先看别的线程是否已经填好密码
+      {
+        std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+        if (PasswordIsDefined)
+        {
+          *password = ::SysAllocString(Password.Ptr());
+          return *password ? S_OK : E_OUTOFMEMORY;
+        }
+      }
+      UString matched;
+      UINT32 matchedSource = 0;
+      // 注意：调用期间不要持有 SssBatchMatchMutex，回调内部会用
+      // SssVerifyPassword 自己拿锁，否则双方互等。
+      if (SssSilentPasswordMatchCallback(PasswordArchivePath,
+              SssSilentPasswordMatchContext, matched, matchedSource))
+      {
+        {
+          std::lock_guard<std::mutex> lock(SssBatchMatchMutex());
+          if (!PasswordIsDefined)
+          {
+            Password = matched;
+            PasswordIsDefined = true;
+            PasswordSource = (NanaZipPassword::PasswordSource)matchedSource;
+          }
+          matched = Password;
+        }
+        *password = ::SysAllocString(matched.Ptr());
+        return *password ? S_OK : E_OUTOFMEMORY;
+      }
+    }
+    // **************** SSS Modification End ****************
     // Batch password session (File Manager prefetch): ask the session for
     // the current archive's candidates and verify them. No dialog in this
     // mode; an archive without a verifying candidate is silently skipped

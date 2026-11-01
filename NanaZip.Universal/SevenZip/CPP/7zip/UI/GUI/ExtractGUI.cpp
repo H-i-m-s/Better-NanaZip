@@ -946,6 +946,83 @@ static bool SssBatchPasswordMatch(
   return false;
 }
 
+// **************** SSS Modification Start ****************
+// 无会话路径的静默自动匹配：设置里开启自动匹配时，先按优先级试
+// 本地密码书与云端结果，验证通过就交给调用方，不再弹密码框。
+// 未开启任何自动匹配时返回 false，保持原行为（直接弹框）。
+static bool SssSilentPasswordMatch(
+    const UString &archivePath,
+    LPVOID queryContext,
+    UString &password,
+    UINT32 &source)
+{
+  const SssPasswordQueryContext *base =
+      static_cast<const SssPasswordQueryContext *>(queryContext);
+  if (!base || archivePath.IsEmpty())
+    return false;
+  const SssAutomaticPasswordPolicy policy = SssReadAutomaticPasswordPolicy();
+  if (!policy.UseLocal && !policy.UseCloud)
+    return false; // 用户没勾自动匹配：交给密码框
+
+  SssPasswordQueryContext ctx = *base;
+  UStringVector single;
+  single.Add(archivePath);
+  ctx.ArchivePaths = &single;
+  ctx.ArchivePathsFull = &single;
+  ctx.ArchivePath = std::wstring(archivePath.Ptr());
+
+  // 每条候选都要跑一次真实的解密验证，内部经 SssVerifyPassword 拿
+  // SssBatchMatchMutex（调用方此时不持锁，否则会和这里互等）。
+  auto tryValue = [&](const std::wstring &value,
+      NanaZipPassword::PasswordSource src) -> bool
+  {
+    if (value.empty())
+      return false;
+    if (!SssVerifyPassword(value, ctx))
+      return false;
+    password = UString(value.c_str());
+    source = (UINT32)src;
+    return true;
+  };
+
+  auto tryLocal = [&]() -> bool
+  {
+    if (!policy.UseLocal)
+      return false;
+    std::vector<NanaZipPassword::Candidate> candidates;
+    if (!NanaZipPassword::LoadLocalCandidates(candidates))
+      return false;
+    for (const auto &c : candidates)
+      if (tryValue(c.Value, c.Source))
+        return true;
+    return false;
+  };
+
+  auto tryCloud = [&]() -> bool
+  {
+    if (!policy.UseCloud)
+      return false;
+    std::wstring cloud;
+    if (!NanaZipPassword::QueryCloudPassword(
+        std::wstring(archivePath.Ptr()), cloud))
+      return false;
+    return tryValue(cloud, NanaZipPassword::PasswordSource::Cloud);
+  };
+
+  // Priority 已在 SssReadAutomaticPasswordPolicy 里归一化：
+  // 0 = 本地优先，其余 = 云端优先。
+  bool matched = false;
+  if (policy.Priority == 0)
+    matched = tryLocal() || tryCloud();
+  else
+    matched = tryCloud() || tryLocal();
+  ExtractFlowDiagLog(matched
+      ? L"[Q4] silent match accepted"
+      : L"[Q4] silent match no hit");
+  return matched;
+}
+// **************** SSS Modification End ****************
+
 // Async local password match. The XAML page starts it through
 // QueryPasswordForDialog (Source == 2) and receives the outcome as
 // K7_PASSWORD_MATCH_DONE_MESSAGE posted to the dialog window, so no nested
@@ -2071,6 +2148,12 @@ HRESULT ExtractGUI(
   // the password dialog, and skips the archive when none verifies.
   extractCallback->PasswordSessionId = g_SssPasswordSessionId;
   extractCallback->BatchPasswordMatchCallback = SssBatchPasswordMatch;
+  // **************** SSS Modification Start ****************
+  // 自动匹配开启时，无会话路径也走静默匹配（见 SssSilentPasswordMatch）。
+  // queryContext 是 ExtractGUI 的局部变量，活到 extracter.Create 返回之后。
+  extractCallback->SssSilentPasswordMatchCallback = SssSilentPasswordMatch;
+  extractCallback->SssSilentPasswordMatchContext = &queryContext;
+  // **************** SSS Modification End ****************
 #endif
   if (!options.TestMode)
   {
