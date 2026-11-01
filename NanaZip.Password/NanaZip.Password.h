@@ -54,19 +54,13 @@ namespace NanaZipPassword
     bool AddPasswordToBook(const std::wstring& password);
 
     // Reads the automatic password lookup settings from the FileManager
-    // registry. MatchPriority is 0 for local-first and nonzero for
-    // cloud-first.
+    // registry. MatchPriority is three-valued: 0 = local-first (serial),
+    // 1 = cloud-first (serial), 2 = local and cloud in parallel (whichever
+    // verifies first wins).
     void ReadAutomaticPasswordSettings(
         bool& queryCloud,
         bool& matchLocal,
         DWORD& matchPriority);
-
-    // Reads the FileManager settings and creates the automatic candidate list
-    // for one archive. Local and cloud candidates follow MatchPriority.
-    // A failed or incomplete cloud lookup is intentionally silent.
-    void BuildAutomaticCandidates(
-        const std::wstring& archivePath,
-        std::vector<Candidate>& candidates);
 
     // Performs the configured cloud lookup for the archive. Returns false for
     // incomplete configuration, invalid HTTPS transport, timeout, or an

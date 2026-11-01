@@ -484,6 +484,14 @@ struct SssAutomaticPasswordPolicy
   DWORD Priority = 0;
 };
 
+// **************** SSS Modification Start ****************
+// 读设置并归一化。归一化只处理“某一侧没开”的情形，开启侧的语义交给
+// 调用方按三值理解：
+//   0 = 本地优先（串行）
+//   1 = 云端优先（串行）
+//   2 = 本地与云端并行竞速，先验证通过者胜出
+// 只开本地时报 0，只开云端时报 1，两侧都开时保留注册表里的值。
+// **************** SSS Modification End ****************
 static SssAutomaticPasswordPolicy SssReadAutomaticPasswordPolicy()
 {
   SssAutomaticPasswordPolicy policy;
@@ -619,6 +627,184 @@ static bool SssVerifyPassword(const std::wstring &candidate,
   return accepted;
 }
 
+// **************** SSS Modification Start ****************
+// 即时匹配（SssSilentPasswordMatch）与批量预取（SssPrefetchOne）共用的
+// 候选验证。三件事只在这里定义一次，两套流程都调，混合模式的语义才不会
+// 分叉。
+//
+// 锁的约定：这些函数自身不持任何外层锁，串行化由 SssVerifyPassword 内部的
+// SssBatchMatchMutex 负责；调用方若已持该锁再调它们，会自锁死。
+
+// 验证一条候选；通过则填入结果。
+static bool SssTryCandidate(const std::wstring &value,
+    NanaZipPassword::PasswordSource src,
+    const SssPasswordQueryContext &ctx,
+    UString &outPassword, UINT32 &outSource)
+{
+  if (value.empty())
+    return false;
+  if (!SssVerifyPassword(value, ctx)) // 内部持 SssBatchMatchMutex
+    return false;
+  outPassword = UString(value.c_str());
+  outSource = (UINT32)src;
+  return true;
+}
+
+// 逐条验证一组候选，命中即停。
+static bool SssTryLocalCandidates(
+    const std::vector<NanaZipPassword::Candidate> &candidates,
+    const SssPasswordQueryContext &ctx,
+    UString &outPassword, UINT32 &outSource)
+{
+  for (const auto &candidate : candidates)
+    if (SssTryCandidate(candidate.Value, candidate.Source,
+        ctx, outPassword, outSource))
+      return true;
+  return false;
+}
+
+// 查云端并验证；查询失败或验证不通过返回 false。
+static bool SssTryCloudCandidate(const UString &archivePath,
+    const SssPasswordQueryContext &ctx,
+    UString &outPassword, UINT32 &outSource)
+{
+  std::wstring cloud;
+  if (!NanaZipPassword::QueryCloudPassword(
+      std::wstring(archivePath.Ptr()), cloud))
+    return false;
+  return SssTryCandidate(cloud, NanaZipPassword::PasswordSource::Cloud,
+      ctx, outPassword, outSource);
+}
+
+// 混合模式（Priority == 2）：本地候选与云端查询同时开始，先验证通过的一方
+// 胜出，另一方尽快放弃；两边都失败返回 false。
+//
+// 注意“并行”的实际含义：解密验证本身是串行的（SssVerifyPassword 内部持
+// SssBatchMatchMutex），所以两条线并行带来的收益是“云端 HTTP 飞在路上的
+// 同时本地在验证”，而不是两次验证同时跑。
+//
+// 云端那条线在等 HTTP 返回时无法中断，最坏要等满一个超时；返回后先看 stop，
+// 本地已经赢了就直接放弃，不再白跑一次验证。这条延迟是已知代价。
+static bool SssRacePassword(const UString &archivePath,
+    const std::vector<NanaZipPassword::Candidate> &candidates,
+    const SssPasswordQueryContext &ctx,
+    UString &outPassword, UINT32 &outSource)
+{
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool found = false;
+  int doneThreads = 0;
+  std::atomic<bool> stop(false);
+  UString winner;
+  UINT32 winnerSource = 0;
+
+  // 赢家先到先得：后到的结果不覆盖已经写好的那一条。
+  auto publish = [&](const UString &value, UINT32 src)
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!found)
+    {
+      found = true;
+      winner = value;
+      winnerSource = src;
+      stop = true;
+    }
+    cv.notify_all();
+  };
+
+  auto markDone = [&]()
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    ++doneThreads;
+    cv.notify_all();
+  };
+
+  std::thread localThread;
+  std::thread cloudThread;
+  try
+  {
+    // 本地那条线：每条候选验证前检查 stop，已置位就立刻收手。
+    localThread = std::thread([&]()
+    {
+      try
+      {
+        for (size_t i = 0; i < candidates.size(); ++i)
+        {
+          if (stop.load())
+            break;
+          UString value;
+          UINT32 src = 0;
+          if (SssTryCandidate(candidates[i].Value, candidates[i].Source,
+              ctx, value, src))
+          {
+            publish(value, src);
+            break;
+          }
+        }
+      }
+      catch (...)
+      {
+        // 坏包会让引擎抛异常；吞掉，不让裸 std::thread 直接 terminate。
+        ExtractFlowDiagLog(L"[Q4] race local exception");
+      }
+      markDone();
+    });
+
+    cloudThread = std::thread([&]()
+    {
+      try
+      {
+        std::wstring cloud;
+        if (NanaZipPassword::QueryCloudPassword(
+            std::wstring(archivePath.Ptr()), cloud) &&
+            !cloud.empty() && !stop.load())
+        {
+          UString value;
+          UINT32 src = 0;
+          if (SssTryCandidate(cloud, NanaZipPassword::PasswordSource::Cloud,
+              ctx, value, src))
+            publish(value, src);
+        }
+      }
+      catch (...)
+      {
+        ExtractFlowDiagLog(L"[Q4] race cloud exception");
+      }
+      markDone();
+    });
+  }
+  catch (...)
+  {
+    // 线程起不来（极少见）：不再开跑，按“没匹配到”交给调用方处理。
+    stop = true;
+    if (localThread.joinable())
+      localThread.join();
+    if (cloudThread.joinable())
+      cloudThread.join();
+    return false;
+  }
+
+  bool accepted = false;
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait(lock, [&]() { return found || doneThreads >= 2; });
+    accepted = found;
+    if (accepted)
+    {
+      outPassword = winner;
+      outSource = winnerSource;
+    }
+  }
+  stop = true; // 赢家已出或两边都失败：让另一条线从验证/HTTP 里尽快退出
+  localThread.join();
+  cloudThread.join();
+  ExtractFlowDiagLog(accepted
+      ? L"[Q4] race matched"
+      : L"[Q4] race no hit");
+  return accepted;
+}
+// **************** SSS Modification End ****************
+
 // Prefetches one archive according to one normalized policy. Disabled
 // sources are marked settled immediately; enabled sources are verified in
 // the background before the extraction callback consumes their verdicts.
@@ -700,10 +886,16 @@ static void SssPrefetchOne(const UString &archivePath,
       if (policy.UseCloud && !cloudFinished && candidates.CloudReady)
       {
         cloudFinished = true;
-        if (!candidates.CloudPassword.empty() &&
-            SssVerifyPassword(candidates.CloudPassword, ctx))
+        if (!candidates.CloudPassword.empty())
         {
-          result->CloudPassword = candidates.CloudPassword;
+          // 云端结果同样走公共验证函数（批量路径的云端密码已经由 File
+          // Manager 查过，这里只验不查）。
+          UString verified;
+          UINT32 verifiedSource = 0;
+          if (SssTryCandidate(candidates.CloudPassword,
+              NanaZipPassword::PasswordSource::Cloud, ctx,
+              verified, verifiedSource))
+            result->CloudPassword = candidates.CloudPassword;
         }
         result->CloudDone = true;
         {
@@ -723,7 +915,13 @@ static void SssPrefetchOne(const UString &archivePath,
     if (policy.UseLocal && localIndex < localCandidates.size())
     {
       ExtractFlowDiagLogIndex(L"[Q4] local candidate verify index", localIndex);
-      if (SssVerifyPassword(localCandidates[localIndex], ctx))
+      // 一次只验一条：这里刻意不用 SssTryLocalCandidates，因为每条候选之间
+      // 要穿插云端轮询，一次性跑完整张表会推迟 g_PrefetchCv 的发布。
+      UString verified;
+      UINT32 verifiedSource = 0;
+      if (SssTryCandidate(localCandidates[localIndex],
+          NanaZipPassword::PasswordSource::Local, ctx,
+          verified, verifiedSource))
       {
         result->LocalPassword = localCandidates[localIndex];
         result->LocalDone = true;
@@ -971,51 +1169,23 @@ static bool SssSilentPasswordMatch(
   ctx.ArchivePathsFull = &single;
   ctx.ArchivePath = std::wstring(archivePath.Ptr());
 
-  // 每条候选都要跑一次真实的解密验证，内部经 SssVerifyPassword 拿
-  // SssBatchMatchMutex（调用方此时不持锁，否则会和这里互等）。
-  auto tryValue = [&](const std::wstring &value,
-      NanaZipPassword::PasswordSource src) -> bool
-  {
-    if (value.empty())
-      return false;
-    if (!SssVerifyPassword(value, ctx))
-      return false;
-    password = UString(value.c_str());
-    source = (UINT32)src;
-    return true;
-  };
+  // 本地候选只读一次；云端查询由验证函数按需发出。
+  std::vector<NanaZipPassword::Candidate> localCandidates;
+  if (policy.UseLocal)
+    NanaZipPassword::LoadLocalCandidates(localCandidates); // 失败即空表
 
-  auto tryLocal = [&]() -> bool
-  {
-    if (!policy.UseLocal)
-      return false;
-    std::vector<NanaZipPassword::Candidate> candidates;
-    if (!NanaZipPassword::LoadLocalCandidates(candidates))
-      return false;
-    for (const auto &c : candidates)
-      if (tryValue(c.Value, c.Source))
-        return true;
-    return false;
-  };
-
-  auto tryCloud = [&]() -> bool
-  {
-    if (!policy.UseCloud)
-      return false;
-    std::wstring cloud;
-    if (!NanaZipPassword::QueryCloudPassword(
-        std::wstring(archivePath.Ptr()), cloud))
-      return false;
-    return tryValue(cloud, NanaZipPassword::PasswordSource::Cloud);
-  };
-
-  // Priority 已在 SssReadAutomaticPasswordPolicy 里归一化：
-  // 0 = 本地优先，其余 = 云端优先。
+  // 三种优先级只在这一处决定：0 本地优先、1 云端优先、2 并行竞速。
+  // 验证与查询全部交给公共函数，不在本函数里再写循环。
   bool matched = false;
   if (policy.Priority == 0)
-    matched = tryLocal() || tryCloud();
+    matched = SssTryLocalCandidates(localCandidates, ctx, password, source) ||
+        SssTryCloudCandidate(archivePath, ctx, password, source);
+  else if (policy.Priority == 1)
+    matched = SssTryCloudCandidate(archivePath, ctx, password, source) ||
+        SssTryLocalCandidates(localCandidates, ctx, password, source);
   else
-    matched = tryCloud() || tryLocal();
+    matched = SssRacePassword(archivePath, localCandidates, ctx,
+        password, source);
   ExtractFlowDiagLog(matched
       ? L"[Q4] silent match accepted"
       : L"[Q4] silent match no hit");

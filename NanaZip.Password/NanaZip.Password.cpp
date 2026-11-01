@@ -1279,32 +1279,6 @@ namespace NanaZipPassword
         return true;
     }
 
-    void BuildAutomaticCandidates(
-        const std::wstring& archivePath,
-        std::vector<Candidate>& candidates)
-    {
-        candidates.clear();
-        std::vector<Candidate> local;
-        std::wstring cloud;
-        const bool useLocal = ReadRegistryBool(kAutoMatchLocal);
-        const bool useCloud = ReadRegistryBool(kAutoQueryCloud);
-        if (useLocal)
-        {
-            LoadLocalCandidates(local);
-        }
-        const bool cloudFound = useCloud && QueryCloudPassword(archivePath, cloud);
-        const bool cloudFirst = ReadRegistryDword(kMatchPriority) == 1;
-        if (cloudFirst && cloudFound)
-        {
-            candidates.push_back({ std::move(cloud), PasswordSource::Cloud });
-        }
-        candidates.insert(candidates.end(), local.begin(), local.end());
-        if (!cloudFirst && cloudFound)
-        {
-            candidates.push_back({ std::move(cloud), PasswordSource::Cloud });
-        }
-    }
-
     bool SharePassword(
         const std::wstring& archivePath,
         const std::wstring& password)
