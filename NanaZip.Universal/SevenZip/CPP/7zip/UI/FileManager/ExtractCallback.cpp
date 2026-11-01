@@ -590,17 +590,22 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
   #ifndef Z7_NO_CRYPTO
   // **************** SSS Modification Start ****************
   // 两种情形需要把密码状态清空，让当前归档独立判定密码：
-  // 1. 批量会话（-sssid）：每个归档从会话取自己的密码，与上一个包无关；
+  // 1. 批量会话（-sssid）：除“首包 + 用户已输入密码”外，每个归档从会话
+  //    取自己的密码，与上一个包无关；
   // 2. 多归档一次提取（例如资源管理器里选中多个包右键“智能提取”）：
   //    7-Zip 默认把上一个归档的密码沿用到下一个，密码不同时第二个包
   //    会直接报错而不弹密码框，这里改成切包时重新判定。
-  // 第一个归档永远不清空：用户可能在提取对话框里已经输入了密码，
-  // 清掉会让第一个包重新弹框（会话模式下则直接写跳过标记）。
+  // “用户主动输入的密码”指：已定义且还没走过密码回调（回调一进入就会置
+  // PasswordWasAsked）。这种密码在首包必须保留，否则用户输对了也会被
+  // 清掉，会话模式下会直接落成“候选不中 → 写跳过标记”。
   const bool firstArchive = PasswordArchivePath.IsEmpty();
   const bool archiveChanged = !firstArchive && (PasswordArchivePath != name);
+  const bool userProvided = PasswordIsDefined && !PasswordWasAsked;
   PasswordArchivePath = name;
-  if (!PasswordSessionId.IsEmpty() ||
-      (SssResetPasswordPerArchive && archiveChanged))
+  const bool shouldClear = PasswordSessionId.IsEmpty()
+      ? (SssResetPasswordPerArchive && archiveChanged)
+      : !(firstArchive && userProvided);
+  if (shouldClear)
   {
     // Batch silent mode: every archive gets its own password from the
     // session. Never reuse the previous archive's password (7-Zip keeps
@@ -1028,18 +1033,15 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
     // concurrent Open/Extract on the same archive from the same process.
     if (!PasswordSessionId.IsEmpty() && BatchPasswordMatchCallback)
     {
-      // 同一归档已被别的线程判定无匹配：跳过标记已由那个线程写过，这里
-      // 只需要保持一致的失败返回，批量模式不会弹密码框。
-      if (alreadyFailed)
-      {
-        ExtractFlowDiagLog(L"[Q5] batch wait no match");
-        return E_FAIL;
-      }
+      // 批量路径靠预取结论幂等：等待者重跑一次回调是廉价操作（结论已落盘），
+      // 所以这里不用失败备忘，也不会收到静默分支写的 alreadyFailed。
       ExtractFlowDiagLog(L"[Q4] crypto batch branch");
       UString matched;
       UINT32 matchedSource = 0;
+      bool timedOut = false;
       if (BatchPasswordMatchCallback(
-          PasswordArchivePath, PasswordQueryContext, matched, matchedSource))
+          PasswordArchivePath, PasswordQueryContext, matched, matchedSource,
+          timedOut))
       {
         // 批量分支不写失败备忘（那会让同一个归档的后续请求拿不到会话
         // 侧的跳过语义），只靠跳过标记与结果文件表达结果。
@@ -1061,6 +1063,13 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
         // that assigns *password is skipped by the early return).
         *password = ::SysAllocString(matched.Ptr());
         return *password ? S_OK : E_OUTOFMEMORY;
+      }
+      // 超时不是“候选不中”：不写跳过标记、不记结果文件，按失败返回（界面
+      // 上会真实显示失败，而不是静默跳过）。
+      if (timedOut)
+      {
+        ExtractFlowDiagLog(L"[Q5] batch verdict timeout");
+        return E_FAIL;
       }
       ExtractFlowDiagLog(L"[Q4] crypto no match");
       SssWriteBatchSkip(PasswordArchivePath, PasswordSessionId);

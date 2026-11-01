@@ -268,7 +268,8 @@ public:
       const UString &archivePath,
       LPVOID queryContext,
       UString &password,
-      UINT32 &source);
+      UINT32 &source,
+      bool &timedOut);
   // **************** SSS Modification Start ****************
   // 静默自动匹配：与批量会话无关，无会话路径在弹密码框之前调用。
   // 返回 true 表示密码已验证可用；false 表示没开自动匹配或没匹配到，

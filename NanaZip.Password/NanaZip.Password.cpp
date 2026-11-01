@@ -2001,21 +2001,33 @@ namespace NanaZipPassword
                 const size_t index = next++;
                 const std::wstring path = paths[index];
                 ++active;
-                workers.emplace_back(
-                    [&slotMutex, &slotCv, &active, session, index, path]()
+                try
                 {
-                    std::wstring cloud;
-                    // The configured timeout (api_config.txt
-                    // CloudTimeoutSeconds) already caps every HTTP stage
-                    // including DNS; honor the user's value.
-                    QueryCloudPassword(path, cloud);
-                    session->PublishCloudResult(index, cloud);
+                    workers.emplace_back(
+                        [&slotMutex, &slotCv, &active, session, index, path]()
                     {
-                        std::lock_guard<std::mutex> lock(slotMutex);
-                        --active;
-                    }
+                        std::wstring cloud;
+                        // The configured timeout (api_config.txt
+                        // CloudTimeoutSeconds) already caps every HTTP stage
+                        // including DNS; honor the user's value.
+                        QueryCloudPassword(path, cloud);
+                        session->PublishCloudResult(index, cloud);
+                        {
+                            std::lock_guard<std::mutex> lock(slotMutex);
+                            --active;
+                        }
+                        slotCv.notify_one();
+                    });
+                }
+                catch (...)
+                {
+                    // 起线程失败：槽位必须还回去，否则 active 永远降不下来、
+                    // 所有等待者会卡在 slotCv 上。此处 slotMutex 已由本线程
+                    // 持有（循环顶部那个 unique_lock），不能再次加锁。
+                    --active;
                     slotCv.notify_one();
-                });
+                    SssBatchDiagLog(L"[Q4-SV] cloud worker spawn failed", 0);
+                }
             }
             for (auto& worker : workers)
             {
