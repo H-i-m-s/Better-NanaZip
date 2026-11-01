@@ -1531,4 +1531,7 @@
   <data name="Resource2567" xml:space="preserve">
     <value>版本控制比较(&amp;0)</value>
   </data>
+  <data name="Resource2568" xml:space="preserve">
+    <value>自动添加到密码本</value>
+  </data>
 </root>

@@ -677,9 +677,9 @@ namespace winrt::NanaZip::Modern::implementation
 
         ExtractAutoShowPasswordCheck().Content(winrt::box_value(Res(2533, L"Auto show password")));
         ExtractAutoShowPasswordCheck().IsChecked(BoxBool(this->m_Context->AutoShowPassword != FALSE));
-        // "自动添加到密码本": 2561 是 NanaZip 专用空闲 ID（无 7-Zip 字符串），
-        // 与其他设置标签一样解析，无资源时回退英文。
-        ExtractAutoAddToBookCheck().Content(winrt::box_value(Res(2561, L"Auto add to password book")));
+        // "自动添加到密码本": 2568 是真正空闲的资源编号。7-Zip 原生表里
+        // 2561 已被「逐个提取…(&O)」占用，取到的会是那条旧文案。
+        ExtractAutoAddToBookCheck().Content(winrt::box_value(Res(2568, L"Auto add to password book")));
         ExtractAutoAddToBookCheck().IsChecked(BoxBool(this->m_Context->AutoAddToBook != FALSE));
         // "自动分享密码": 2553 is a NanaZip-specific free ID (no 7-Zip
         // string); resolves like every other settings label, English
